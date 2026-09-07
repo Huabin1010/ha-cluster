@@ -2,7 +2,9 @@ package ledger
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,13 +28,17 @@ type ReserveResult struct {
 	Node       models.Node
 }
 
-func (s *Service) PickNode(ctx context.Context, arch string, cpu, mem, disk int64) (*models.Node, error) {
+type scoredNode struct {
+	node  models.Node
+	score int64
+}
+
+func (s *Service) PickCandidateNodes(ctx context.Context, arch string, cpu, mem, disk int64) ([]models.Node, error) {
 	nodes, err := s.Store.ListNodes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var best *models.Node
-	bestScore := int64(-1)
+	var scored []scoredNode
 	for i := range nodes {
 		n := nodes[i]
 		if !n.Ready || n.Role == "control-plane" {
@@ -54,16 +60,27 @@ func (s *Service) PickNode(ctx context.Context, arch string, cpu, mem, disk int6
 		if n.FabricPath == "p2p" {
 			score += 1 << 30
 		}
-		if best == nil || score > bestScore {
-			cp := n
-			best = &cp
-			bestScore = score
-		}
+		scored = append(scored, scoredNode{node: n, score: score})
 	}
-	if best == nil {
+	if len(scored) == 0 {
 		return nil, store.ErrNoCapacity
 	}
-	return best, nil
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+	out := make([]models.Node, len(scored))
+	for i := range scored {
+		out[i] = scored[i].node
+	}
+	return out, nil
+}
+
+func (s *Service) PickNode(ctx context.Context, arch string, cpu, mem, disk int64) (*models.Node, error) {
+	candidates, err := s.PickCandidateNodes(ctx, arch, cpu, mem, disk)
+	if err != nil {
+		return nil, err
+	}
+	return &candidates[0], nil
 }
 
 func (s *Service) Reserve(ctx context.Context, req ReserveRequest) (*ReserveResult, error) {
@@ -71,29 +88,41 @@ func (s *Service) Reserve(ctx context.Context, req ReserveRequest) (*ReserveResu
 	if arch == "" {
 		arch = models.ArchAny
 	}
-	node, err := s.PickNode(ctx, arch, req.Plan.CPUMilli, req.Plan.MemBytes, req.Plan.DiskBytes)
+	candidates, err := s.PickCandidateNodes(ctx, arch, req.Plan.CPUMilli, req.Plan.MemBytes, req.Plan.DiskBytes)
 	if err != nil {
 		return nil, err
 	}
-	boundArch := node.Arch
-	a := models.Allocation{
-		ID:        uuid.New(),
-		ProjectID: req.ProjectID,
-		CPUMilli:  req.Plan.CPUMilli,
-		MemBytes:  req.Plan.MemBytes,
-		DiskBytes: req.Plan.DiskBytes,
-		Arch:      boundArch,
-		State:     models.AllocReserved,
-		CreatedAt: time.Now(),
+
+	var lastErr error
+	for _, node := range candidates {
+		boundArch := node.Arch
+		a := models.Allocation{
+			ID:        uuid.New(),
+			ProjectID: req.ProjectID,
+			CPUMilli:  req.Plan.CPUMilli,
+			MemBytes:  req.Plan.MemBytes,
+			DiskBytes: req.Plan.DiskBytes,
+			Arch:      boundArch,
+			State:     models.AllocReserved,
+			CreatedAt: time.Now(),
+		}
+		if err := s.Store.ReserveOnNode(ctx, node.ID, &a); err != nil {
+			if errors.Is(err, store.ErrNoCapacity) {
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+		n2, err := s.Store.GetNode(ctx, node.ID)
+		if err != nil {
+			return nil, err
+		}
+		return &ReserveResult{Allocation: a, Node: *n2}, nil
 	}
-	if err := s.Store.ReserveOnNode(ctx, node.ID, &a); err != nil {
-		return nil, err
+	if lastErr != nil {
+		return nil, lastErr
 	}
-	n2, err := s.Store.GetNode(ctx, node.ID)
-	if err != nil {
-		return nil, err
-	}
-	return &ReserveResult{Allocation: a, Node: *n2}, nil
+	return nil, store.ErrNoCapacity
 }
 
 func (s *Service) Release(ctx context.Context, id uuid.UUID) error {

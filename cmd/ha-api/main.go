@@ -23,7 +23,12 @@ import (
 func main() {
 	ctx := context.Background()
 	st := openStore(ctx)
-	secret := []byte(env("HA_JWT_SECRET", "dev-insecure-change-me-please-32b"))
+	secretStr := os.Getenv("HA_JWT_SECRET")
+	if secretStr == "" {
+		log.Printf("[SECURITY WARNING] HA_JWT_SECRET is unset; using insecure development default! Set HA_JWT_SECRET in production!")
+		secretStr = "dev-insecure-change-me-please-32b"
+	}
+	secret := []byte(secretStr)
 	rt := workspace.PickRuntime()
 	log.Printf("runtime=%T store=%T", rt, st)
 	app := service.New(st, rt, secret)

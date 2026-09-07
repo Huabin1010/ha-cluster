@@ -176,3 +176,40 @@ func TestStoppedKeepsOccupancy(t *testing.T) {
 		t.Fatal("active allocation must still occupy")
 	}
 }
+
+func TestReserveFallbackToSecondNode(t *testing.T) {
+	st := memory.New()
+	const Gi = 1024 * 1024 * 1024
+	node1 := seedNode(t, st, models.ArchAMD64, 4000, 2*Gi, 40*Gi)
+	node2 := seedNode(t, st, models.ArchAMD64, 4000, 2*Gi, 40*Gi)
+
+	svc := Service{Store: st}
+	plan := models.Plans()["large"]
+	ctx := context.Background()
+
+	// First reservation picks one node
+	r1, err := svc.Reserve(ctx, ReserveRequest{ProjectID: uuid.New(), Plan: plan, Arch: models.ArchAMD64})
+	if err != nil {
+		t.Fatalf("first reserve failed: %v", err)
+	}
+
+	// Second reservation falls back to the other node
+	r2, err := svc.Reserve(ctx, ReserveRequest{ProjectID: uuid.New(), Plan: plan, Arch: models.ArchAMD64})
+	if err != nil {
+		t.Fatalf("second reserve should have succeeded on other node: %v", err)
+	}
+
+	if r1.Node.ID == r2.Node.ID {
+		t.Fatalf("both reservations should have landed on different nodes, got same node: %s", r1.Node.ID)
+	}
+	if (r1.Node.ID != node1.ID && r1.Node.ID != node2.ID) || (r2.Node.ID != node1.ID && r2.Node.ID != node2.ID) {
+		t.Fatalf("unexpected nodes: r1=%s r2=%s", r1.Node.ID, r2.Node.ID)
+	}
+
+	// Third reservation fails because both nodes are full
+	_, err = svc.Reserve(ctx, ReserveRequest{ProjectID: uuid.New(), Plan: plan, Arch: models.ArchAMD64})
+	if !errors.Is(err, store.ErrNoCapacity) {
+		t.Fatalf("expected ErrNoCapacity on third reserve, got: %v", err)
+	}
+}
+

@@ -23,10 +23,10 @@ func main() {
 	loadEnvFile(getenv("HA_BASTION_ENV", "/etc/ha-cluster/bastion.env"))
 
 	api := strings.TrimRight(getenv("HA_API", "http://127.0.0.1:8080"), "/")
-	wsID := workspaceID()
+	wsID, remoteCmd := parseSessionTarget()
 	if wsID == "" {
-		fmt.Fprintln(os.Stderr, "usage: ha-bastion-proxy <workspace-uuid>")
-		fmt.Fprintln(os.Stderr, "  (or set RemoteCommand / ssh host <uuid> → SSH_ORIGINAL_COMMAND)")
+		fmt.Fprintln(os.Stderr, "usage: ha-bastion-proxy <workspace-uuid> [command...]")
+		fmt.Fprintln(os.Stderr, "  (or set RemoteCommand / ssh host <uuid> [cmd] → SSH_ORIGINAL_COMMAND)")
 		os.Exit(2)
 	}
 	uname := sessionUser()
@@ -53,7 +53,6 @@ func main() {
 
 	sshUser := getenv("HA_WS_SSH_USER", "root")
 	args := []string{
-		"-tt",
 		"-p", strconv.Itoa(port),
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
@@ -61,10 +60,16 @@ func main() {
 		"-o", "GlobalKnownHostsFile=/dev/null",
 		"-o", "LogLevel=ERROR",
 	}
+	if remoteCmd == "" {
+		args = append([]string{"-tt"}, args...)
+	}
 	if id := getenv("HA_BASTION_IDENTITY", ""); id != "" {
 		args = append(args, "-i", id)
 	}
 	args = append(args, sshUser+"@"+host)
+	if remoteCmd != "" {
+		args = append(args, remoteCmd)
+	}
 	bin := getenv("HA_SSH_BIN", "ssh")
 	cmd := exec.Command(bin, args...)
 	cmd.Stdin = os.Stdin
@@ -114,23 +119,38 @@ func loadEnvFile(path string) {
 	}
 }
 
-func workspaceID() string {
+func parseSessionTarget() (wsID string, remoteCmd string) {
 	if len(os.Args) >= 2 {
 		id := strings.TrimSpace(os.Args[1])
 		if id != "" && !strings.HasPrefix(id, "-") {
-			return id
+			wsID = id
+			if len(os.Args) > 2 {
+				remoteCmd = strings.TrimSpace(strings.Join(os.Args[2:], " "))
+			}
 		}
 	}
-	// ForceCommand: client RemoteCommand / `ssh host <cmd>` lands here.
 	orig := strings.TrimSpace(os.Getenv("SSH_ORIGINAL_COMMAND"))
-	if orig == "" {
-		return ""
+	if orig != "" {
+		fields := strings.Fields(orig)
+		if len(fields) > 0 {
+			if wsID == "" {
+				wsID = fields[0]
+				remoteCmd = strings.TrimSpace(orig[len(fields[0]):])
+			} else if remoteCmd == "" {
+				if fields[0] == wsID {
+					remoteCmd = strings.TrimSpace(orig[len(fields[0]):])
+				} else {
+					remoteCmd = orig
+				}
+			}
+		}
 	}
-	fields := strings.Fields(orig)
-	if len(fields) == 0 {
-		return ""
-	}
-	return fields[0]
+	return wsID, remoteCmd
+}
+
+func workspaceID() string {
+	wsID, _ := parseSessionTarget()
+	return wsID
 }
 
 func fetchTarget(api, uname, wsID string) (host string, port int, via string, err error) {

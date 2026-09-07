@@ -4,6 +4,8 @@ import (
 	"flag"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"ha-cluster/internal/agent"
@@ -21,6 +23,7 @@ func main() {
 		disk   = flag.Int64("disk-bytes", 0, "allocatable disk (0=default 40Gi)")
 		every  = flag.Duration("interval", 15*time.Second, "heartbeat interval")
 		once   = flag.Bool("once", false, "send one heartbeat and exit")
+		token  = flag.String("token", env("HA_NODE_TOKEN", env("HA_INTERNAL_TOKEN", "")), "node authentication token")
 	)
 	flag.Parse()
 	st := agent.DetectStatus(*name, *fabric, *cpu, *mem, *disk)
@@ -29,22 +32,50 @@ func main() {
 	if st.FabricIP == "" {
 		st.FabricIP = env("HA_FABRIC_IP", "127.0.0.1")
 	}
-	if err := agent.PostHeartbeat(nil, *api, st); err != nil {
-		log.Fatal(err)
+
+	// Retry initial heartbeat with backoff
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			wait := time.Duration(1<<attempt) * time.Second
+			log.Printf("retrying initial heartbeat in %v...", wait)
+			time.Sleep(wait)
+		}
+		if lastErr = agent.PostHeartbeat(nil, *api, st, *token); lastErr == nil {
+			break
+		}
 	}
-	log.Printf("heartbeat ok name=%s arch=%s class=%s power=%s cpu=%d mem=%d",
-		st.Name, st.Arch, st.Class, st.Power, st.AllocatableCPU, st.AllocatableMem)
+	if lastErr != nil {
+		if *once {
+			log.Fatalf("heartbeat failed: %v", lastErr)
+		}
+		log.Printf("initial heartbeat warning: %v (continuing periodic retry)", lastErr)
+	} else {
+		log.Printf("heartbeat ok name=%s arch=%s class=%s power=%s cpu=%d mem=%d",
+			st.Name, st.Arch, st.Class, st.Power, st.AllocatableCPU, st.AllocatableMem)
+	}
 	if *once {
 		return
 	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
 	t := time.NewTicker(*every)
 	defer t.Stop()
-	for range t.C {
-		st = agent.DetectStatus(*name, st.FabricIP, *cpu, *mem, *disk)
-		st.Power = *power
-		st.Class = *class
-		if err := agent.PostHeartbeat(nil, *api, st); err != nil {
-			log.Printf("heartbeat: %v", err)
+
+	for {
+		select {
+		case <-sigCh:
+			log.Printf("ha-agent shutting down gracefully on signal")
+			return
+		case <-t.C:
+			st = agent.DetectStatus(*name, st.FabricIP, *cpu, *mem, *disk)
+			st.Power = *power
+			st.Class = *class
+			if err := agent.PostHeartbeat(nil, *api, st, *token); err != nil {
+				log.Printf("heartbeat: %v", err)
+			}
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"os"
 	"runtime"
 	"time"
 
@@ -48,7 +49,7 @@ func DetectStatus(name, fabricIP string, cpu, mem, disk int64) Status {
 	}
 }
 
-func PostHeartbeat(client *http.Client, apiURL string, st Status) error {
+func PostHeartbeat(client *http.Client, apiURL string, st Status, token ...string) error {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
@@ -58,6 +59,18 @@ func PostHeartbeat(client *http.Client, apiURL string, st Status) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	tok := ""
+	if len(token) > 0 && token[0] != "" {
+		tok = token[0]
+	} else if v := os.Getenv("HA_NODE_TOKEN"); v != "" {
+		tok = v
+	} else if v := os.Getenv("HA_INTERNAL_TOKEN"); v != "" {
+		tok = v
+	}
+	if tok != "" {
+		req.Header.Set("X-HA-Node-Token", tok)
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

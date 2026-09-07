@@ -243,28 +243,34 @@ export const authProvider = {
   },
   getIdentity: async (): Promise<AuthUser | null> => {
     const raw = localStorage.getItem("ha_user");
+    let cached: AuthUser | null = null;
     if (raw) {
       try {
-        const cached = JSON.parse(raw) as AuthUser;
-        // Cached login payload may omit platform_role; refresh once so admin UI works.
-        if (cached.platform_role) return cached;
+        cached = JSON.parse(raw) as AuthUser;
       } catch {
         /* fall through */
       }
     }
+    const token = localStorage.getItem("ha_token");
+    if (!token) return null;
+
+    // If cache has platform_role, return cached immediately to avoid layout flicker,
+    // while silently refreshing in background to keep permissions up-to-date.
+    if (cached?.id && cached?.username && cached.platform_role) {
+      void api<AuthUser>("/me")
+        .then((me) => {
+          if (me) localStorage.setItem("ha_user", JSON.stringify(me));
+        })
+        .catch(() => {});
+      return cached;
+    }
+
     try {
       const me = await api<AuthUser>("/me");
       localStorage.setItem("ha_user", JSON.stringify(me));
       return me;
     } catch {
-      if (raw) {
-        try {
-          return JSON.parse(raw) as AuthUser;
-        } catch {
-          return null;
-        }
-      }
-      return null;
+      return cached;
     }
   },
 };

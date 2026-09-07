@@ -206,6 +206,30 @@ func TestMembersInviteAcceptAndRBAC(t *testing.T) {
 		t.Fatalf("viewer remove want 403 got %d %s", rr.Code, rr.Body.String())
 	}
 
+	// Add an admin member
+	adminTok := registerLogin(t, h, "adm3", "adm3@x.com")
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", ownerTok, map[string]string{
+		"username": "adm3", "role": "admin",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("add admin want 201 got %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Admin cannot grant owner role
+	_ = registerLogin(t, h, "user-target", "target@x.com")
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", adminTok, map[string]string{
+		"username": "user-target", "role": "owner",
+	})
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("admin granting owner want 403 got %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Admin cannot remove the owner
+	rr = doJSON(t, h, http.MethodDelete, "/projects/"+p.ID.String()+"/members/"+p.OwnerID.String(), adminTok, nil)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("admin removing owner want 403 got %d %s", rr.Code, rr.Body.String())
+	}
+
 	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/invitations", ownerTok, map[string]string{
 		"email": "bob3@x.com", "role": "developer",
 	})
@@ -346,3 +370,41 @@ func TestProjectCreateUsageAndBudget(t *testing.T) {
 		t.Fatal(one.Body.String())
 	}
 }
+
+func TestHeartbeatAuth(t *testing.T) {
+	h := testServer(t)
+	t.Setenv("HA_NODE_TOKEN", "secret-cluster-node-token-123")
+
+	nodePayload := map[string]any{
+		"name": "worker-secured", "arch": "amd64", "role": "worker",
+		"allocatable_cpu_milli": 4000, "allocatable_mem_bytes": 8000,
+	}
+
+	// 1. Without token -> 401 Unauthorized
+	reqWithoutTok := doJSON(t, h, http.MethodPost, "/nodes/heartbeat", "", nodePayload)
+	if reqWithoutTok.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 unauthorized without token, got %d %s", reqWithoutTok.Code, reqWithoutTok.Body.String())
+	}
+
+	// 2. With wrong token -> 401 Unauthorized
+	buf, _ := json.Marshal(nodePayload)
+	wrongReq := httptest.NewRequest(http.MethodPost, "/nodes/heartbeat", bytes.NewReader(buf))
+	wrongReq.Header.Set("Content-Type", "application/json")
+	wrongReq.Header.Set("X-HA-Node-Token", "wrong-token")
+	wrongRR := httptest.NewRecorder()
+	h.ServeHTTP(wrongRR, wrongReq)
+	if wrongRR.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 unauthorized with wrong token, got %d", wrongRR.Code)
+	}
+
+	// 3. With correct token in X-HA-Node-Token -> 200 OK
+	okReq := httptest.NewRequest(http.MethodPost, "/nodes/heartbeat", bytes.NewReader(buf))
+	okReq.Header.Set("Content-Type", "application/json")
+	okReq.Header.Set("X-HA-Node-Token", "secret-cluster-node-token-123")
+	okRR := httptest.NewRecorder()
+	h.ServeHTTP(okRR, okReq)
+	if okRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with correct token, got %d %s", okRR.Code, okRR.Body.String())
+	}
+}
+

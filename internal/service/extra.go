@@ -115,11 +115,15 @@ func (a *App) LogoutRefresh(ctx context.Context, refresh string) error {
 }
 
 func (a *App) Invite(ctx context.Context, actor models.User, projectID uuid.UUID, email, role string) (*models.Invitation, error) {
-	if _, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin); err != nil {
+	callerMem, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin)
+	if err != nil {
 		return nil, err
 	}
 	if models.RoleRank(role) == 0 {
 		role = models.RoleDeveloper
+	}
+	if models.RoleRank(role) >= models.RoleRank(models.RoleAdmin) && models.RoleRank(callerMem.Role) < models.RoleRank(models.RoleOwner) {
+		return nil, store.ErrForbidden
 	}
 	raw := make([]byte, 16)
 	_, _ = rand.Read(raw)
@@ -142,10 +146,13 @@ func (a *App) AcceptInvite(ctx context.Context, user models.User, token string) 
 	if inv.AcceptedAt != nil || time.Now().After(inv.ExpiresAt) {
 		return uuid.Nil, store.ErrConflict
 	}
-	if err := a.Store.AddMembership(ctx, models.Membership{ProjectID: inv.ProjectID, UserID: user.ID, Role: inv.Role}); err != nil {
-		return uuid.Nil, err
+	if !strings.EqualFold(strings.TrimSpace(user.Email), strings.TrimSpace(inv.Email)) {
+		return uuid.Nil, store.ErrForbidden
 	}
 	if err := a.Store.AcceptInvitation(ctx, token); err != nil {
+		return uuid.Nil, err
+	}
+	if err := a.Store.AddMembership(ctx, models.Membership{ProjectID: inv.ProjectID, UserID: user.ID, Role: inv.Role}); err != nil {
 		return uuid.Nil, err
 	}
 	return inv.ProjectID, nil

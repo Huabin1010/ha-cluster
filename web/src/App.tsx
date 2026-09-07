@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Refine, Authenticated } from "@refinedev/core";
 import routerProvider from "@refinedev/react-router-v6";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -6,15 +7,16 @@ import { authProvider, dataProvider } from "./providers";
 import { Loading, ToastProvider } from "./ui";
 import { LoginPage } from "./pages/Login";
 import { Layout } from "./pages/Layout";
-import { ProjectsPage } from "./pages/Projects";
-import { ProjectDetailPage } from "./pages/projects/Detail";
-import { WorkspacesPage } from "./pages/Workspaces";
-import { MembersPage } from "./pages/Members";
-import { AcceptInvitePage } from "./pages/AcceptInvite";
-import { NodesPage } from "./pages/Nodes";
-import { CapacityPage } from "./pages/ops/Capacity";
-import { SSHKeysPage } from "./pages/ops/SSHKeys";
-import { AuditPage } from "./pages/ops/Audit";
+
+const ProjectsPage = lazy(() => import("./pages/Projects").then((m) => ({ default: m.ProjectsPage })));
+const ProjectDetailPage = lazy(() => import("./pages/projects/Detail").then((m) => ({ default: m.ProjectDetailPage })));
+const WorkspacesPage = lazy(() => import("./pages/Workspaces").then((m) => ({ default: m.WorkspacesPage })));
+const MembersPage = lazy(() => import("./pages/Members").then((m) => ({ default: m.MembersPage })));
+const AcceptInvitePage = lazy(() => import("./pages/AcceptInvite").then((m) => ({ default: m.AcceptInvitePage })));
+const NodesPage = lazy(() => import("./pages/Nodes").then((m) => ({ default: m.NodesPage })));
+const CapacityPage = lazy(() => import("./pages/ops/Capacity").then((m) => ({ default: m.CapacityPage })));
+const SSHKeysPage = lazy(() => import("./pages/ops/SSHKeys").then((m) => ({ default: m.SSHKeysPage })));
+const AuditPage = lazy(() => import("./pages/ops/Audit").then((m) => ({ default: m.AuditPage })));
 
 const queryClient = new QueryClient();
 
@@ -58,7 +60,9 @@ export default function App() {
                 loading={<AuthLoading />}
               >
                 <Layout>
-                  <Outlet />
+                  <Suspense fallback={<Loading label="加载页面…" />}>
+                    <Outlet />
+                  </Suspense>
                 </Layout>
               </Authenticated>
             }

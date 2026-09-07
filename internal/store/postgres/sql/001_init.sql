@@ -119,3 +119,16 @@ CREATE TABLE IF NOT EXISTS refresh_sessions (
   hash TEXT UNIQUE NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL
 );
+
+-- Indexes and constraints
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_project_name ON workspaces (project_id, name) WHERE status <> 'destroyed';
+CREATE INDEX IF NOT EXISTS idx_allocations_workspace_id ON allocations (workspace_id);
+CREATE INDEX IF NOT EXISTS idx_allocations_project_id ON allocations (project_id);
+CREATE INDEX IF NOT EXISTS idx_allocations_node_id ON allocations (node_id);
+CREATE INDEX IF NOT EXISTS idx_workspaces_project_id ON workspaces (project_id);
+CREATE INDEX IF NOT EXISTS idx_workspaces_node_id ON workspaces (node_id);
+CREATE INDEX IF NOT EXISTS idx_workspaces_owner_user_id ON workspaces (owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_created ON audit_logs (actor_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_invitations_project_id ON invitations (project_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_sessions_user_id ON refresh_sessions (user_id);
+

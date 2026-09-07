@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"os"
@@ -158,9 +159,16 @@ func (s *Server) suspend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "suspended"})
 }
 
+func constantTimeEqual(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
 func (s *Server) authorizedKeys(w http.ResponseWriter, r *http.Request) {
 	want := os.Getenv("HA_INTERNAL_TOKEN")
-	if want == "" || r.Header.Get("X-HA-Internal") != want {
+	if !constantTimeEqual(r.Header.Get("X-HA-Internal"), want) {
 		writeErr(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -180,7 +188,7 @@ func (s *Server) authorizedKeys(w http.ResponseWriter, r *http.Request) {
 // ACL is evaluated as the platform user named in ?user= (not a shared service JWT).
 func (s *Server) internalSSHTarget(w http.ResponseWriter, r *http.Request) {
 	want := os.Getenv("HA_INTERNAL_TOKEN")
-	if want == "" || r.Header.Get("X-HA-Internal") != want {
+	if !constantTimeEqual(r.Header.Get("X-HA-Internal"), want) {
 		writeErr(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}

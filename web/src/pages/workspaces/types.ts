@@ -25,6 +25,14 @@ export type ProjectUsage = {
 export const PLANS = ["nano", "small", "medium", "large", "xlarge"] as const;
 export const ARCHES = ["amd64", "arm64"] as const;
 
+export const PLAN_SPECS: Record<string, string> = {
+  nano: "0.5核 / 256MiB / 5GiB",
+  small: "1核 / 512MiB / 10GiB",
+  medium: "2核 / 1GiB / 15GiB",
+  large: "4核 / 2GiB / 20GiB",
+  xlarge: "6核 / 3GiB / 30GiB",
+};
+
 /** 状态中文映射（U4 验收） */
 export const STATUS_LABEL: Record<string, string> = {
   requested: "请求中",

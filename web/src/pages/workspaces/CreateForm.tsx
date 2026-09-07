@@ -1,12 +1,13 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, MutableRefObject, useCallback, useEffect, useState } from "react";
 import { api, friendlyError, isInsufficientCapacity } from "../../providers";
 import { formatUsageHint } from "./format";
-import { ARCHES, PLANS, ProjectOption, ProjectUsage } from "./types";
+import { ARCHES, PLANS, PLAN_SPECS, ProjectOption, ProjectUsage } from "./types";
 
 type Props = {
   projects: ProjectOption[];
   initialProjectId: string;
-  /** bump to force usage reload after create/destroy */
+  /** optional ref to trigger usage refresh without state tick */
+  reloadUsageRef?: MutableRefObject<(() => void) | undefined>;
   usageTick?: number;
   onCreated: () => void;
   onError: (msg: string, insufficient?: boolean) => void;
@@ -15,6 +16,7 @@ type Props = {
 export function CreateForm({
   projects,
   initialProjectId,
+  reloadUsageRef,
   usageTick = 0,
   onCreated,
   onError,
@@ -35,24 +37,28 @@ export function CreateForm({
 
   const effectiveProjectId = (showAdvanced && advancedId.trim() ? advancedId.trim() : projectId).trim();
 
-  useEffect(() => {
+  const loadUsage = useCallback(async () => {
     if (!effectiveProjectId) {
       setUsageHint("");
       return;
     }
-    let cancelled = false;
-    (async () => {
-      try {
-        const u = await api<ProjectUsage>(`/projects/${effectiveProjectId}/usage`);
-        if (!cancelled) setUsageHint(formatUsageHint(u));
-      } catch {
-        if (!cancelled) setUsageHint("");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [effectiveProjectId, usageTick]);
+    try {
+      const u = await api<ProjectUsage>(`/projects/${effectiveProjectId}/usage`);
+      setUsageHint(formatUsageHint(u));
+    } catch {
+      setUsageHint("");
+    }
+  }, [effectiveProjectId]);
+
+  useEffect(() => {
+    if (reloadUsageRef) {
+      reloadUsageRef.current = loadUsage;
+    }
+  }, [reloadUsageRef, loadUsage]);
+
+  useEffect(() => {
+    void loadUsage();
+  }, [loadUsage, usageTick]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -74,6 +80,7 @@ export function CreateForm({
         }),
       });
       setName("");
+      void loadUsage();
       onCreated();
     } catch (err) {
       const insufficient = isInsufficientCapacity(err);
@@ -121,7 +128,7 @@ export function CreateForm({
           >
             {PLANS.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {p} {PLAN_SPECS[p] ? `(${PLAN_SPECS[p]})` : ""}
               </option>
             ))}
           </select>

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -68,7 +69,25 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 		return Instance{}, fmt.Errorf("incus launch: %w: %s", err, out)
 	}
 	if len(sshKeys) > 0 {
-		_ = r.injectKeys(ctx, name, sshKeys)
+		var injectErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			if attempt > 0 {
+				select {
+				case <-ctx.Done():
+					injectErr = ctx.Err()
+					break
+				case <-time.After(500 * time.Millisecond):
+				}
+			}
+			injectErr = r.injectKeys(ctx, name, sshKeys)
+			if injectErr == nil {
+				break
+			}
+		}
+		if injectErr != nil {
+			_ = r.Destroy(context.Background(), w.ID)
+			return Instance{}, fmt.Errorf("inject keys failed: %w", injectErr)
+		}
 	}
 	return Instance{
 		ID: w.ID, NodeID: node.ID, SSHPort: 22,
@@ -86,13 +105,19 @@ func (r *IncusRuntime) injectKeys(ctx context.Context, name string, keys []strin
 	if err := os.WriteFile(auth, []byte(strings.Join(keys, "\n")+"\n"), 0600); err != nil {
 		return err
 	}
-	_, _ = r.cmd(ctx, "exec", name, "--", "mkdir", "-p", "/root/.ssh").CombinedOutput()
+	if out, err := r.cmd(ctx, "exec", name, "--", "mkdir", "-p", "/root/.ssh").CombinedOutput(); err != nil {
+		return fmt.Errorf("mkdir .ssh: %w: %s", err, out)
+	}
 	if out, err := r.cmd(ctx, "file", "push", auth, name+"/root/.ssh/authorized_keys").CombinedOutput(); err != nil {
 		return fmt.Errorf("file push: %w: %s", err, out)
 	}
-	_, _ = r.cmd(ctx, "exec", name, "--", "chmod", "700", "/root/.ssh").CombinedOutput()
-	_, _ = r.cmd(ctx, "exec", name, "--", "chmod", "600", "/root/.ssh/authorized_keys").CombinedOutput()
-	_, _ = r.cmd(ctx, "exec", name, "--", "chown", "-R", "root:root", "/root/.ssh").CombinedOutput()
+	if out, err := r.cmd(ctx, "exec", name, "--", "chmod", "700", "/root/.ssh").CombinedOutput(); err != nil {
+		return fmt.Errorf("chmod .ssh: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "exec", name, "--", "chmod", "600", "/root/.ssh/authorized_keys").CombinedOutput(); err != nil {
+		return fmt.Errorf("chmod authorized_keys: %w: %s", err, out)
+	}
+	_ = r.cmd(ctx, "exec", name, "--", "chown", "-R", "root:root", "/root/.ssh").Run()
 	return nil
 }
 

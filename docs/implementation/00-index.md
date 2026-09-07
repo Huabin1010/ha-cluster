@@ -123,6 +123,7 @@ PRD 仍有效；冲突时以本目录的「产品拍板」小节为准，并回�
 | [13-remaining-tasks.md](13-remaining-tasks.md) | **上线前 5 件运维任务**（控制面 / 虚网 / 制品 / Worker / 跳板） |
 | [14-ui-and-qa-tasks.md](14-ui-and-qa-tasks.md) | **UI 五组 + 功能测试五组**（页面分工与用例） |
 | [15-playwright-test-plan.md](15-playwright-test-plan.md) | **Playwright 本地 E2E**（五子任务 PW-1–PW-5、目录与用例） |
+| [16-frontend-code-review.md](16-frontend-code-review.md) | **前端全量代码审查报告**（架构评估、分级问题清单与改进建议） |
 
 上游需求与库存：
 

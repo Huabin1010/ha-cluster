@@ -17,7 +17,7 @@ async function downloadSSHConfig(id: string): Promise<void> {
   a.href = URL.createObjectURL(blob);
   a.download = `ha-${id.slice(0, 8)}.config`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 export function WorkspaceRow({ ws, busyId, onBusy, onRefresh, onToast, onError }: Props) {

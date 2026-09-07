@@ -63,6 +63,10 @@ export default defineConfig({
       url: WEB,
       reuseExistingServer: !CI,
       timeout: 60_000,
+      env: {
+        ...process.env,
+        VITE_API_TARGET: API,
+      },
     },
   ],
 });

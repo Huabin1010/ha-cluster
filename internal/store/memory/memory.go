@@ -275,7 +275,7 @@ func (s *Store) ListMemberships(_ context.Context, projectID uuid.UUID) ([]model
 func (s *Store) UpsertNode(_ context.Context, n *models.Node) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if existingID, ok := s.nodeByName[n.Name]; ok && existingID != n.ID {
+	if existingID, ok := s.nodeByName[n.Name]; ok {
 		old := s.nodes[existingID]
 		n.ID = existingID
 		n.UsedCPU = old.UsedCPU

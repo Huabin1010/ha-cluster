@@ -9,9 +9,19 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: process.env.VITE_API_TARGET || "http://127.0.0.1:8088",
+        target: process.env.VITE_API_TARGET || "http://127.0.0.1:8080",
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
+      },
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-refine": ["@refinedev/core", "@refinedev/react-router-v6", "@tanstack/react-query"],
+        },
       },
     },
   },

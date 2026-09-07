@@ -41,3 +41,49 @@ func TestDuplicateUser(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestUpsertNodePreservesUsedCapacity(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	n := models.Node{
+		ID: uuid.New(), Name: "node-worker-1", Arch: "amd64", Role: "worker",
+		AllocatableCPU: 4000, AllocatableMem: 8000, AllocatableDisk: 10000, Ready: true,
+	}
+	if err := s.UpsertNode(ctx, &n); err != nil {
+		t.Fatal(err)
+	}
+
+	alloc := models.Allocation{
+		ID: uuid.New(), ProjectID: uuid.New(),
+		CPUMilli: 1000, MemBytes: 2000, DiskBytes: 3000,
+	}
+	if err := s.ReserveOnNode(ctx, n.ID, &alloc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify capacity reserved
+	nodeBefore, err := s.GetNode(ctx, n.ID)
+	if err != nil || nodeBefore.UsedCPU != 1000 || nodeBefore.UsedMem != 2000 {
+		t.Fatalf("expected node used 1000/2000, got %+v, err=%v", nodeBefore, err)
+	}
+
+	// Simulate heartbeat arriving with same name and same ID, used capacity fields 0
+	heartbeatNode := models.Node{
+		ID: n.ID, Name: "node-worker-1", Arch: "amd64", Role: "worker",
+		AllocatableCPU: 4000, AllocatableMem: 8000, AllocatableDisk: 10000,
+		UsedCPU: 0, UsedMem: 0, UsedDisk: 0, Ready: true,
+	}
+	if err := s.UpsertNode(ctx, &heartbeatNode); err != nil {
+		t.Fatal(err)
+	}
+
+	nodeAfter, err := s.GetNode(ctx, n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodeAfter.UsedCPU != 1000 || nodeAfter.UsedMem != 2000 || nodeAfter.UsedDisk != 3000 {
+		t.Fatalf("heartbeat wiped used capacity! got used cpu=%d mem=%d disk=%d",
+			nodeAfter.UsedCPU, nodeAfter.UsedMem, nodeAfter.UsedDisk)
+	}
+}
+

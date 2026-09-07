@@ -1,4 +1,4 @@
-import { PropsWithChildren, useState } from "react";
+import { PropsWithChildren, useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useGetIdentity, useLogout } from "@refinedev/core";
 import { useIsFetching } from "@tanstack/react-query";
@@ -13,6 +13,15 @@ export function Layout({ children }: PropsWithChildren) {
   const [navOpen, setNavOpen] = useState(false);
   // First paint / list fetches: show overlay spinner without unmounting the page.
   const showFetchHint = fetching > 0;
+
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNavOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navOpen]);
 
   return (
     <div className={`shell ${navOpen ? "nav-open" : ""}`}>

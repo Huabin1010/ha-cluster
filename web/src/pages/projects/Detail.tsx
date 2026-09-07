@@ -178,6 +178,11 @@ export function ProjectDetailPage() {
       <form className="budget-form" onSubmit={onSaveBudget}>
         <label>
           budget_cpu_milli
+          {budgetCpu.trim() && parseBudgetInput(budgetCpu) !== null && (
+            <span className="muted" style={{ marginLeft: "8px", fontSize: "0.85em" }}>
+              (≈ {formatBudget(parseBudgetInput(budgetCpu)!, "cpu")})
+            </span>
+          )}
           <input
             inputMode="numeric"
             value={budgetCpu}
@@ -187,6 +192,11 @@ export function ProjectDetailPage() {
         </label>
         <label>
           budget_mem_bytes
+          {budgetMem.trim() && parseBudgetInput(budgetMem) !== null && (
+            <span className="muted" style={{ marginLeft: "8px", fontSize: "0.85em" }}>
+              (≈ {formatBudget(parseBudgetInput(budgetMem)!, "bytes")})
+            </span>
+          )}
           <input
             inputMode="numeric"
             value={budgetMem}
@@ -196,6 +206,11 @@ export function ProjectDetailPage() {
         </label>
         <label>
           budget_disk_bytes
+          {budgetDisk.trim() && parseBudgetInput(budgetDisk) !== null && (
+            <span className="muted" style={{ marginLeft: "8px", fontSize: "0.85em" }}>
+              (≈ {formatBudget(parseBudgetInput(budgetDisk)!, "bytes")})
+            </span>
+          )}
           <input
             inputMode="numeric"
             value={budgetDisk}

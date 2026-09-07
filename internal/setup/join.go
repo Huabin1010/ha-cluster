@@ -69,8 +69,8 @@ func WriteJoinFiles(spec JoinSpec) error {
 	if fabric == "" {
 		fabric = "10.88.0.10"
 	}
-	env := fmt.Sprintf("HA_CLUSTER=%s\nHA_ET_NET=%s\nHA_ET_PEER=%s\nHA_API=%s\nHA_K3S=%s\nHA_DEPOT=%s\nHA_ROLE=%s\nHA_POWER=%s\nHA_CLASS=%s\nHA_FABRIC_IP=%s\n",
-		spec.Cluster, spec.ETNet, spec.ETPeer, spec.API, spec.K3S, spec.Depot, spec.Role, power, class, fabric)
+	env := fmt.Sprintf("HA_CLUSTER=%s\nHA_ET_NET=%s\nHA_ET_PEER=%s\nHA_API=%s\nHA_K3S=%s\nHA_DEPOT=%s\nHA_ROLE=%s\nHA_POWER=%s\nHA_CLASS=%s\nHA_FABRIC_IP=%s\nHA_NODE_TOKEN=%s\n",
+		spec.Cluster, spec.ETNet, spec.ETPeer, spec.API, spec.K3S, spec.Depot, spec.Role, power, class, fabric, spec.Token)
 	if err := os.WriteFile(filepath.Join(root, "join.env"), []byte(env), 0600); err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ After=network-online.target easytier.service
 
 [Service]
 EnvironmentFile=` + filepath.Join(root, "join.env") + `
-ExecStart=/usr/local/bin/ha-agent --api ${HA_API} --fabric-ip ${HA_FABRIC_IP} --power ${HA_POWER} --class ${HA_CLASS} --once=false
+ExecStart=/usr/local/bin/ha-agent --api ${HA_API} --fabric-ip ${HA_FABRIC_IP} --power ${HA_POWER} --class ${HA_CLASS} --token ${HA_NODE_TOKEN} --once=false
 Restart=always
 
 [Install]

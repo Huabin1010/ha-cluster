@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -368,7 +369,8 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	if _, err := s.App.RequireMembership(r.Context(), *userFrom(r), id, models.RoleAdmin); err != nil {
+	callerMem, err := s.App.RequireMembership(r.Context(), *userFrom(r), id, models.RoleAdmin)
+	if err != nil {
 		writeErr(w, http.StatusForbidden, err)
 		return
 	}
@@ -382,6 +384,11 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 	}
 	if models.RoleRank(body.Role) == 0 {
 		body.Role = models.RoleDeveloper
+	}
+	// Only Owner (or PlatformAdmin) can grant Admin or Owner roles
+	if models.RoleRank(body.Role) >= models.RoleRank(models.RoleAdmin) && models.RoleRank(callerMem.Role) < models.RoleRank(models.RoleOwner) {
+		writeErr(w, http.StatusForbidden, store.ErrForbidden)
+		return
 	}
 	u, err := s.App.Store.GetUserByUsername(r.Context(), body.Username)
 	if err != nil {
@@ -407,8 +414,24 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	if _, err := s.App.RequireMembership(r.Context(), *userFrom(r), pid, models.RoleAdmin); err != nil {
+	callerMem, err := s.App.RequireMembership(r.Context(), *userFrom(r), pid, models.RoleAdmin)
+	if err != nil {
 		writeErr(w, http.StatusForbidden, err)
+		return
+	}
+	targetMem, err := s.App.Store.GetMembership(r.Context(), pid, uid)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, store.ErrNotFound)
+		return
+	}
+	// Cannot remove the project owner unless caller is platform admin
+	if targetMem.Role == models.RoleOwner && userFrom(r).PlatformRole != models.RolePlatformAdmin {
+		writeErr(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
+	// Non-owner admin cannot remove another admin or anyone of equal/higher rank (unless self-leave)
+	if callerMem.UserID != uid && models.RoleRank(targetMem.Role) >= models.RoleRank(callerMem.Role) {
+		writeErr(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
 	if err := s.App.Store.RemoveMembership(r.Context(), pid, uid); err != nil {
@@ -466,9 +489,18 @@ func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	}
 	u := userFrom(r)
 	if pid == nil && u.PlatformRole != models.RolePlatformAdmin {
-		filtered := items[:0]
+		projects, err := s.App.Store.ListProjectsForUser(r.Context(), u.ID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		allowed := make(map[uuid.UUID]struct{}, len(projects))
+		for _, p := range projects {
+			allowed[p.ID] = struct{}{}
+		}
+		filtered := make([]models.Workspace, 0, len(items))
 		for _, ws := range items {
-			if _, err := s.App.RequireMembership(r.Context(), *u, ws.ProjectID, models.RoleViewer); err == nil {
+			if _, ok := allowed[ws.ProjectID]; ok {
 				filtered = append(filtered, ws)
 			}
 		}
@@ -684,7 +716,29 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	listEnvelope(w, items, len(items))
 }
 
+func verifyNodeToken(r *http.Request) bool {
+	want := os.Getenv("HA_NODE_TOKEN")
+	if want == "" {
+		want = os.Getenv("HA_INTERNAL_TOKEN")
+	}
+	if want == "" {
+		return true
+	}
+	got := r.Header.Get("X-HA-Node-Token")
+	if got == "" {
+		got = r.Header.Get("X-HA-Internal")
+	}
+	if got == "" && strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		got = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
+	if !verifyNodeToken(r) {
+		writeErr(w, http.StatusUnauthorized, store.ErrUnauthorized)
+		return
+	}
 	var n models.Node
 	if err := decodeJSON(r, &n); err != nil {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)

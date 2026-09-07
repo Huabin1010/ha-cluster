@@ -58,7 +58,7 @@ export function SSHKeysPage() {
   }
 
   async function remove(id: string) {
-    if (!confirm("确定删除此公钥？")) return;
+    if (!window.confirm("确定删除此公钥？")) return;
     setErr("");
     try {
       await api(`/me/ssh-keys/${id}`, { method: "DELETE" });

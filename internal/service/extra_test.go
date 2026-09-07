@@ -33,10 +33,19 @@ func TestInviteAccept(t *testing.T) {
 	ctx := context.Background()
 	p, _ := app.CreateProject(ctx, owner.ID, "inv", "inv")
 	bob, _ := app.Register(ctx, "bobinv", "bobinv@x.com", "password1")
+	eve, _ := app.Register(ctx, "eveinv", "eveinv@x.com", "password1")
+
 	inv, err := app.Invite(ctx, *owner, p.ID, bob.Email, models.RoleDeveloper)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Eve tries to accept Bob's invitation -> forbidden
+	if _, err := app.AcceptInvite(ctx, *eve, inv.Token); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for mismatched email, got %v", err)
+	}
+
+	// Bob accepts valid invitation -> success
 	pid, err := app.AcceptInvite(ctx, *bob, inv.Token)
 	if err != nil || pid != p.ID {
 		t.Fatal(err, pid)
@@ -44,6 +53,11 @@ func TestInviteAccept(t *testing.T) {
 	m, err := app.Store.GetMembership(ctx, p.ID, bob.ID)
 	if err != nil || m.Role != models.RoleDeveloper {
 		t.Fatal(err, m)
+	}
+
+	// Bob tries to accept again -> conflict (already accepted)
+	if _, err := app.AcceptInvite(ctx, *bob, inv.Token); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict for reused token, got %v", err)
 	}
 }
 

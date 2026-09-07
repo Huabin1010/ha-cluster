@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, friendlyError, isInsufficientCapacity } from "../providers";
 import { Banner, Empty, Loading, useToast } from "../ui";
@@ -17,7 +17,7 @@ export function WorkspacesPage() {
   const [err, setErr] = useState("");
   const [insufficient, setInsufficient] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [usageTick, setUsageTick] = useState(0);
+  const reloadUsageRef = useRef<(() => void) | undefined>(undefined);
 
   const showError = useCallback((msg: string, isInsufficient = false) => {
     setErr(msg);
@@ -63,7 +63,7 @@ export function WorkspacesPage() {
   }
 
   function afterMutation() {
-    setUsageTick((n) => n + 1);
+    reloadUsageRef.current?.();
     loadWorkspaces();
   }
 
@@ -87,7 +87,7 @@ export function WorkspacesPage() {
       <CreateForm
         projects={projects}
         initialProjectId={projectFilter}
-        usageTick={usageTick}
+        reloadUsageRef={reloadUsageRef}
         onCreated={() => {
           showError("");
           toast.show("创建成功", "success");
