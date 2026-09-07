@@ -1,0 +1,59 @@
+# ==============================================================================
+# ha-cluster .gitignore
+# ==============================================================================
+
+# 本机凭据与敏感信息（严禁提交）
+docs/credentials.local.md
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+!.deploy/easytier.env.example
+
+# 系统与开发工具
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# Node / Web 构建产物与依赖
+node_modules/
+web/dist/
+*.tsbuildinfo
+.vite/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# 测试与覆盖率报告
+coverage/
+*.out
+test-results/
+playwright-report*/
+blob-report/
+
+# Go 构建产物
+bin/
+/out/
+
+# 大文件离线包与缓存（仅保留版本描述文件）
+/dist/**
+!/dist/VERSIONS.md
+/packaging/cache/
+.local/
+
+# 临时文件
+tmp/
+temp/
+*.tmp

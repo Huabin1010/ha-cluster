@@ -1,0 +1,11 @@
+[Unit]
+Description=ha-cluster API
+After=network.target postgresql.service
+
+[Service]
+EnvironmentFile=-/etc/ha-cluster/api.env
+ExecStart=/usr/local/bin/ha-api
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

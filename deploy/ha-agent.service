@@ -1,0 +1,13 @@
+[Unit]
+Description=ha-cluster agent
+After=network-online.target easytier.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=-/var/lib/ha-setup/join.env
+ExecStart=/usr/local/bin/ha-agent --api ${HA_API} --fabric-ip ${HA_FABRIC_IP} --power ${HA_POWER} --class ${HA_CLASS}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

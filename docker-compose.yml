@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ha
+      POSTGRES_PASSWORD: ha
+      POSTGRES_DB: ha
+    ports:
+      - "5432:5432"
+    volumes:
+      - ha-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ha"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: golang:1.24
+    working_dir: /src
+    volumes:
+      - .:/src
+    command: go run ./cmd/ha-api
+    ports:
+      - "8080:8080"
+    environment:
+      HA_API_ADDR: ":8080"
+      DATABASE_URL: postgres://ha:ha@postgres:5432/ha?sslmode=disable
+      HA_JWT_SECRET: dev-insecure-change-me-please-32b
+      HA_ADMIN_PASSWORD: adminadmin
+      HA_RUNTIME: memory
+      HA_INTERNAL_TOKEN: internal-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ha-pg:

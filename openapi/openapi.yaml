@@ -1,0 +1,64 @@
+openapi: 3.0.3
+info:
+  title: ha-cluster API
+  version: 0.1.0
+servers:
+  - url: /
+paths:
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: ok
+  /auth/register:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "201": { description: created }
+  /auth/login:
+    post:
+      responses:
+        "200": { description: token + refresh_token }
+  /auth/refresh:
+    post:
+      responses:
+        "200": { description: rotated tokens }
+  /projects:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: list }
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: created }
+  /projects/{id}/workspaces:
+    post:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "201": { description: workspace }
+        "409": { description: INSUFFICIENT_CAPACITY }
+  /admin/reconcile:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: released + stale_nodes }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
