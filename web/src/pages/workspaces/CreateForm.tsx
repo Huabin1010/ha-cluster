@@ -1,7 +1,7 @@
 import { FormEvent, MutableRefObject, useCallback, useEffect, useState } from "react";
 import { api, friendlyError, isInsufficientCapacity } from "../../providers";
 import { formatUsageHint } from "./format";
-import { ARCHES, PLANS, PLAN_SPECS, ProjectOption, ProjectUsage } from "./types";
+import { ARCHES, formatPlanSpec, PlanItem, PLANS, PLAN_SPECS, ProjectOption, ProjectUsage } from "./types";
 
 type Props = {
   projects: ProjectOption[];
@@ -30,6 +30,23 @@ export function CreateForm({
   const [name, setName] = useState("");
   const [usageHint, setUsageHint] = useState("");
   const [busy, setBusy] = useState(false);
+  const [availablePlans, setAvailablePlans] = useState<PlanItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<PlanItem[]>("/plans")
+      .then((list) => {
+        if (!cancelled && Array.isArray(list) && list.length > 0) {
+          setAvailablePlans(list);
+        }
+      })
+      .catch(() => {
+        /* fallback to static PLANS */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (initialProjectId) setProjectId(initialProjectId);
@@ -126,11 +143,17 @@ export function CreateForm({
             value={plan}
             onChange={(e) => setPlan(e.target.value)}
           >
-            {PLANS.map((p) => (
-              <option key={p} value={p}>
-                {p} {PLAN_SPECS[p] ? `(${PLAN_SPECS[p]})` : ""}
-              </option>
-            ))}
+            {availablePlans.length > 0
+              ? availablePlans.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name} {formatPlanSpec(p) ? `(${formatPlanSpec(p)})` : ""}
+                  </option>
+                ))
+              : PLANS.map((p) => (
+                  <option key={p} value={p}>
+                    {p} {PLAN_SPECS[p] ? `(${PLAN_SPECS[p]})` : ""}
+                  </option>
+                ))}
           </select>
         </label>
         <label>

@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { statusLabel } from "./types";
+import { formatPlanSpec, statusLabel } from "./types";
 import { formatUsageHint } from "./format";
+
+describe("formatPlanSpec", () => {
+  it("formats plan specs correctly", () => {
+    const Mi = 1024 * 1024;
+    const Gi = 1024 * Mi;
+    expect(
+      formatPlanSpec({ name: "nano", cpu_milli: 500, mem_bytes: 256 * Mi, disk_bytes: 5 * Gi }),
+    ).toBe("0.5核 / 256MiB / 5GiB");
+    expect(
+      formatPlanSpec({ name: "medium", cpu_milli: 2000, mem_bytes: 1 * Gi, disk_bytes: 15 * Gi }),
+    ).toBe("2核 / 1GiB / 15GiB");
+    expect(
+      formatPlanSpec({ name: "custom", cpu_milli: 8000, mem_bytes: 16 * Gi, disk_bytes: 1024 * Gi }),
+    ).toBe("8核 / 16GiB / 1TiB");
+  });
+});
 
 describe("workspace statusLabel", () => {
   it("maps required statuses to Chinese", () => {

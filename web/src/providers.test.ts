@@ -341,4 +341,40 @@ describe("U4 capacity + apiText", () => {
     expect(text).toContain("Host");
     expect(text).toContain("RemoteCommand");
   });
+
+  it("dataProvider.create for workspaces strips project_id from body payload", async () => {
+    const { dataProvider } = await import("./providers");
+    localStorage.setItem("ha_token", "tok");
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      return {
+        ok: true,
+        status: 201,
+        text: async () => JSON.stringify({ id: "ws-1", name: "test-ws" }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await dataProvider.create({
+      resource: "workspaces",
+      variables: {
+        project_id: "proj-123",
+        name: "test-ws",
+        plan: "small",
+        arch: "amd64",
+      },
+    });
+
+    expect(res.data).toEqual({ id: "ws-1", name: "test-ws" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/projects/proj-123/workspaces");
+    expect(init.method).toBe("POST");
+    const parsedBody = JSON.parse(String(init.body));
+    expect(parsedBody).toEqual({
+      name: "test-ws",
+      plan: "small",
+      arch: "amd64",
+    });
+    expect(parsedBody.project_id).toBeUndefined();
+  });
 });

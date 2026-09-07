@@ -124,6 +124,8 @@ PRD 仍有效；冲突时以本目录的「产品拍板」小节为准，并回�
 | [14-ui-and-qa-tasks.md](14-ui-and-qa-tasks.md) | **UI 五组 + 功能测试五组**（页面分工与用例） |
 | [15-playwright-test-plan.md](15-playwright-test-plan.md) | **Playwright 本地 E2E**（五子任务 PW-1–PW-5、目录与用例） |
 | [16-frontend-code-review.md](16-frontend-code-review.md) | **前端全量代码审查报告**（架构评估、分级问题清单与改进建议） |
+| [17-api-and-config-review.md](17-api-and-config-review.md) | **前后端配置与接口对接审查报告**（全量接口契约矩阵、网络反代配置、大整数与异常流审查） |
+| [18-frontend-dark-mode-review.md](18-frontend-dark-mode-review.md) | **前端暗色模式适配审查报告**（色彩Token规范度、WCAG对比度、原生控件暗色适配、多主题扩展架构） |
 
 上游需求与库存：
 

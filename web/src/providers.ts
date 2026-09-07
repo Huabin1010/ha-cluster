@@ -160,9 +160,10 @@ export const dataProvider = {
     variables: Record<string, unknown>;
   }) => {
     if (resource === "workspaces") {
-      const data = await api(`/projects/${variables.project_id}/workspaces`, {
+      const { project_id, ...payload } = variables;
+      const data = await api(`/projects/${project_id}/workspaces`, {
         method: "POST",
-        body: JSON.stringify(variables),
+        body: JSON.stringify(payload),
       });
       return { data };
     }

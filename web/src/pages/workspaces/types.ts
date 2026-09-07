@@ -33,6 +33,22 @@ export const PLAN_SPECS: Record<string, string> = {
   xlarge: "6核 / 3GiB / 30GiB",
 };
 
+export type PlanItem = {
+  name: string;
+  cpu_milli: number;
+  mem_bytes: number;
+  disk_bytes: number;
+};
+
+export function formatPlanSpec(plan: PlanItem): string {
+  const cpu = (plan.cpu_milli / 1000).toFixed(1).replace(/\.0$/, "") + "核";
+  const mib = plan.mem_bytes / (1024 * 1024);
+  const mem = mib >= 1024 ? `${(mib / 1024).toFixed(1).replace(/\.0$/, "")}GiB` : `${Math.round(mib)}MiB`;
+  const gib = plan.disk_bytes / (1024 * 1024 * 1024);
+  const disk = gib >= 1024 ? `${(gib / 1024).toFixed(1).replace(/\.0$/, "")}TiB` : `${Math.round(gib)}GiB`;
+  return `${cpu} / ${mem} / ${disk}`;
+}
+
 /** 状态中文映射（U4 验收） */
 export const STATUS_LABEL: Record<string, string> = {
   requested: "请求中",
