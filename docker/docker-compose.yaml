@@ -1,0 +1,21 @@
+name: ha-cluster
+
+services:
+  ha-api:
+    image: ${HA_API_IMAGE:-ghcr.io/huabin1010/ha-cluster/ha-api:latest}
+    container_name: ha-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - HA_API_ADDR=:8080
+      - HA_JWT_SECRET=${HA_JWT_SECRET}
+      - HA_ADMIN_PASSWORD=${HA_ADMIN_PASSWORD}
+      - DATABASE_URL=${DATABASE_URL:-}
+      - HA_SEED=${HA_SEED:-1}
+      - HA_NODE_TOKEN=${HA_NODE_TOKEN:-}
+      - HA_INTERNAL_TOKEN=${HA_INTERNAL_TOKEN:-}
+      - HA_BASTION_PORT=${HA_BASTION_PORT:-2222}
+      - HA_RUNTIME=${HA_RUNTIME:-memory}
+    ports:
+      - "${HA_HOST_PORT:-18082}:8080"

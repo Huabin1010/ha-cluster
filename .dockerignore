@@ -1,0 +1,15 @@
+.git
+.github
+.cursor
+dist
+packaging
+bin
+out
+tmp
+temp
+docs
+*.md
+web/node_modules
+web/dist
+coverage
+*.log
