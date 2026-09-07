@@ -1,0 +1,52 @@
+name: ha-cluster-e2e
+
+services:
+  ha-api-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ha-api-e2e-server
+    restart: "no"
+    network_mode: host
+    environment:
+      - HA_API_ADDR=127.0.0.1:18088
+      - HA_RUNTIME=incus
+      - HA_INCUS_IMAGE=ha-ubuntu-24.04
+      - HA_WEB_DIR=/app/web/dist
+      - HA_SEED=1
+      - HA_ADMIN_PASSWORD=adminadmin
+      - HA_JWT_SECRET=e2e-test-secret-at-least-32-bytes-long
+    volumes:
+      - /var/lib/incus/unix.socket:/var/lib/incus/unix.socket
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:18088/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+
+  playwright-runner:
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    container_name: ha-playwright-runner
+    network_mode: host
+    depends_on:
+      ha-api-test:
+        condition: service_healthy
+    working_dir: /workspace/web
+    environment:
+      - CI=1
+      - E2E_BASE_URL=http://127.0.0.1:18088
+      - E2E_API_URL=http://127.0.0.1:18088
+      - E2E_SKIP_WEBSERVER=1
+      - HA_ADMIN_PASSWORD=adminadmin
+    volumes:
+      - ..:/workspace
+      - /var/lib/incus/unix.socket:/var/lib/incus/unix.socket
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        echo "=== [Playwright Container] Installing incus client inside container ==="
+        apt-get update -qq && apt-get install -y -qq incus-client openssh-client >/dev/null 2>&1 || true
+        echo "=== [Playwright Container] Running User Journey E2E Tests ==="
+        npx playwright test e2e-real/user-journey-flow.spec.ts --config playwright.real.config.ts

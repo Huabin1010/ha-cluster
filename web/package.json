@@ -16,6 +16,8 @@
     "test:e2e:pw5": "playwright test --grep @pw5",
     "test:e2e:smoke": "playwright test --grep @smoke",
     "test:e2e:real": "playwright test --config playwright.real.config.ts",
+    "test:e2e:journey": "playwright test e2e-real/user-journey-flow.spec.ts --config playwright.real.config.ts",
+    "test:e2e:docker": "../docker/run-e2e-docker.sh",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report"
   },

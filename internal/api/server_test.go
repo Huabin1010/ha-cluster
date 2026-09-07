@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -405,6 +406,62 @@ func TestHeartbeatAuth(t *testing.T) {
 	h.ServeHTTP(okRR, okReq)
 	if okRR.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK with correct token, got %d %s", okRR.Code, okRR.Body.String())
+	}
+}
+
+func TestApiPrefixAndSPAFallback(t *testing.T) {
+	// 创建临时测试前端目录
+	tmpDir := t.TempDir()
+	indexPath := tmpDir + "/index.html"
+	assetsDir := tmpDir + "/assets"
+	_ = os.MkdirAll(assetsDir, 0755)
+	_ = os.WriteFile(indexPath, []byte("<html><body>HA Web App</body></html>"), 0644)
+	_ = os.WriteFile(assetsDir+"/test.js", []byte("console.log('ha-web');"), 0644)
+
+	t.Setenv("HA_WEB_DIR", tmpDir)
+
+	st := memory.New()
+	app := service.New(st, workspace.NewMemoryRuntime(), []byte("unit-test-secret-key-32b!!"))
+	h := New(app)
+
+	// 1. 测试 /api 前缀路由工作正常
+	reqAPI := httptest.NewRequest(http.MethodGet, "/api/healthz", nil)
+	recAPI := httptest.NewRecorder()
+	h.ServeHTTP(recAPI, reqAPI)
+	if recAPI.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /api/healthz, got %d", recAPI.Code)
+	}
+
+	// 2. 测试根路径 API 依然工作正常
+	reqRoot := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	recRoot := httptest.NewRecorder()
+	h.ServeHTTP(recRoot, reqRoot)
+	if recRoot.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /healthz, got %d", recRoot.Code)
+	}
+
+	// 3. 测试静态资源正确命中
+	reqAsset := httptest.NewRequest(http.MethodGet, "/assets/test.js", nil)
+	recAsset := httptest.NewRecorder()
+	h.ServeHTTP(recAsset, reqAsset)
+	if recAsset.Code != http.StatusOK || !strings.Contains(recAsset.Body.String(), "ha-web") {
+		t.Fatalf("expected 200 and static content for /assets/test.js, got %d %s", recAsset.Code, recAsset.Body.String())
+	}
+
+	// 4. 测试 SPA 路由回退至 index.html
+	reqSPA := httptest.NewRequest(http.MethodGet, "/projects/123/workspaces", nil)
+	recSPA := httptest.NewRecorder()
+	h.ServeHTTP(recSPA, reqSPA)
+	if recSPA.Code != http.StatusOK || !strings.Contains(recSPA.Body.String(), "HA Web App") {
+		t.Fatalf("expected 200 and index.html for SPA route, got %d %s", recSPA.Code, recSPA.Body.String())
+	}
+
+	// 5. 测试未知 API 路由依然返回 404 JSON 而不是 index.html
+	req404 := httptest.NewRequest(http.MethodGet, "/api/nonexistent-endpoint", nil)
+	rec404 := httptest.NewRecorder()
+	h.ServeHTTP(rec404, req404)
+	if rec404.Code != http.StatusNotFound || strings.Contains(rec404.Body.String(), "<html>") {
+		t.Fatalf("expected 404 JSON for unknown API, got %d %s", rec404.Code, rec404.Body.String())
 	}
 }
 

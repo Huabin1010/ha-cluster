@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,51 @@ func New(app *service.App) http.Handler {
 		AllowCredentials: true,
 	}))
 
+	webDir := os.Getenv("HA_WEB_DIR")
+	var spa http.HandlerFunc
+	if webDir != "" {
+		if fi, err := os.Stat(webDir); err == nil && fi.IsDir() {
+			spa = spaFileServer(webDir)
+			// 优先拦截所有浏览器 HTML 页面请求回退至 SPA index.html
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					if req.Method == http.MethodGet &&
+						!strings.HasPrefix(req.URL.Path, "/api") &&
+						!strings.HasPrefix(req.URL.Path, "/healthz") &&
+						!strings.HasPrefix(req.URL.Path, "/readyz") &&
+						!strings.HasPrefix(req.URL.Path, "/internal") &&
+						strings.Contains(req.Header.Get("Accept"), "text/html") {
+						spa(w, req)
+						return
+					}
+					next.ServeHTTP(w, req)
+				})
+			})
+		}
+	}
+
+	// 支持同构的 /api 前缀路由
+	r.Route("/api", func(apiRouter chi.Router) {
+		registerAPIRoutes(apiRouter, s)
+	})
+	// 保持原样根路径 API 路由
+	registerAPIRoutes(r, s)
+
+	if spa != nil {
+		r.NotFound(spa)
+		r.MethodNotAllowed(func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/api") {
+				writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+				return
+			}
+			spa(w, req)
+		})
+	}
+
+	return r
+}
+
+func registerAPIRoutes(r chi.Router, s *Server) {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -92,7 +138,32 @@ func New(app *service.App) http.Handler {
 		r.Post("/allocations/{id}/release", s.releaseAlloc)
 		r.Get("/users", s.listUsers)
 	})
-	return r
+}
+
+func spaFileServer(webDir string) http.HandlerFunc {
+	fs := http.Dir(webDir)
+	return func(w http.ResponseWriter, r *http.Request) {
+		// API 路径未匹配命中时返回 404 JSON，避免吞掉错误的 API 请求
+		if strings.HasPrefix(r.URL.Path, "/api") {
+			writeErr(w, http.StatusNotFound, store.ErrNotFound)
+			return
+		}
+
+		path := filepath.Clean(r.URL.Path)
+		f, err := fs.Open(path)
+		if err == nil {
+			defer f.Close()
+			stat, err := f.Stat()
+			if err == nil && !stat.IsDir() {
+				http.FileServer(fs).ServeHTTP(w, r)
+				return
+			}
+		}
+
+		// 前端 HTML5 History 客户端路由回退至 index.html
+		indexPath := filepath.Join(webDir, "index.html")
+		http.ServeFile(w, r, indexPath)
+	}
 }
 
 type ctxKey int

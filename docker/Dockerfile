@@ -38,13 +38,15 @@ FROM alpine:3.21
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates tzdata curl
+RUN apk add --no-cache ca-certificates tzdata curl incus-client openssh-client
 
 # 复制后端二进制
 COPY --from=api-builder /app/bin/ha-api /app/ha-api
 
-# 复制前端编译产物（可作为内置静态文件或单独由反代挂载）
+# 复制前端编译产物（作为内置静态网页托管）
 COPY --from=web-builder /app/web/dist /app/web/dist
+
+ENV HA_WEB_DIR=/app/web/dist
 
 EXPOSE 8080
 
