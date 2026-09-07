@@ -209,7 +209,11 @@ func (s *Server) internalSSHTarget(w http.ResponseWriter, r *http.Request) {
 		ResourceID: ws.ID.String(), IP: r.RemoteAddr,
 		Meta: map[string]any{"node": n.Name, "via": "bastion"},
 	})
-	writeSSHTarget(w, ws, n)
+	role := models.RoleDeveloper
+	if m, err := s.App.Store.GetMembership(r.Context(), ws.ProjectID, u.ID); err == nil {
+		role = m.Role
+	}
+	writeSSHTarget(w, ws, n, u, role)
 }
 
 func (s *Server) approveWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -384,3 +388,70 @@ func (s *Server) deleteIngress(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (s *Server) approveIngress(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	rt, err := s.App.ApproveIngress(r.Context(), *userFrom(r), id)
+	if err != nil {
+		if errors.Is(err, store.ErrForbidden) {
+			writeErr(w, http.StatusForbidden, err)
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rt)
+}
+
+func (s *Server) rejectIngress(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = decodeJSON(r, &body)
+	rt, err := s.App.RejectIngress(r.Context(), *userFrom(r), id, body.Reason)
+	if err != nil {
+		if errors.Is(err, store.ErrForbidden) {
+			writeErr(w, http.StatusForbidden, err)
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rt)
+}
+
+func (s *Server) batchCreateUsers(w http.ResponseWriter, r *http.Request) {
+	var body service.BatchCreateUsersInput
+	if err := decodeJSON(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	if len(body.Users) == 0 {
+		writeErr(w, http.StatusBadRequest, errors.New("EMPTY_USER_LIST"))
+		return
+	}
+	if len(body.Users) > 200 {
+		writeErr(w, http.StatusBadRequest, errors.New("MAX_200_USERS_PER_BATCH"))
+		return
+	}
+	res, err := s.App.BatchCreateUsers(r.Context(), *userFrom(r), body)
+	if err != nil {
+		if errors.Is(err, store.ErrForbidden) {
+			writeErr(w, http.StatusForbidden, err)
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+

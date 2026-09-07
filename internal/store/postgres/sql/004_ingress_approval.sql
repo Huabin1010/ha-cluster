@@ -1,0 +1,9 @@
+ALTER TABLE ingress_routes 
+  ALTER COLUMN status SET DEFAULT 'pending_approval';
+
+ALTER TABLE ingress_routes 
+  ADD COLUMN IF NOT EXISTS applicant_user_id UUID,
+  ADD COLUMN IF NOT EXISTS reviewed_by UUID,
+  ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS reject_reason TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS host_port INT NOT NULL DEFAULT 0;

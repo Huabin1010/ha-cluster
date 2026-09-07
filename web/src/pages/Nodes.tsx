@@ -55,36 +55,41 @@ export function NodesPage() {
           title="节点 / Fabric"
           description="worker 心跳与 Fabric 路径。Ready=false 或 path=stale/relay 会高亮。"
           actions={
-            isAdmin ? (
-              <Button
-                data-testid="nodes-reconcile"
-                disabled={reconciling}
-                type="button"
-                onClick={() =>
-                  reconcile(
-                    {
-                      url: "/admin/reconcile",
-                      method: "post",
-                      values: {},
-                      successNotification: (res) => {
-                        const out = res?.data;
-                        return {
-                          message: `对账完成：释放 ${out?.released ?? 0} 条占用，标记 ${out?.stale_nodes ?? 0} 个 stale 节点。`,
-                          type: "success",
-                        };
-                      },
-                      errorNotification: (e) => ({
-                        message: friendlyError(e),
-                        type: "error",
-                      }),
-                    },
-                    { onSuccess: () => refetch() },
-                  )
-                }
-              >
-                {reconciling ? "对账中…" : "对账"}
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => void refetch()} data-testid="nodes-refresh">
+                刷新
               </Button>
-            ) : null
+              {isAdmin && (
+                <Button
+                  data-testid="nodes-reconcile"
+                  disabled={reconciling}
+                  type="button"
+                  onClick={() =>
+                    reconcile(
+                      {
+                        url: "/admin/reconcile",
+                        method: "post",
+                        values: {},
+                        successNotification: (res) => {
+                          const out = res?.data;
+                          return {
+                            message: `对账完成：释放 ${out?.released ?? 0} 条占用，标记 ${out?.stale_nodes ?? 0} 个 stale 节点。`,
+                            type: "success",
+                          };
+                        },
+                        errorNotification: (e) => ({
+                          message: friendlyError(e),
+                          type: "error",
+                        }),
+                      },
+                      { onSuccess: () => refetch() },
+                    )
+                  }
+                >
+                  {reconciling ? "对账中…" : "对账"}
+                </Button>
+              )}
+            </div>
           }
         />
       }

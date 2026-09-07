@@ -1,5 +1,5 @@
-.PHONY: test test-go test-web build run
-export PATH := $(HOME)/.local/go/bin:$(PATH)
+.PHONY: test test-go test-web build run dev dev-api
+export PATH := $(HOME)/.local/go/bin:$(HOME)/go/bin:$(PATH)
 
 test: test-go test-web
 
@@ -19,3 +19,9 @@ build:
 
 run:
 	go run ./cmd/ha-api
+
+dev: dev-api
+
+dev-api:
+	@which air >/dev/null 2>&1 || go install github.com/air-verse/air@latest
+	air

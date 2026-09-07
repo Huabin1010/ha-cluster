@@ -3,9 +3,11 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +15,17 @@ import (
 
 	"ha-cluster/internal/models"
 )
+
+func allocateHostPort(minPort, maxPort int) (int, error) {
+	for port := minPort; port <= maxPort; port++ {
+		l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
+		if err == nil {
+			_ = l.Close()
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("no free host port in range %d-%d", minPort, maxPort)
+}
 
 const dockerCloudInit = `#cloud-config
 package_update: true
@@ -86,6 +99,21 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 	if err != nil {
 		return Instance{}, fmt.Errorf("incus launch: %w: %s", err, out)
 	}
+
+	hostPort, err := allocateHostPort(22001, 23999)
+	if err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, fmt.Errorf("allocate ssh port: %w", err)
+	}
+	proxyArgs := []string{"config", "device", "add", name, "ssh-proxy", "proxy",
+		fmt.Sprintf("listen=tcp:0.0.0.0:%d", hostPort),
+		"connect=tcp:127.0.0.1:22",
+	}
+	if out, err := r.cmd(ctx, proxyArgs...).CombinedOutput(); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, fmt.Errorf("incus proxy device add: %w: %s", err, out)
+	}
+
 	if len(sshKeys) > 0 {
 		var injectErr error
 		for attempt := 0; attempt < 3; attempt++ {
@@ -108,7 +136,7 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 		}
 	}
 	return Instance{
-		ID: w.ID, NodeID: node.ID, SSHPort: 22,
+		ID: w.ID, NodeID: node.ID, SSHPort: hostPort,
 		HostKeyFP: "incus:" + name, Running: true,
 	}, nil
 }
@@ -187,13 +215,67 @@ func (r *IncusRuntime) Resize(ctx context.Context, w models.Workspace) error {
 	return nil
 }
 
+func (r *IncusRuntime) getProxyPort(ctx context.Context, name, deviceName string) int {
+	out, err := r.cmd(ctx, "config", "device", "get", name, deviceName, "listen").CombinedOutput()
+	if err == nil {
+		s := strings.TrimSpace(string(out))
+		if idx := strings.LastIndex(s, ":"); idx >= 0 {
+			if p, err := strconv.Atoi(s[idx+1:]); err == nil && p > 0 {
+				return p
+			}
+		}
+	}
+	return 0
+}
+
 func (r *IncusRuntime) Get(ctx context.Context, id uuid.UUID) (Instance, bool) {
-	out, err := r.cmd(ctx, "list", instName(id), "-f", "csv").CombinedOutput()
+	name := instName(id)
+	out, err := r.cmd(ctx, "list", name, "-f", "csv").CombinedOutput()
 	if err != nil || len(out) == 0 {
 		return Instance{}, false
 	}
 	running := strings.Contains(string(out), "RUNNING")
-	return Instance{ID: id, SSHPort: 22, Running: running}, true
+	port := r.getProxyPort(ctx, name, "ssh-proxy")
+	if port == 0 {
+		port = 22
+	}
+	return Instance{ID: id, SSHPort: port, Running: running}, true
+}
+
+func (r *IncusRuntime) ExposePort(ctx context.Context, wsID, routeID uuid.UUID, containerPort int) (int, error) {
+	name := instName(wsID)
+	deviceName := "ing-" + strings.ReplaceAll(routeID.String()[:8], "-", "")
+	// 尝试优先使用与容器相同的端口；若被占用，则动态分配 24000-29999 端口
+	hostPort := containerPort
+	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", hostPort))
+	if err == nil {
+		_ = l.Close()
+	} else {
+		hostPort, err = allocateHostPort(24000, 29999)
+		if err != nil {
+			return 0, fmt.Errorf("allocate ingress host port: %w", err)
+		}
+	}
+	args := []string{"config", "device", "add", name, deviceName, "proxy",
+		fmt.Sprintf("listen=tcp:0.0.0.0:%d", hostPort),
+		fmt.Sprintf("connect=tcp:127.0.0.1:%d", containerPort),
+	}
+	if out, err := r.cmd(ctx, args...).CombinedOutput(); err != nil {
+		return 0, fmt.Errorf("incus proxy add ingress: %w: %s", err, out)
+	}
+	return hostPort, nil
+}
+
+func (r *IncusRuntime) UnexposePort(ctx context.Context, wsID, routeID uuid.UUID) error {
+	name := instName(wsID)
+	deviceName := "ing-" + strings.ReplaceAll(routeID.String()[:8], "-", "")
+	_ = r.cmd(ctx, "config", "device", "remove", name, deviceName).Run()
+	return nil
+}
+
+func (r *IncusRuntime) SyncKeys(ctx context.Context, id uuid.UUID, keys []string) error {
+	name := instName(id)
+	return r.injectKeys(ctx, name, keys)
 }
 
 func PickRuntime() Runtime {

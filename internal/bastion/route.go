@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"ha-cluster/internal/models"
 )
 
@@ -18,12 +20,14 @@ type Target struct {
 	Via  string // fabric | lan | breakglass
 }
 
-func Resolve(w models.Workspace, n models.Node, membershipRole string, actorID, isAdmin bool) (Target, error) {
+func Resolve(w models.Workspace, n models.Node, membershipRole string, actorUserID uuid.UUID, isAdmin bool) (Target, error) {
 	if !isAdmin && !models.CanSSH(membershipRole) {
 		return Target{}, ErrDenied
 	}
-	if w.Visibility == models.VisPrivate && !isAdmin && actorID == false {
-		// placeholder — caller passes owner match separately
+	if w.Visibility == models.VisPrivate && !isAdmin {
+		if actorUserID != w.OwnerUserID && models.RoleRank(membershipRole) < models.RoleRank(models.RoleAdmin) {
+			return Target{}, ErrDenied
+		}
 	}
 	if w.Status != models.WSRunning && w.Status != models.WSDegraded {
 		return Target{}, ErrOffline

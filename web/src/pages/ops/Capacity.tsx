@@ -1,4 +1,5 @@
 import { useList } from "@refinedev/core";
+import { Button } from "../../components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { PageFrame } from "../../components/ui/page-frame";
@@ -17,7 +18,7 @@ type Pool = {
 };
 
 export function CapacityPage() {
-  const { data, isLoading, error } = useList<Pool>({
+  const { data, isLoading, error, refetch } = useList<Pool>({
     resource: "capacity",
     pagination: { mode: "off" },
     errorNotification: false,
@@ -32,6 +33,11 @@ export function CapacityPage() {
           <PageHeader
             title="容量池"
             description="按 arch 汇总 Ready worker 的可售 CPU / 内存 / 磁盘（不能混卖）。"
+            actions={
+              <Button type="button" variant="outline" onClick={() => void refetch()} data-testid="capacity-refresh">
+                刷新
+              </Button>
+            }
           />
           {error && (
             <Alert variant="destructive">

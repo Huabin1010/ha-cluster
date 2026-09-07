@@ -19,9 +19,13 @@ export const ACTION_LABEL: Record<string, string> = {
   "workspace.resize.approve": "批准扩容",
   "ingress.create": "接入域名",
   "ingress.delete": "移除域名",
+  "ingress.approve": "批准域名",
+  "ingress.reject": "驳回域名",
   "invite.create": "创建邀请",
   "ssh.allow": "SSH 放行",
   "ssh.deny": "SSH 拒绝",
+  "ssh.session.open": "SSH 会话开始",
+  "ssh.session.close": "SSH 会话断开",
 };
 
 /** 审计资源类型中文映射 */
@@ -32,6 +36,7 @@ export const RESOURCE_LABEL: Record<string, string> = {
   invitation: "邀请",
   ssh_key: "SSH 公钥",
   node: "节点",
+  ingress: "域名路由",
 };
 
 export function actionLabel(action: string): string {

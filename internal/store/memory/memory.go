@@ -2,6 +2,9 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -12,23 +15,39 @@ import (
 	"ha-cluster/internal/store"
 )
 
+type Snapshot struct {
+	Users       map[uuid.UUID]*models.User        `json:"users,omitempty"`
+	SSHKeys     map[uuid.UUID]*models.SSHKey      `json:"ssh_keys,omitempty"`
+	Projects    map[uuid.UUID]*models.Project     `json:"projects,omitempty"`
+	Memberships map[string]models.Membership      `json:"memberships,omitempty"`
+	Nodes       map[uuid.UUID]*models.Node        `json:"nodes,omitempty"`
+	Allocs      map[uuid.UUID]*models.Allocation  `json:"allocs,omitempty"`
+	Workspaces  map[uuid.UUID]*models.Workspace   `json:"workspaces,omitempty"`
+	Audit       []models.AuditLog                 `json:"audit,omitempty"`
+	AuditSeq    int64                             `json:"audit_seq,omitempty"`
+	Invites     map[string]*models.Invitation     `json:"invites,omitempty"`
+	Refresh     map[string]models.RefreshSession  `json:"refresh,omitempty"`
+	Ingress     map[uuid.UUID]*models.IngressRoute `json:"ingress,omitempty"`
+}
+
 type Store struct {
-	mu          sync.Mutex
-	users       map[uuid.UUID]*models.User
-	userByName  map[string]uuid.UUID
-	userByEmail map[string]uuid.UUID
-	sshKeys     map[uuid.UUID]*models.SSHKey
-	projects    map[uuid.UUID]*models.Project
-	memberships map[string]models.Membership // projectID|userID
-	nodes       map[uuid.UUID]*models.Node
-	nodeByName  map[string]uuid.UUID
-	allocs      map[uuid.UUID]*models.Allocation
-	workspaces  map[uuid.UUID]*models.Workspace
-	audit       []models.AuditLog
-	auditSeq    int64
-	invites     map[string]*models.Invitation
-	refresh     map[string]models.RefreshSession
-	ingress     map[uuid.UUID]*models.IngressRoute
+	mu           sync.Mutex
+	snapshotPath string
+	users        map[uuid.UUID]*models.User
+	userByName   map[string]uuid.UUID
+	userByEmail  map[string]uuid.UUID
+	sshKeys      map[uuid.UUID]*models.SSHKey
+	projects     map[uuid.UUID]*models.Project
+	memberships  map[string]models.Membership // projectID|userID
+	nodes        map[uuid.UUID]*models.Node
+	nodeByName   map[string]uuid.UUID
+	allocs       map[uuid.UUID]*models.Allocation
+	workspaces   map[uuid.UUID]*models.Workspace
+	audit        []models.AuditLog
+	auditSeq     int64
+	invites      map[string]*models.Invitation
+	refresh      map[string]models.RefreshSession
+	ingress      map[uuid.UUID]*models.IngressRoute
 }
 
 func New() *Store {
@@ -66,6 +85,7 @@ func (s *Store) CreateUser(_ context.Context, u *models.User) error {
 	s.users[u.ID] = &cp
 	s.userByName[name] = u.ID
 	s.userByEmail[email] = u.ID
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -123,6 +143,7 @@ func (s *Store) UpdateUser(_ context.Context, u *models.User) error {
 	}
 	cp := *u
 	s.users[u.ID] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -136,6 +157,7 @@ func (s *Store) AddSSHKey(_ context.Context, k *models.SSHKey) error {
 	}
 	cp := *k
 	s.sshKeys[k.ID] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -159,6 +181,7 @@ func (s *Store) DeleteSSHKey(_ context.Context, userID, keyID uuid.UUID) error {
 		return store.ErrNotFound
 	}
 	delete(s.sshKeys, keyID)
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -191,6 +214,7 @@ func (s *Store) CreateProject(_ context.Context, p *models.Project, ownerRole st
 	s.memberships[memKey(p.ID, p.OwnerID)] = models.Membership{
 		ProjectID: p.ID, UserID: p.OwnerID, Role: ownerRole,
 	}
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -218,6 +242,7 @@ func (s *Store) UpdateProject(_ context.Context, p *models.Project) error {
 	}
 	cp := *p
 	s.projects[p.ID] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -253,6 +278,7 @@ func (s *Store) DeleteProject(_ context.Context, id uuid.UUID) error {
 			delete(s.ingress, iid)
 		}
 	}
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -277,6 +303,7 @@ func (s *Store) AddMembership(_ context.Context, m models.Membership) error {
 		return store.ErrNotFound
 	}
 	s.memberships[memKey(m.ProjectID, m.UserID)] = m
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -288,6 +315,7 @@ func (s *Store) RemoveMembership(_ context.Context, projectID, userID uuid.UUID)
 		return store.ErrNotFound
 	}
 	delete(s.memberships, k)
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -327,6 +355,7 @@ func (s *Store) UpsertNode(_ context.Context, n *models.Node) error {
 	cp := *n
 	s.nodes[n.ID] = &cp
 	s.nodeByName[n.Name] = n.ID
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -385,6 +414,7 @@ func (s *Store) ReserveOnNode(_ context.Context, nodeID uuid.UUID, a *models.All
 	a.State = models.AllocReserved
 	cp := *a
 	s.allocs[a.ID] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -399,6 +429,7 @@ func (s *Store) ActivateAllocation(_ context.Context, id uuid.UUID) error {
 		return store.ErrAlreadyReleased
 	}
 	a.State = models.AllocActive
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -430,6 +461,7 @@ func (s *Store) ReleaseAllocation(_ context.Context, id uuid.UUID) error {
 	now := time.Now()
 	a.State = models.AllocReleased
 	a.ReleasedAt = &now
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -491,6 +523,7 @@ func (s *Store) ExpandAllocation(_ context.Context, id uuid.UUID, dCPU, dMem, dD
 	if a.DiskBytes < 0 {
 		a.DiskBytes = 0
 	}
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -504,6 +537,7 @@ func (s *Store) CreateWorkspace(_ context.Context, w *models.Workspace) error {
 	}
 	cp := *w
 	s.workspaces[w.ID] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -539,6 +573,7 @@ func (s *Store) UpdateWorkspace(_ context.Context, w *models.Workspace) error {
 	}
 	cp := *w
 	s.workspaces[w.ID] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -551,6 +586,7 @@ func (s *Store) AddAudit(_ context.Context, l models.AuditLog) error {
 		l.CreatedAt = time.Now()
 	}
 	s.audit = append(s.audit, l)
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -584,6 +620,7 @@ func (s *Store) CreateInvitation(_ context.Context, inv *models.Invitation) erro
 	defer s.mu.Unlock()
 	cp := *inv
 	s.invites[inv.Token] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -610,6 +647,7 @@ func (s *Store) AcceptInvitation(_ context.Context, token string) error {
 	}
 	now := time.Now()
 	inv.AcceptedAt = &now
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -617,6 +655,7 @@ func (s *Store) PutRefresh(_ context.Context, sess models.RefreshSession) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refresh[sess.Hash] = sess
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -635,6 +674,7 @@ func (s *Store) DeleteRefresh(_ context.Context, hash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.refresh, hash)
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -649,6 +689,7 @@ func (s *Store) CreateIngress(_ context.Context, r *models.IngressRoute) error {
 	}
 	cp := *r
 	s.ingress[r.ID] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -703,6 +744,7 @@ func (s *Store) UpdateIngress(_ context.Context, r *models.IngressRoute) error {
 	}
 	cp := *r
 	s.ingress[r.ID] = &cp
+	s.saveSnapshotLocked()
 	return nil
 }
 
@@ -713,5 +755,113 @@ func (s *Store) DeleteIngress(_ context.Context, id uuid.UUID) error {
 		return store.ErrNotFound
 	}
 	delete(s.ingress, id)
+	s.saveSnapshotLocked()
 	return nil
 }
+
+func (s *Store) SetSnapshotPath(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.snapshotPath = path
+}
+
+func (s *Store) SaveSnapshot() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveSnapshotFile(s.snapshotPath)
+}
+
+func (s *Store) saveSnapshotLocked() {
+	if s.snapshotPath == "" {
+		return
+	}
+	_ = s.saveSnapshotFile(s.snapshotPath)
+}
+
+func (s *Store) saveSnapshotFile(filePath string) error {
+	if filePath == "" {
+		return nil
+	}
+	snap := Snapshot{
+		Users:       s.users,
+		SSHKeys:     s.sshKeys,
+		Projects:    s.projects,
+		Memberships: s.memberships,
+		Nodes:       s.nodes,
+		Allocs:      s.allocs,
+		Workspaces:  s.workspaces,
+		Audit:       s.audit,
+		AuditSeq:    s.auditSeq,
+		Invites:     s.invites,
+		Refresh:     s.refresh,
+		Ingress:     s.ingress,
+	}
+	data, err := json.MarshalIndent(snap, "", "  ")
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(filePath)
+	if dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0755)
+	}
+	return os.WriteFile(filePath, data, 0644)
+}
+
+func (s *Store) LoadSnapshot(filePath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return err
+	}
+	if snap.Users != nil {
+		s.users = snap.Users
+		s.userByName = make(map[string]uuid.UUID)
+		s.userByEmail = make(map[string]uuid.UUID)
+		for id, u := range s.users {
+			s.userByName[strings.ToLower(u.Username)] = id
+			s.userByEmail[strings.ToLower(u.Email)] = id
+		}
+	}
+	if snap.SSHKeys != nil {
+		s.sshKeys = snap.SSHKeys
+	}
+	if snap.Projects != nil {
+		s.projects = snap.Projects
+	}
+	if snap.Memberships != nil {
+		s.memberships = snap.Memberships
+	}
+	if snap.Nodes != nil {
+		s.nodes = snap.Nodes
+		s.nodeByName = make(map[string]uuid.UUID)
+		for id, n := range s.nodes {
+			s.nodeByName[strings.ToLower(n.Name)] = id
+		}
+	}
+	if snap.Allocs != nil {
+		s.allocs = snap.Allocs
+	}
+	if snap.Workspaces != nil {
+		s.workspaces = snap.Workspaces
+	}
+	if snap.Audit != nil {
+		s.audit = snap.Audit
+		s.auditSeq = snap.AuditSeq
+	}
+	if snap.Invites != nil {
+		s.invites = snap.Invites
+	}
+	if snap.Refresh != nil {
+		s.refresh = snap.Refresh
+	}
+	if snap.Ingress != nil {
+		s.ingress = snap.Ingress
+	}
+	return nil
+}
+

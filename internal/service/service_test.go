@@ -290,13 +290,13 @@ func TestIngressOnePortThenSecondNeedsConfirm(t *testing.T) {
 		t.Fatalf("default nocache preview: %s", r1.NginxPreview)
 	}
 	_, err = app.CreateIngress(ctx, CreateIngressInput{
-		WorkspaceID: ws.ID, Domain: "api.example.com", Port: 3000, Actor: *owner,
+		WorkspaceID: ws.ID, Domain: "svc2.example.com", Port: 3000, Actor: *owner,
 	})
 	if !errors.Is(err, store.ErrSecondPort) {
 		t.Fatalf("want second port confirm, got %v", err)
 	}
 	r2, err := app.CreateIngress(ctx, CreateIngressInput{
-		WorkspaceID: ws.ID, Domain: "api.example.com", Port: 3000, ConfirmSecondPort: true, Actor: *owner,
+		WorkspaceID: ws.ID, Domain: "svc2.example.com", Port: 3000, ConfirmSecondPort: true, Actor: *owner,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -309,5 +309,69 @@ func TestIngressOnePortThenSecondNeedsConfirm(t *testing.T) {
 		WorkspaceID: ws.ID, Domain: "www.example.com", Port: 8080, Actor: *owner,
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSSHKeySyncToWorkspaces(t *testing.T) {
+	app, owner := setupApp(t)
+	ctx := context.Background()
+	p, err := app.CreateProject(ctx, owner.ID, "keys-proj", "keys-slug")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "keys-ws", Plan: "nano", Arch: models.ArchAMD64, Actor: *owner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Add first SSH key
+	key1, err := app.AddSSHKey(ctx, owner.ID, "laptop", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIkey1 key1@test")
+	if err != nil {
+		t.Fatalf("AddSSHKey failed: %v", err)
+	}
+
+	// Sync keys synchronously to verify
+	if err := app.SyncUserKeys(ctx, owner.ID); err != nil {
+		t.Fatalf("SyncUserKeys failed: %v", err)
+	}
+
+	memRt, ok := app.Runtime.(*workspace.MemoryRuntime)
+	if !ok {
+		t.Fatal("expected MemoryRuntime")
+	}
+
+	keys := memRt.GetKeys(ws.ID)
+	if len(keys) != 1 || keys[0] != key1.PublicKey {
+		t.Fatalf("expected 1 key %q, got %+v", key1.PublicKey, keys)
+	}
+
+	// 2. Add second SSH key
+	key2, err := app.AddSSHKey(ctx, owner.ID, "desktop", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIkey2 key2@test")
+	if err != nil {
+		t.Fatalf("AddSSHKey failed: %v", err)
+	}
+	if err := app.SyncUserKeys(ctx, owner.ID); err != nil {
+		t.Fatalf("SyncUserKeys failed: %v", err)
+	}
+
+	keys = memRt.GetKeys(ws.ID)
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 keys, got %+v", keys)
+	}
+
+	// 3. Delete first SSH key
+	if err := app.DeleteSSHKey(ctx, owner.ID, key1.ID); err != nil {
+		t.Fatalf("DeleteSSHKey failed: %v", err)
+	}
+	if err := app.SyncUserKeys(ctx, owner.ID); err != nil {
+		t.Fatalf("SyncUserKeys failed: %v", err)
+	}
+
+	keys = memRt.GetKeys(ws.ID)
+	if len(keys) != 1 || keys[0] != key2.PublicKey {
+		t.Fatalf("expected only key2 %q, got %+v", key2.PublicKey, keys)
 	}
 }

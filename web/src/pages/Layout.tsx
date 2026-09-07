@@ -24,7 +24,7 @@ import { Hint } from "../components/ui/tooltip";
 import { ThemeToggle } from "../components/theme-toggle";
 import { cn } from "../lib/utils";
 import { writeCurrentProject } from "../lib/current-project";
-import { SelectBox } from "../components/ui/select";
+import { Combobox } from "../components/ui/combobox";
 
 const ENV_LABEL = import.meta.env.PROD ? "prod" : "dev";
 const SIDEBAR_COLLAPSED_KEY = "ha_sidebar_collapsed";
@@ -167,11 +167,13 @@ export function Layout({ children }: PropsWithChildren) {
             </div>
           </div>
           {!rail && projects.length > 0 && (
-            <SelectBox
+            <Combobox
               testId="nav-project-switch"
               value={currentProject}
               onValueChange={onSwitchProject}
               placeholder="选择项目…"
+              searchPlaceholder="按名称过滤…"
+              emptyText="无匹配项目"
               aria-label="当前项目"
               options={projects.map((p) => ({ value: p.id, label: p.name }))}
             />

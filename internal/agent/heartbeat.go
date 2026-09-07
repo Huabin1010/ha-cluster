@@ -25,7 +25,7 @@ type Status struct {
 	FabricRTTMS     int64  `json:"fabric_rtt_ms"`
 }
 
-func DetectStatus(name, fabricIP string, cpu, mem, disk int64) Status {
+func DetectStatus(name, fabricIP string, cpu, mem, disk int64, storagePath ...string) Status {
 	arch := runtime.GOARCH
 	if arch == "x86_64" {
 		arch = models.ArchAMD64
@@ -40,7 +40,12 @@ func DetectStatus(name, fabricIP string, cpu, mem, disk int64) Status {
 		}
 	}
 	if disk == 0 {
-		disk = 40 << 30
+		sPath := ""
+		if len(storagePath) > 0 {
+			sPath = storagePath[0]
+		}
+		_, allocDisk := HostDiskCapacity(sPath)
+		disk = allocDisk
 	}
 	return Status{
 		Name: name, Arch: arch, Class: "desktop", Role: "worker", Power: "mains",

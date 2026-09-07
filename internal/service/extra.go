@@ -314,3 +314,57 @@ func (a *App) AuthorizedKeys(ctx context.Context, username string) (string, erro
 	}
 	return b.String(), nil
 }
+
+func (a *App) AddSSHKey(ctx context.Context, userID uuid.UUID, name, publicKey string) (*models.SSHKey, error) {
+	pub := strings.TrimSpace(publicKey)
+	if pub == "" {
+		return nil, store.ErrInvalidInput
+	}
+	k := &models.SSHKey{
+		ID:          uuid.New(),
+		UserID:      userID,
+		Name:        name,
+		PublicKey:   pub,
+		Fingerprint: SSHFingerprint(pub),
+		CreatedAt:   time.Now(),
+	}
+	if err := a.Store.AddSSHKey(ctx, k); err != nil {
+		return nil, err
+	}
+	go func() { _ = a.SyncUserKeys(context.Background(), userID) }()
+	return k, nil
+}
+
+func (a *App) DeleteSSHKey(ctx context.Context, userID, keyID uuid.UUID) error {
+	if err := a.Store.DeleteSSHKey(ctx, userID, keyID); err != nil {
+		return err
+	}
+	go func() { _ = a.SyncUserKeys(context.Background(), userID) }()
+	return nil
+}
+
+func (a *App) SyncUserKeys(ctx context.Context, userID uuid.UUID) error {
+	keys, err := a.Store.ListSSHKeys(ctx, userID)
+	if err != nil {
+		return err
+	}
+	pubs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if strings.TrimSpace(k.PublicKey) != "" {
+			pubs = append(pubs, strings.TrimSpace(k.PublicKey))
+		}
+	}
+	wss, err := a.Store.ListWorkspaces(ctx, nil)
+	if err != nil {
+		return err
+	}
+	var lastErr error
+	for _, ws := range wss {
+		if ws.OwnerUserID == userID && (ws.Status == models.WSRunning || ws.Status == models.WSDegraded) {
+			if err := a.Runtime.SyncKeys(ctx, ws.ID, pubs); err != nil {
+				lastErr = err
+			}
+		}
+	}
+	return lastErr
+}

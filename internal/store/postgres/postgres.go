@@ -25,6 +25,9 @@ var specSQL string
 //go:embed sql/003_ingress.sql
 var ingressSQL string
 
+//go:embed sql/004_ingress_approval.sql
+var ingressApprovalSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -48,6 +51,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, ingressSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, ingressApprovalSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -644,20 +651,39 @@ func (s *Store) DeleteRefresh(ctx context.Context, hash string) error {
 	return err
 }
 
-const ingressCols = `id,workspace_id,project_id,domain,path,port,preset,extra_nginx,status,created_at`
+const ingressCols = `id,workspace_id,project_id,domain,path,port,host_port,preset,extra_nginx,status,applicant_user_id,reviewed_by,reviewed_at,reject_reason,created_at`
 
 func scanIngress(row interface{ Scan(dest ...any) error }) (*models.IngressRoute, error) {
 	r := &models.IngressRoute{}
-	err := row.Scan(&r.ID, &r.WorkspaceID, &r.ProjectID, &r.Domain, &r.Path, &r.Port, &r.Preset, &r.ExtraNginx, &r.Status, &r.CreatedAt)
+	var applicantID sql.NullString
+	var reviewedBy sql.NullString
+	var reviewedAt sql.NullTime
+	err := row.Scan(&r.ID, &r.WorkspaceID, &r.ProjectID, &r.Domain, &r.Path, &r.Port, &r.HostPort, &r.Preset, &r.ExtraNginx, &r.Status, &applicantID, &reviewedBy, &reviewedAt, &r.RejectReason, &r.CreatedAt)
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if applicantID.Valid && applicantID.String != "" {
+		r.ApplicantUserID, _ = uuid.Parse(applicantID.String)
+	}
+	if reviewedBy.Valid && reviewedBy.String != "" {
+		id, err := uuid.Parse(reviewedBy.String)
+		if err == nil {
+			r.ReviewedBy = &id
+		}
+	}
+	if reviewedAt.Valid {
+		r.ReviewedAt = &reviewedAt.Time
 	}
 	return r, nil
 }
 
 func (s *Store) CreateIngress(ctx context.Context, r *models.IngressRoute) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO ingress_routes (`+ingressCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		r.ID, r.WorkspaceID, r.ProjectID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status, r.CreatedAt)
+	var appID *uuid.UUID
+	if r.ApplicantUserID != uuid.Nil {
+		appID = &r.ApplicantUserID
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO ingress_routes (`+ingressCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		r.ID, r.WorkspaceID, r.ProjectID, r.Domain, r.Path, r.Port, r.HostPort, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.CreatedAt)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -697,8 +723,12 @@ func (s *Store) ListIngress(ctx context.Context, workspaceID *uuid.UUID) ([]mode
 }
 
 func (s *Store) UpdateIngress(ctx context.Context, r *models.IngressRoute) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE ingress_routes SET domain=$2,path=$3,port=$4,preset=$5,extra_nginx=$6,status=$7 WHERE id=$1`,
-		r.ID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status)
+	var appID *uuid.UUID
+	if r.ApplicantUserID != uuid.Nil {
+		appID = &r.ApplicantUserID
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE ingress_routes SET domain=$2,path=$3,port=$4,preset=$5,extra_nginx=$6,status=$7,applicant_user_id=$8,reviewed_by=$9,reviewed_at=$10,reject_reason=$11,host_port=$12 WHERE id=$1`,
+		r.ID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.HostPort)
 	return err
 }
 

@@ -49,6 +49,7 @@ export function SSHKeysPage() {
   const [publicKey, setPublicKey] = useState("");
   const [err, setErr] = useState("");
   const [removeId, setRemoveId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const { data, isLoading } = useList<SSHKey>({
     resource: "ssh-keys",
@@ -84,6 +85,16 @@ export function SSHKeysPage() {
         onError: (e) => setErr(friendlyError(e)),
       },
     );
+  }
+
+  async function copyKey(id: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
+    } catch {
+      setErr("复制失败，请手动选择");
+    }
   }
 
   function remove(id: string) {
@@ -196,7 +207,7 @@ export function SSHKeysPage() {
                 <TableHead>名称</TableHead>
                 <TableHead>fingerprint</TableHead>
                 <TableHead>添加时间</TableHead>
-                <TableHead />
+                <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -205,10 +216,27 @@ export function SSHKeysPage() {
                   <TableCell>{k.name || "—"}</TableCell>
                   <TableCell className="mono font-mono text-xs">{k.fingerprint}</TableCell>
                   <TableCell>{fmtTime(k.created_at)}</TableCell>
-                  <TableCell>
-                    <Button data-testid="keys-remove" variant="ghost" type="button" onClick={() => void remove(k.id)}>
-                      删除
-                    </Button>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        data-testid="keys-copy"
+                        onClick={() => void copyKey(k.id, k.public_key)}
+                      >
+                        {copiedId === k.id ? "已复制" : "复制公钥"}
+                      </Button>
+                      <Button
+                        data-testid="keys-remove"
+                        variant="destructive"
+                        size="sm"
+                        type="button"
+                        onClick={() => void remove(k.id)}
+                      >
+                        删除
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

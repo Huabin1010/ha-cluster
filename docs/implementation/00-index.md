@@ -126,6 +126,9 @@ PRD 仍有效；冲突时以本目录的「产品拍板」小节为准，并回�
 | [16-frontend-code-review.md](16-frontend-code-review.md) | **前端全量代码审查报告**（架构评估、分级问题清单与改进建议） |
 | [17-api-and-config-review.md](17-api-and-config-review.md) | **前后端配置与接口对接审查报告**（全量接口契约矩阵、网络反代配置、大整数与异常流审查） |
 | [18-frontend-dark-mode-review.md](18-frontend-dark-mode-review.md) | **前端暗色模式适配审查报告**（色彩Token规范度、WCAG对比度、原生控件暗色适配、多主题扩展架构） |
+| [19-resource-allocation-ssh-and-ingress-design.md](19-resource-allocation-ssh-and-ingress-design.md) | **宿主机资源纳管、项目申请审批、SSH 极速信任与泛域名落地架构方案**（硬件探测预留、硬账本扣减、Bastion 路由、泛域名审批） |
+| [20-architecture-review.md](20-architecture-review.md) | **整体方案合理性审查报告**（七大模块逐一审查、4 处代码-文档不一致、3 个阻塞上线缺口、P0/P1/P2 改进清单） |
+| [21-core-pipeline-spec.md](21-core-pipeline-spec.md) | **核心链路闭环设计与工程规范**（ha-agent 远程编排协议、真实磁盘 Statfs 探测、Bastion 原生 SSH 协议实现、Ingress 审批流） |
 
 上游需求与库存：
 

@@ -28,19 +28,27 @@ type Runtime interface {
 	Destroy(ctx context.Context, id uuid.UUID) error
 	Resize(ctx context.Context, w models.Workspace) error
 	Get(ctx context.Context, id uuid.UUID) (Instance, bool)
+	ExposePort(ctx context.Context, wsID, routeID uuid.UUID, containerPort int) (int, error)
+	UnexposePort(ctx context.Context, wsID, routeID uuid.UUID) error
+	SyncKeys(ctx context.Context, id uuid.UUID, keys []string) error
 }
 
 type MemoryRuntime struct {
 	mu       sync.Mutex
 	nextPort int
 	inst     map[uuid.UUID]Instance
+	keys     map[uuid.UUID][]string
 }
 
 func NewMemoryRuntime() *MemoryRuntime {
-	return &MemoryRuntime{nextPort: 22000, inst: map[uuid.UUID]Instance{}}
+	return &MemoryRuntime{
+		nextPort: 22000,
+		inst:     map[uuid.UUID]Instance{},
+		keys:     map[uuid.UUID][]string{},
+	}
 }
 
-func (r *MemoryRuntime) Launch(_ context.Context, w models.Workspace, node models.Node, _ []string) (Instance, error) {
+func (r *MemoryRuntime) Launch(_ context.Context, w models.Workspace, node models.Node, sshKeys []string) (Instance, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nextPort++
@@ -53,6 +61,7 @@ func (r *MemoryRuntime) Launch(_ context.Context, w models.Workspace, node model
 		Running:   true,
 	}
 	r.inst[w.ID] = inst
+	r.keys[w.ID] = append([]string(nil), sshKeys...)
 	return inst, nil
 }
 
@@ -84,6 +93,7 @@ func (r *MemoryRuntime) Destroy(_ context.Context, id uuid.UUID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.inst, id)
+	delete(r.keys, id)
 	return nil
 }
 
@@ -101,6 +111,33 @@ func (r *MemoryRuntime) Get(_ context.Context, id uuid.UUID) (Instance, bool) {
 	defer r.mu.Unlock()
 	inst, ok := r.inst[id]
 	return inst, ok
+}
+
+func (r *MemoryRuntime) ExposePort(_ context.Context, _, _ uuid.UUID, containerPort int) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextPort++
+	return r.nextPort, nil
+}
+
+func (r *MemoryRuntime) UnexposePort(_ context.Context, _, _ uuid.UUID) error {
+	return nil
+}
+
+func (r *MemoryRuntime) SyncKeys(_ context.Context, id uuid.UUID, keys []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.inst[id]; !ok {
+		return fmt.Errorf("not found")
+	}
+	r.keys[id] = append([]string(nil), keys...)
+	return nil
+}
+
+func (r *MemoryRuntime) GetKeys(id uuid.UUID) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.keys[id]...)
 }
 
 func FailLaunchOnce() Runtime { return &failOnce{inner: NewMemoryRuntime()} }
@@ -125,6 +162,15 @@ func (f *failOnce) Resize(ctx context.Context, w models.Workspace) error {
 }
 func (f *failOnce) Get(ctx context.Context, id uuid.UUID) (Instance, bool) {
 	return f.inner.Get(ctx, id)
+}
+func (f *failOnce) ExposePort(ctx context.Context, wsID, routeID uuid.UUID, containerPort int) (int, error) {
+	return f.inner.ExposePort(ctx, wsID, routeID, containerPort)
+}
+func (f *failOnce) UnexposePort(ctx context.Context, wsID, routeID uuid.UUID) error {
+	return f.inner.UnexposePort(ctx, wsID, routeID)
+}
+func (f *failOnce) SyncKeys(ctx context.Context, id uuid.UUID, keys []string) error {
+	return f.inner.SyncKeys(ctx, id, keys)
 }
 
 func Sleep(_ time.Duration) {}

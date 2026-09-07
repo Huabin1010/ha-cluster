@@ -17,6 +17,8 @@ import (
 
 	"ha-cluster/internal/bastion"
 	"ha-cluster/internal/models"
+
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -186,16 +188,29 @@ func fetchTarget(api, uname, wsID string) (host string, port int, via string, er
 	}
 
 	var out struct {
-		Host       string `json:"host"`
-		Port       int    `json:"port"`
-		FabricIP   string `json:"fabric_ip"`
-		LanIP      string `json:"lan_ip"`
-		Breakglass string `json:"breakglass"`
+		Host           string    `json:"host"`
+		Port           int       `json:"port"`
+		FabricIP       string    `json:"fabric_ip"`
+		LanIP          string    `json:"lan_ip"`
+		Breakglass     string    `json:"breakglass"`
+		Visibility     string    `json:"visibility"`
+		OwnerUserID    uuid.UUID `json:"owner_user_id"`
+		ActorUserID    uuid.UUID `json:"actor_user_id"`
+		MembershipRole string    `json:"membership_role"`
+		IsAdmin        bool      `json:"is_admin"`
+		Via            string    `json:"via"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return "", 0, "", err
 	}
-	w := models.Workspace{Status: models.WSRunning, SSHPort: out.Port}
+	parsedID, _ := uuid.Parse(wsID)
+	w := models.Workspace{
+		ID:          parsedID,
+		Status:      models.WSRunning,
+		SSHPort:     out.Port,
+		Visibility:  out.Visibility,
+		OwnerUserID: out.OwnerUserID,
+	}
 	n := models.Node{
 		FabricIP:      firstNonEmpty(out.FabricIP, out.Host),
 		LanIP:         out.LanIP,
@@ -204,7 +219,11 @@ func fetchTarget(api, uname, wsID string) (host string, port int, via string, er
 	if out.Port == 0 {
 		w.SSHPort = 22
 	}
-	tg, err := bastion.Resolve(w, n, models.RoleDeveloper, true, false)
+	role := out.MembershipRole
+	if role == "" {
+		role = models.RoleDeveloper
+	}
+	tg, err := bastion.Resolve(w, n, role, out.ActorUserID, out.IsAdmin)
 	if err != nil {
 		return "", 0, "", err
 	}

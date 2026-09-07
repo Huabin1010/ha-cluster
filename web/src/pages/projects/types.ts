@@ -35,6 +35,14 @@ export function suggestSlugFromName(n: string): string {
     .slice(0, 64);
 }
 
-export function canManageProject(role?: string): boolean {
-  return role === "owner";
+export function canManageProject(
+  role?: string,
+  platformRole?: string,
+  ownerId?: string,
+  currentUserId?: string,
+): boolean {
+  if (platformRole === "platform_admin") return true;
+  if (role === "owner") return true;
+  if (ownerId && currentUserId && ownerId === currentUserId) return true;
+  return false;
 }

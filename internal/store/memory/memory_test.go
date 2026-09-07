@@ -87,3 +87,39 @@ func TestUpsertNodePreservesUsedCapacity(t *testing.T) {
 	}
 }
 
+func TestSnapshotSaveAndLoad(t *testing.T) {
+	ctx := context.Background()
+	snapFile := t.TempDir() + "/snap.json"
+
+	s1 := New()
+	s1.SetSnapshotPath(snapFile)
+	uid := uuid.New()
+	u := &models.User{ID: uid, Username: "bob", Email: "bob@example.com"}
+	if err := s1.CreateUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	pid := uuid.New()
+	p := &models.Project{ID: pid, Name: "TestProj", Slug: "test-proj", OwnerID: uid}
+	if err := s1.CreateProject(ctx, p, "owner"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load into a new store
+	s2 := New()
+	if err := s2.LoadSnapshot(snapFile); err != nil {
+		t.Fatalf("load snapshot failed: %v", err)
+	}
+
+	uGot, err := s2.GetUserByID(ctx, uid)
+	if err != nil || uGot.Username != "bob" {
+		t.Fatalf("user not restored: %+v, err=%v", uGot, err)
+	}
+
+	pGot, err := s2.GetProject(ctx, pid)
+	if err != nil || pGot.Slug != "test-proj" {
+		t.Fatalf("project not restored: %+v, err=%v", pGot, err)
+	}
+}
+
+

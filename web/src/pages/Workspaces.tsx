@@ -155,18 +155,22 @@ export function WorkspacesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pager.slice.map((w) => (
-              <WorkspaceRow
-                key={w.id}
-                ws={w}
-                busyId={busyId}
-                canApprove={canApprove}
-                onBusy={setBusyId}
-                onRefresh={afterMutation}
-                onToast={(msg) => toast.show(msg, "info")}
-                onError={(msg) => showError(msg)}
-              />
-            ))}
+            {pager.slice.map((w) => {
+              const wsProject = projects.find((p) => p.id === w.project_id);
+              const wsCanApprove = canApproveRole(wsProject?.my_role, me?.platform_role) || canApprove;
+              return (
+                <WorkspaceRow
+                  key={w.id}
+                  ws={w}
+                  busyId={busyId}
+                  canApprove={wsCanApprove}
+                  onBusy={setBusyId}
+                  onRefresh={afterMutation}
+                  onToast={(msg) => toast.show(msg, "info")}
+                  onError={(msg) => showError(msg)}
+                />
+              );
+            })}
           </TableBody>
         </Table>
       )}

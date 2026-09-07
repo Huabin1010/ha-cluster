@@ -45,6 +45,7 @@ type IngressRoute = {
   nginx_preview?: string;
   dns_hint?: string;
   status: string;
+  reject_reason?: string;
 };
 
 type IngressMeta = {
@@ -152,6 +153,33 @@ export function MachinePage() {
       await loadIngress();
     } catch (e) {
       setFormErr(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveRoute(rid: string) {
+    setBusy(true);
+    try {
+      await api(`/ingress/${rid}/approve`, { method: "POST" });
+      toast.show("已批准域名", "success");
+      await loadIngress();
+    } catch (e) {
+      toast.show(friendlyError(e), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rejectRoute(rid: string) {
+    const reason = window.prompt("请输入驳回原因（可选）：") ?? "";
+    setBusy(true);
+    try {
+      await api(`/ingress/${rid}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
+      toast.show("已驳回域名申请", "success");
+      await loadIngress();
+    } catch (e) {
+      toast.show(friendlyError(e), "error");
     } finally {
       setBusy(false);
     }
@@ -325,14 +353,32 @@ export function MachinePage() {
                         <span className="ml-2 text-sm text-muted-foreground">
                           → :{rt.port} · {rt.preset}
                         </span>
-                        <Badge variant="outline" className="ml-2">
-                          {rt.status}
+                        <Badge
+                          variant={rt.status === "active" ? "ok" : rt.status === "rejected" ? "danger" : "warn"}
+                          className="ml-2"
+                        >
+                          {rt.status === "active" ? "已生效" : rt.status === "pending_approval" ? "待审批" : rt.status === "rejected" ? "已驳回" : rt.status}
                         </Badge>
                       </div>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => void removeRoute(rt.id)}>
-                        移除
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {rt.status === "pending_approval" && (
+                          <>
+                            <Button type="button" variant="outline" size="sm" onClick={() => void approveRoute(rt.id)}>
+                              批准
+                            </Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => void rejectRoute(rt.id)}>
+                              驳回
+                            </Button>
+                          </>
+                        )}
+                        <Button type="button" variant="ghost" size="sm" onClick={() => void removeRoute(rt.id)}>
+                          移除
+                        </Button>
+                      </div>
                     </div>
+                    {rt.reject_reason && (
+                      <p className="m-0 text-sm text-destructive">驳回原因：{rt.reject_reason}</p>
+                    )}
                     {rt.dns_hint && <p className="m-0 text-sm text-muted-foreground">{rt.dns_hint}</p>}
                     {rt.nginx_preview && (
                       <pre className="m-0 max-h-48 overflow-auto rounded-md bg-muted p-2 text-xs">{rt.nginx_preview}</pre>

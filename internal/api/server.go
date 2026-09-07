@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -19,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/auth"
+	"ha-cluster/internal/bastion"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/service"
 	"ha-cluster/internal/store"
@@ -141,6 +141,8 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/workspaces/{id}/ingress", s.listIngress)
 		r.Post("/workspaces/{id}/ingress", s.createIngress)
 		r.Delete("/ingress/{id}", s.deleteIngress)
+		r.Post("/ingress/{id}/approve", s.approveIngress)
+		r.Post("/ingress/{id}/reject", s.rejectIngress)
 		r.Get("/ingress/meta", s.ingressMeta)
 
 		r.Get("/nodes", s.listNodes)
@@ -149,6 +151,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/audit-logs", s.audit)
 		r.Post("/allocations/{id}/release", s.releaseAlloc)
 		r.Get("/users", s.listUsers)
+		r.Post("/users/batch", s.batchCreateUsers)
 	})
 }
 
@@ -328,12 +331,8 @@ func (s *Server) addKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	k := &models.SSHKey{
-		ID: uuid.New(), UserID: userFrom(r).ID, Name: body.Name,
-		PublicKey: body.PublicKey, Fingerprint: service.SSHFingerprint(body.PublicKey),
-		CreatedAt: time.Now(),
-	}
-	if err := s.App.Store.AddSSHKey(r.Context(), k); err != nil {
+	k, err := s.App.AddSSHKey(r.Context(), userFrom(r).ID, body.Name, body.PublicKey)
+	if err != nil {
 		writeErr(w, http.StatusConflict, err)
 		return
 	}
@@ -346,7 +345,7 @@ func (s *Server) deleteKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	if err := s.App.Store.DeleteSSHKey(r.Context(), userFrom(r).ID, id); err != nil {
+	if err := s.App.DeleteSSHKey(r.Context(), userFrom(r).ID, id); err != nil {
 		writeErr(w, http.StatusNotFound, err)
 		return
 	}
@@ -685,12 +684,19 @@ func (s *Server) sshTarget(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	ws, n, err := s.App.SSHTarget(r.Context(), *userFrom(r), id)
+	actor := userFrom(r)
+	ws, n, err := s.App.SSHTarget(r.Context(), *actor, id)
 	if err != nil {
 		writeErr(w, http.StatusForbidden, err)
 		return
 	}
-	writeSSHTarget(w, ws, n)
+	role := models.RoleDeveloper
+	if actor != nil {
+		if m, err := s.App.Store.GetMembership(r.Context(), ws.ProjectID, actor.ID); err == nil {
+			role = m.Role
+		}
+	}
+	writeSSHTarget(w, ws, n, actor, role)
 }
 
 func (s *Server) sshConfig(w http.ResponseWriter, r *http.Request) {
@@ -730,15 +736,32 @@ func bastionSSHPort() int {
 	return 8099
 }
 
-func writeSSHTarget(w http.ResponseWriter, ws *models.Workspace, n *models.Node) {
+func writeSSHTarget(w http.ResponseWriter, ws *models.Workspace, n *models.Node, actor *models.User, role string) {
 	host := n.FabricIP
 	if host == "" {
 		host = n.LanIP
 	}
+	isAdmin := actor != nil && actor.PlatformRole == models.RolePlatformAdmin
+	actorID := uuid.Nil
+	if actor != nil {
+		actorID = actor.ID
+	}
+	tg, _ := bastion.Resolve(*ws, *n, role, actorID, isAdmin)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"workspace_id": ws.ID, "node": n.Name, "host": host, "port": ws.SSHPort,
-		"fabric_ip": n.FabricIP, "lan_ip": n.LanIP,
-		"fingerprint": ws.HostKeyFP, "breakglass": n.BreakglassSSH,
+		"workspace_id":    ws.ID,
+		"node":            n.Name,
+		"host":            host,
+		"port":            ws.SSHPort,
+		"fabric_ip":       n.FabricIP,
+		"lan_ip":          n.LanIP,
+		"fingerprint":     ws.HostKeyFP,
+		"breakglass":      n.BreakglassSSH,
+		"visibility":      ws.Visibility,
+		"owner_user_id":   ws.OwnerUserID,
+		"actor_user_id":   actorID,
+		"membership_role": role,
+		"is_admin":        isAdmin,
+		"via":             tg.Via,
 	})
 }
 

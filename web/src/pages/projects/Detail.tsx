@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useDelete, useOne, useUpdate } from "@refinedev/core";
-import { api, friendlyError } from "../../providers";
+import { useDelete, useGetIdentity, useOne, useUpdate } from "@refinedev/core";
+import { api, friendlyError, type AuthUser } from "../../providers";
 import { copyText, formatBudget, formatBytes, formatCpuMilli, formatTime } from "./format";
 import { canManageProject, type Project, type ProjectUsage } from "./types";
 import { ProjectFormDialog } from "./FormDialog";
@@ -26,6 +26,7 @@ function parseBudgetInput(raw: string): number | null {
 export function ProjectDetailPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const { data: me } = useGetIdentity<AuthUser>();
   const { data, isLoading, isError, error, refetch } = useOne<Project>({
     resource: "projects",
     id,
@@ -200,7 +201,7 @@ export function ProjectDetailPage() {
           <Button type="button" variant="outline" data-testid="project-copy-id" onClick={onCopyId}>
             {copied ? "已复制 id" : "复制 id"}
           </Button>
-          {canManageProject(project.my_role) && (
+          {canManageProject(project.my_role, me?.platform_role, project.owner_id, me?.id) && (
             <>
               <Button
                 type="button"

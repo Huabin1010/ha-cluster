@@ -57,7 +57,11 @@ func (a *App) upstreamFor(ctx context.Context, r *models.IngressRoute) string {
 	if host == "" {
 		return ""
 	}
-	return net.JoinHostPort(host, strconv.Itoa(r.Port))
+	port := r.HostPort
+	if port <= 0 {
+		port = r.Port
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 func (a *App) rewriteIngress(ctx context.Context) {
@@ -71,6 +75,9 @@ func (a *App) rewriteIngress(ctx context.Context) {
 	}
 	files := map[string]string{}
 	for i := range routes {
+		if routes[i].Status != models.IngressActive {
+			continue
+		}
 		up := a.upstreamFor(ctx, &routes[i])
 		name := routes[i].ID.String() + ".conf"
 		files[name] = ingress.Render(ingress.RenderInput{Route: routes[i], Upstream: up})
@@ -102,14 +109,15 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 	if err != nil {
 		return nil, err
 	}
-	if _, err := a.RequireMembership(ctx, in.Actor, ws.ProjectID, models.RoleDeveloper); err != nil {
+	mem, err := a.RequireMembership(ctx, in.Actor, ws.ProjectID, models.RoleDeveloper)
+	if err != nil {
 		return nil, err
 	}
 	if ws.Status != models.WSRunning && ws.Status != models.WSDegraded {
 		return nil, store.ErrInvalidInput
 	}
 	domain := strings.ToLower(strings.TrimSpace(in.Domain))
-	if !ingress.ValidDomain(domain) {
+	if !ingress.ValidDomain(domain) || ingress.IsSubdomainReserved(domain) {
 		return nil, store.ErrInvalidInput
 	}
 	if in.Port < 1 || in.Port > 65535 {
@@ -137,20 +145,108 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 	if _, same := ports[in.Port]; !same && len(ports) >= 1 && !in.ConfirmSecondPort {
 		return nil, store.ErrSecondPort
 	}
+
+	status := models.IngressPendingApproval
+	var reviewedBy *uuid.UUID
+	var reviewedAt *time.Time
+	if mem.Role == models.RoleOwner || in.Actor.PlatformRole == models.RolePlatformAdmin {
+		status = models.IngressActive
+		reviewedBy = &in.Actor.ID
+		now := time.Now()
+		reviewedAt = &now
+	}
+
 	r := &models.IngressRoute{
 		ID: uuid.New(), WorkspaceID: ws.ID, ProjectID: ws.ProjectID,
 		Domain: domain, Path: ingress.NormalizePath(in.Path), Port: in.Port,
-		Preset: preset, ExtraNginx: extra, Status: models.IngressActive, CreatedAt: time.Now(),
+		Preset: preset, ExtraNginx: extra, Status: status,
+		ApplicantUserID: in.Actor.ID,
+		ReviewedBy:      reviewedBy,
+		ReviewedAt:      reviewedAt,
+		CreatedAt:       time.Now(),
 	}
 	if err := a.Store.CreateIngress(ctx, r); err != nil {
+		return nil, err
+	}
+	if status == models.IngressActive {
+		if hp, err := a.Runtime.ExposePort(ctx, ws.ID, r.ID, r.Port); err == nil && hp > 0 {
+			r.HostPort = hp
+			_ = a.Store.UpdateIngress(ctx, r)
+		}
+		a.rewriteIngress(ctx)
+	}
+	a.annotateRoute(ctx, r)
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: in.Actor.ID, Action: "ingress.create",
+		ResourceType: "ingress", ResourceID: r.ID.String(),
+		Meta: map[string]any{"domain": domain, "port": in.Port, "workspace": ws.ID.String(), "status": status},
+	})
+	return r, nil
+}
+
+func (a *App) ApproveIngress(ctx context.Context, actor models.User, id uuid.UUID) (*models.IngressRoute, error) {
+	r, err := a.Store.GetIngress(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.RequireMembership(ctx, actor, r.ProjectID, models.RoleAdmin); err != nil {
+		return nil, err
+	}
+	if r.Status != models.IngressPendingApproval && r.Status != models.IngressRejected {
+		return nil, store.ErrInvalidInput
+	}
+	if hp, err := a.Runtime.ExposePort(ctx, r.WorkspaceID, r.ID, r.Port); err == nil && hp > 0 {
+		r.HostPort = hp
+	}
+	r.Status = models.IngressActive
+	r.ReviewedBy = &actor.ID
+	now := time.Now()
+	r.ReviewedAt = &now
+	r.RejectReason = ""
+	if err := a.Store.UpdateIngress(ctx, r); err != nil {
 		return nil, err
 	}
 	a.rewriteIngress(ctx)
 	a.annotateRoute(ctx, r)
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
-		ActorUserID: in.Actor.ID, Action: "ingress.create",
+		ActorUserID: actor.ID, Action: "ingress.approve",
 		ResourceType: "ingress", ResourceID: r.ID.String(),
-		Meta: map[string]any{"domain": domain, "port": in.Port, "workspace": ws.ID.String()},
+		Meta: map[string]any{"domain": r.Domain},
+	})
+	return r, nil
+}
+
+func (a *App) RejectIngress(ctx context.Context, actor models.User, id uuid.UUID, reason string) (*models.IngressRoute, error) {
+	r, err := a.Store.GetIngress(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.RequireMembership(ctx, actor, r.ProjectID, models.RoleAdmin); err != nil {
+		return nil, err
+	}
+	if r.Status == models.IngressRejected {
+		return r, nil
+	}
+	wasActive := r.Status == models.IngressActive
+	if wasActive {
+		_ = a.Runtime.UnexposePort(ctx, r.WorkspaceID, r.ID)
+	}
+	r.Status = models.IngressRejected
+	r.ReviewedBy = &actor.ID
+	now := time.Now()
+	r.ReviewedAt = &now
+	r.RejectReason = strings.TrimSpace(reason)
+	if err := a.Store.UpdateIngress(ctx, r); err != nil {
+		return nil, err
+	}
+	if wasActive {
+		a.rewriteIngress(ctx)
+	}
+	a.annotateRoute(ctx, r)
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "ingress.reject",
+		ResourceType: "ingress", ResourceID: r.ID.String(),
+		Meta: map[string]any{"domain": r.Domain, "reason": r.RejectReason},
 	})
 	return r, nil
 }
@@ -162,6 +258,9 @@ func (a *App) DeleteIngress(ctx context.Context, actor models.User, id uuid.UUID
 	}
 	if _, err := a.RequireMembership(ctx, actor, r.ProjectID, models.RoleDeveloper); err != nil {
 		return err
+	}
+	if r.Status == models.IngressActive {
+		_ = a.Runtime.UnexposePort(ctx, r.WorkspaceID, r.ID)
 	}
 	if err := a.Store.DeleteIngress(ctx, id); err != nil {
 		return err
@@ -181,6 +280,9 @@ func (a *App) dropWorkspaceIngress(ctx context.Context, workspaceID uuid.UUID) {
 		return
 	}
 	for _, r := range items {
+		if r.Status == models.IngressActive {
+			_ = a.Runtime.UnexposePort(ctx, r.WorkspaceID, r.ID)
+		}
 		_ = a.Store.DeleteIngress(ctx, r.ID)
 	}
 	if len(items) > 0 {

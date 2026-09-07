@@ -1,0 +1,21 @@
+{
+  "name": "ha-cluster-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -p \"[{name}]\" -c \"blue.bold,green.bold\" -n \"api,web\" \"bun run dev:api\" \"bun run dev:web\"",
+    "dev:api": "./scripts/dev.sh",
+    "dev:web": "bun --filter ha-web dev",
+    "build:web": "bun --filter ha-web build",
+    "test:web": "bun --filter ha-web test",
+    "test:go": "make test-go",
+    "test": "concurrently -k \"bun run test:go\" \"bun run test:web\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

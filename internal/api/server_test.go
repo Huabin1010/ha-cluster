@@ -292,6 +292,38 @@ func TestInternalSSHTarget(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
+	var targetResp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &targetResp); err != nil {
+		t.Fatalf("unmarshal target response: %v", err)
+	}
+	for _, field := range []string{"visibility", "owner_user_id", "actor_user_id", "membership_role", "is_admin"} {
+		if _, ok := targetResp[field]; !ok {
+			t.Fatalf("missing expected field %q in ssh-target response", field)
+		}
+	}
+
+	// Create another developer in the same project and a private workspace
+	_ = registerLogin(t, h, "dev2", "dev2@x.com")
+	_ = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", tok, map[string]string{
+		"username": "dev2", "role": "developer",
+	})
+	rrPriv := doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", tok, map[string]string{
+		"name": "priv-ws", "plan": "nano", "arch": "amd64", "visibility": "private",
+	})
+	if rrPriv.Code != http.StatusCreated {
+		t.Fatalf("create priv ws failed: %d %s", rrPriv.Code, rrPriv.Body.String())
+	}
+	var privWs models.Workspace
+	_ = json.Unmarshal(rrPriv.Body.Bytes(), &privWs)
+
+	// dev2 trying to access dev1's private workspace via internal ssh-target must get 403
+	reqPrivDenied := httptest.NewRequest(http.MethodGet, "/internal/ssh-target?user=dev2&id="+privWs.ID.String(), nil)
+	reqPrivDenied.Header.Set("X-HA-Internal", "test-internal")
+	recPrivDenied := httptest.NewRecorder()
+	h.ServeHTTP(recPrivDenied, reqPrivDenied)
+	if recPrivDenied.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 forbidden for other dev on private ws, got %d %s", recPrivDenied.Code, recPrivDenied.Body.String())
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/internal/ssh-target?user=dev1&id="+ws.ID.String(), nil)
 	rec = httptest.NewRecorder()
@@ -533,3 +565,146 @@ func TestApiPrefixAndSPAFallback(t *testing.T) {
 		t.Fatalf("expected 404 JSON for unknown API, got %d %s", rec404.Code, rec404.Body.String())
 	}
 }
+
+func TestIngressApprovalAPI(t *testing.T) {
+	h := testServer(t)
+	ownerTok := registerLogin(t, h, "ingowner", "ingowner@x.com")
+	devTok := registerLogin(t, h, "ingdev", "ingdev@x.com")
+
+	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "ingproj", "slug": "ingproj"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", ownerTok, map[string]string{
+		"username": "ingdev", "role": "developer",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", ownerTok, map[string]string{
+		"name": "ingws", "plan": "nano", "arch": "amd64",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var ws models.Workspace
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+
+	// 1. 保留词申请被阻断
+	resBad := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/ingress", devTok, map[string]any{
+		"domain": "admin.domain.com", "port": 8080,
+	})
+	if resBad.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for reserved subdomain, got %d %s", resBad.Code, resBad.Body.String())
+	}
+
+	// 2. 普通开发者申请合法域名 -> pending_approval
+	resApp := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/ingress", devTok, map[string]any{
+		"domain": "myapp.domain.com", "port": 8080,
+	})
+	if resApp.Code != http.StatusCreated {
+		t.Fatalf("create ingress failed: %d %s", resApp.Code, resApp.Body.String())
+	}
+	var r1 models.IngressRoute
+	_ = json.Unmarshal(resApp.Body.Bytes(), &r1)
+	if r1.Status != models.IngressPendingApproval {
+		t.Fatalf("expected pending_approval, got %s", r1.Status)
+	}
+
+	// 3. 开发者尝试自批 -> 403 Forbidden
+	resSelfApprove := doJSON(t, h, http.MethodPost, "/ingress/"+r1.ID.String()+"/approve", devTok, nil)
+	if resSelfApprove.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for dev approve, got %d", resSelfApprove.Code)
+	}
+
+	// 4. Owner 审批通过 -> 200 OK, active
+	resOwnerApprove := doJSON(t, h, http.MethodPost, "/ingress/"+r1.ID.String()+"/approve", ownerTok, nil)
+	if resOwnerApprove.Code != http.StatusOK {
+		t.Fatalf("expected 200 for owner approve, got %d %s", resOwnerApprove.Code, resOwnerApprove.Body.String())
+	}
+	var r1Approved models.IngressRoute
+	_ = json.Unmarshal(resOwnerApprove.Body.Bytes(), &r1Approved)
+	if r1Approved.Status != models.IngressActive {
+		t.Fatalf("expected active, got %s", r1Approved.Status)
+	}
+	if r1Approved.HostPort <= 0 {
+		t.Fatalf("expected HostPort > 0 after approval, got %d", r1Approved.HostPort)
+	}
+
+	// 5. 开发者申请另一个域名 -> Owner 驳回
+	resApp2 := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/ingress", devTok, map[string]any{
+		"domain": "myapp2.domain.com", "port": 8080,
+	})
+	if resApp2.Code != http.StatusCreated {
+		t.Fatalf("create ingress failed: %d %s", resApp2.Code, resApp2.Body.String())
+	}
+	var r2 models.IngressRoute
+	_ = json.Unmarshal(resApp2.Body.Bytes(), &r2)
+
+	resReject := doJSON(t, h, http.MethodPost, "/ingress/"+r2.ID.String()+"/reject", ownerTok, map[string]string{
+		"reason": "命名不规范",
+	})
+	if resReject.Code != http.StatusOK {
+		t.Fatalf("expected 200 for owner reject, got %d %s", resReject.Code, resReject.Body.String())
+	}
+	var r2Rejected models.IngressRoute
+	_ = json.Unmarshal(resReject.Body.Bytes(), &r2Rejected)
+	if r2Rejected.Status != models.IngressRejected || r2Rejected.RejectReason != "命名不规范" {
+		t.Fatalf("expected rejected with reason, got %+v", r2Rejected)
+	}
+}
+
+func TestBatchCreateUsersAPI(t *testing.T) {
+	h := testServer(t)
+	adminTok := registerLogin(t, h, "admin_batch", "admin_batch@x.com")
+
+	// 1. 普通用户尝试无权限全局批量创建 -> 403 Forbidden
+	normTok := registerLogin(t, h, "norm_batch", "norm_batch@x.com")
+	resForbidden := doJSON(t, h, http.MethodPost, "/users/batch", normTok, map[string]any{
+		"users": []map[string]string{
+			{"username": "b1", "email": "b1@x.com"},
+		},
+		"default_password": "password123",
+	})
+	if resForbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for normal user batch create without project, got %d", resForbidden.Code)
+	}
+
+	// 2. 项目 Owner 批量创建并加入当前项目 -> 200 OK
+	resProj := doJSON(t, h, http.MethodPost, "/projects", normTok, map[string]string{"name": "BatchProj", "slug": "batch-proj"})
+	if resProj.Code != http.StatusCreated {
+		t.Fatal(resProj.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(resProj.Body.Bytes(), &p)
+
+	resBatch := doJSON(t, h, http.MethodPost, "/users/batch", normTok, map[string]any{
+		"project_id":       p.ID.String(),
+		"project_role":     "developer",
+		"default_password": "password123",
+		"users": []map[string]string{
+			{"username": "member1", "email": "m1@x.com"},
+			{"username": "member2", "email": "m2@x.com", "password": "custompass2"},
+			{"username": "invalid", "email": "not-an-email"},
+		},
+	})
+	if resBatch.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d %s", resBatch.Code, resBatch.Body.String())
+	}
+	var batchResult struct {
+		Total        int `json:"total"`
+		CreatedCount int `json:"created_count"`
+		FailedCount  int `json:"failed_count"`
+	}
+	_ = json.Unmarshal(resBatch.Body.Bytes(), &batchResult)
+	if batchResult.Total != 3 || batchResult.CreatedCount != 2 || batchResult.FailedCount != 1 {
+		t.Fatalf("unexpected batch result: %+v", batchResult)
+	}
+
+	_ = adminTok
+}
+

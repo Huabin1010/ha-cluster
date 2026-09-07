@@ -303,24 +303,31 @@ type RefreshSession struct {
 }
 
 const (
-	IngressNocache     = "nocache"
-	IngressTransparent = "transparent"
-	IngressCache       = "cache"
-	IngressActive      = "active"
-	IngressPendingDNS  = "pending_dns"
+	IngressNocache         = "nocache"
+	IngressTransparent     = "transparent"
+	IngressCache           = "cache"
+	IngressActive          = "active"
+	IngressPendingDNS      = "pending_dns"
+	IngressPendingApproval = "pending_approval"
+	IngressRejected        = "rejected"
 )
 
 type IngressRoute struct {
-	ID           uuid.UUID `json:"id"`
-	WorkspaceID  uuid.UUID `json:"workspace_id"`
-	ProjectID    uuid.UUID `json:"project_id"`
-	Domain       string    `json:"domain"`
-	Path         string    `json:"path"`
-	Port         int       `json:"port"`
-	Preset       string    `json:"preset"`
-	ExtraNginx   string    `json:"extra_nginx,omitempty"`
-	Status       string    `json:"status"`
-	NginxPreview string    `json:"nginx_preview,omitempty"`
-	DNSHint      string    `json:"dns_hint,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID              uuid.UUID  `json:"id"`
+	WorkspaceID     uuid.UUID  `json:"workspace_id"`
+	ProjectID       uuid.UUID  `json:"project_id"`
+	Domain          string     `json:"domain"`
+	Path            string     `json:"path"`
+	Port            int        `json:"port"`
+	HostPort        int        `json:"host_port,omitempty"`
+	Preset          string     `json:"preset"`
+	ExtraNginx      string     `json:"extra_nginx,omitempty"`
+	Status          string     `json:"status"`
+	ApplicantUserID uuid.UUID  `json:"applicant_user_id,omitempty"`
+	ReviewedBy      *uuid.UUID `json:"reviewed_by,omitempty"`
+	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
+	RejectReason    string     `json:"reject_reason,omitempty"`
+	NginxPreview    string     `json:"nginx_preview,omitempty"`
+	DNSHint         string     `json:"dns_hint,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }

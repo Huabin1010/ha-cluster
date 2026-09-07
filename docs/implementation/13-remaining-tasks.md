@@ -401,14 +401,19 @@ incus list | grep ha-
 
 超售：同一节点可售内存不够再下一份 `large` 时必须 **HTTP 409** `INSUFFICIENT_CAPACITY`。
 
+> **硬缺口修复注记（见 [21-core-pipeline-spec.md](21-core-pipeline-spec.md)）：**
+> - **真实磁盘探测**：`ha-agent` 必须调用 `unix.Statfs` 动态获取挂载点实际剩余磁盘，禁止默认写死 40 GiB。
+> - **跨机远程编排**：当控制面 VPS 与 Worker 不在同机时，`ha-agent` 必须在 EasyTier 虚 IP 监听 `:9091`（`X-HA-Node-Token` 鉴权），供控制面远程下发 Launch / Stop / Destroy / Sync-Keys。
+
 ## 验收表
 
 | # | 标准 |
 |---|------|
 | 1 | `GET /api/nodes` 有该节点且 Ready |
-| 2 | 路径 A：`incus list` 有 RUNNING 的 `ha-*` |
-| 3 | 409 超卖可复现 |
-| 4 | 6443 不对公网 |
+| 2 | 节点可售磁盘来自 `Statfs` 真实探测，非写死 40G |
+| 3 | 路径 A：`incus list` 有 RUNNING 的 `ha-*`（同机直接 exec 或跨机通过 agent:9091 编排） |
+| 4 | 409 超卖可复现 |
+| 5 | 6443 不对公网 |
 
 ## 交付
 
@@ -495,9 +500,10 @@ HA_TOKEN=<T1 上为跳板建的服务账号 JWT 或 PAT>
 | # | 标准 |
 |---|------|
 | 1 | SSH 进去不是 VPS 主机名 |
-| 2 | ForceCommand 下不能在 VPS 执行 `id` 看到 root 宿主机随意 shell（应被代理或拒绝） |
+| 2 | ForceCommand 或原生 SSH Server 下不能在 VPS 执行 `id` 看到 root 宿主机随意 shell（应被代理或拒绝） |
 | 3 | 无权限/错误 id 失败 |
 | 4 | overlay 挂了不得掉进 VPS shell |
+| 5 | 符合 [21-core-pipeline-spec.md](21-core-pipeline-spec.md) §4：支持空闲 30 分钟超时与会话审计写入 |
 
 ## 禁止
 

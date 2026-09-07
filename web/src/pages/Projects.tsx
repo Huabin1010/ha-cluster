@@ -1,6 +1,6 @@
 import { MouseEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useCreate, useDelete, useList, useUpdate } from "@refinedev/core";
+import { useCreate, useDelete, useGetIdentity, useList, useUpdate } from "@refinedev/core";
 import { Plus } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { Button } from "../components/ui/button";
@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "../components/ui/alert";
 import { PageFrame } from "../components/ui/page-frame";
 import { Paginator } from "../components/ui/pagination";
 import { Empty, PageBody, PageHeader } from "../ui";
-import { friendlyError } from "../providers";
+import { friendlyError, type AuthUser } from "../providers";
 import { copyText, formatTime } from "./projects/format";
 import { canManageProject, type Project } from "./projects/types";
 import { ProjectFormDialog } from "./projects/FormDialog";
@@ -26,6 +26,7 @@ function slugConflictMessage(e: unknown): string | null {
 
 export function ProjectsPage() {
   const navigate = useNavigate();
+  const { data: me } = useGetIdentity<AuthUser>();
   const { data, isLoading, refetch } = useList<Project>({ resource: "projects", pagination: { mode: "off" } });
   const { mutate: create, isLoading: creating } = useCreate();
   const { mutate: patch, isLoading: saving } = useUpdate();
@@ -158,12 +159,12 @@ export function ProjectsPage() {
                   <TableHead>slug</TableHead>
                   <TableHead>id</TableHead>
                   <TableHead>创建时间</TableHead>
-                  <TableHead />
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pager.slice.map((p) => {
-                  const manage = canManageProject(p.my_role);
+                  const manage = canManageProject(p.my_role, me?.platform_role, p.owner_id, me?.id);
                   return (
                     <TableRow
                       key={p.id}
@@ -200,31 +201,42 @@ export function ProjectsPage() {
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       >
-                        {manage && (
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              data-testid="project-edit"
-                              onClick={() => {
-                                setFormErr("");
-                                setEditTarget(p);
-                              }}
-                            >
-                              编辑
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              data-testid="project-delete"
-                              onClick={() => setRemoveTarget(p)}
-                            >
-                              删除
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            data-testid="project-detail"
+                            onClick={() => openProject(p)}
+                          >
+                            详情
+                          </Button>
+                          {manage && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                data-testid="project-edit"
+                                onClick={() => {
+                                  setFormErr("");
+                                  setEditTarget(p);
+                                }}
+                              >
+                                编辑
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                data-testid="project-delete"
+                                onClick={() => setRemoveTarget(p)}
+                              >
+                                删除
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

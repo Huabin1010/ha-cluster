@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ha-cluster/internal/api"
+	"ha-cluster/internal/auth"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/service"
 	"ha-cluster/internal/store"
@@ -20,6 +21,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var AdminUserID = uuid.MustParse("00000000-0000-0000-0000-000000000009")
+
 func main() {
 	ctx := context.Background()
 	st := openStore(ctx)
@@ -29,8 +32,12 @@ func main() {
 		secretStr = "dev-insecure-change-me-please-32b"
 	}
 	secret := []byte(secretStr)
-	rt := workspace.PickRuntime()
-	log.Printf("runtime=%T store=%T", rt, st)
+	localRt := workspace.PickRuntime()
+	var rt workspace.Runtime = localRt
+	if os.Getenv("HA_RUNTIME") != "memory" {
+		rt = workspace.NewRemoteAgentRuntime(st, os.Getenv("HA_NODE_TOKEN"), localRt)
+	}
+	log.Printf("runtime=%T (fallback=%T) store=%T", rt, localRt, st)
 	app := service.New(st, rt, secret)
 	seedDemo(app)
 
@@ -48,6 +55,9 @@ func main() {
 	c2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(c2)
+	if memStore, ok := st.(*memory.Store); ok {
+		_ = memStore.SaveSnapshot()
+	}
 }
 
 func openStore(ctx context.Context) store.Store {
@@ -59,8 +69,17 @@ func openStore(ctx context.Context) store.Store {
 		log.Printf("using postgres")
 		return st
 	}
-	log.Printf("using memory store (set DATABASE_URL for postgres)")
-	return memory.New()
+	snapPath := os.Getenv("HA_DEV_STORE")
+	if snapPath == "" {
+		snapPath = "tmp/dev-store.json"
+	}
+	memStore := memory.New()
+	if err := memStore.LoadSnapshot(snapPath); err == nil {
+		log.Printf("loaded dev store snapshot from %s", snapPath)
+	}
+	memStore.SetSnapshotPath(snapPath)
+	log.Printf("using memory store with snapshot %s (set DATABASE_URL for postgres)", snapPath)
+	return memStore
 }
 
 func env(k, d string) string {
@@ -88,10 +107,30 @@ func seedDemo(app *service.App) {
 		FabricIP: "10.88.0.10", AllocatableCPU: 2000, AllocatableMem: 1800 * 1024 * 1024, AllocatableDisk: 40 * Gi,
 		Ready: true, LastHeartbeat: time.Now(),
 	})
-	u, err := app.Register(ctx, "admin", "admin@mnnumath.vip", env("HA_ADMIN_PASSWORD", "adminadmin"))
-	if err == nil {
+
+	// 确保 admin 用户具有固定确定性的 UUID，避免开发热重载或服务重启时随机生成新 UUID，
+	// 导致前端持有旧有效 JWT 时被判定用户不存在（401）而强制退出登录。
+	u, err := app.Store.GetUserByUsername(ctx, "admin")
+	if err != nil {
+		hash, hashErr := auth.HashPassword(env("HA_ADMIN_PASSWORD", "adminadmin"))
+		if hashErr == nil {
+			u = &models.User{
+				ID:           AdminUserID,
+				Username:     "admin",
+				Email:        "admin@mnnumath.vip",
+				PasswordHash: hash,
+				PlatformRole: models.RolePlatformAdmin,
+				Status:       models.UserActive,
+				TokenVersion: 1,
+				CreatedAt:    time.Now(),
+				UpdatedAt:    time.Now(),
+			}
+			if err := app.Store.CreateUser(ctx, u); err == nil {
+				log.Printf("seeded admin with fixed uuid: %s", AdminUserID)
+			}
+		}
+	} else if u.PlatformRole != models.RolePlatformAdmin {
 		u.PlatformRole = models.RolePlatformAdmin
 		_ = app.Store.UpdateUser(ctx, u)
-		log.Printf("seeded admin")
 	}
 }

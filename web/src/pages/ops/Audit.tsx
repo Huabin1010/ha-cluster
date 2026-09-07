@@ -39,7 +39,7 @@ function Forbidden() {
 function AuditList() {
   const { data: me } = useGetIdentity<Identity>();
   const canReconcile = me?.platform_role === "platform_admin";
-  const { data, isLoading, error } = useList<AuditLog>({
+  const { data, isLoading, error, refetch } = useList<AuditLog>({
     resource: "audit-logs",
     pagination: { mode: "off" },
     errorNotification: false,
@@ -61,33 +61,38 @@ function AuditList() {
             title="审计日志"
             description="最近 200 条平台操作记录（登录、创建 Workspace 等）。"
             actions={
-              canReconcile ? (
-                <Button
-                  data-testid="audit-reconcile"
-                  disabled={reconciling}
-                  type="button"
-                  onClick={() =>
-                    reconcile({
-                      url: "/admin/reconcile",
-                      method: "post",
-                      values: {},
-                      successNotification: (res) => {
-                        const out = res?.data;
-                        return {
-                          message: `对账完成：released=${out?.released ?? 0} stale_nodes=${out?.stale_nodes ?? 0}`,
-                          type: "success",
-                        };
-                      },
-                      errorNotification: (e) => ({
-                        message: friendlyError(e),
-                        type: "error",
-                      }),
-                    })
-                  }
-                >
-                  {reconciling ? "对账中…" : "对账"}
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => void refetch()} data-testid="audit-refresh">
+                  刷新
                 </Button>
-              ) : null
+                {canReconcile && (
+                  <Button
+                    data-testid="audit-reconcile"
+                    disabled={reconciling}
+                    type="button"
+                    onClick={() =>
+                      reconcile({
+                        url: "/admin/reconcile",
+                        method: "post",
+                        values: {},
+                        successNotification: (res) => {
+                          const out = res?.data;
+                          return {
+                            message: `对账完成：released=${out?.released ?? 0} stale_nodes=${out?.stale_nodes ?? 0}`,
+                            type: "success",
+                          };
+                        },
+                        errorNotification: (e) => ({
+                          message: friendlyError(e),
+                          type: "error",
+                        }),
+                      })
+                    }
+                  >
+                    {reconciling ? "对账中…" : "对账"}
+                  </Button>
+                )}
+              </div>
             }
           />
           {error && !forbidden && (

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,15 +20,17 @@ func main() {
 		fabric = flag.String("fabric-ip", env("HA_FABRIC_IP", ""), "EasyTier IPv4 (or LAN for debug)")
 		power  = flag.String("power", env("HA_POWER", "mains"), "mains|battery")
 		class  = flag.String("class", env("HA_CLASS", "desktop"), "phone|sbc|desktop|server|cloud")
-		cpu    = flag.Int64("cpu-milli", 0, "allocatable millicores (0=auto)")
-		mem    = flag.Int64("mem-bytes", 0, "allocatable memory (0=auto)")
-		disk   = flag.Int64("disk-bytes", 0, "allocatable disk (0=default 40Gi)")
-		every  = flag.Duration("interval", 15*time.Second, "heartbeat interval")
-		once   = flag.Bool("once", false, "send one heartbeat and exit")
-		token  = flag.String("token", env("HA_NODE_TOKEN", env("HA_INTERNAL_TOKEN", "")), "node authentication token")
+		cpu     = flag.Int64("cpu-milli", 0, "allocatable millicores (0=auto)")
+		mem     = flag.Int64("mem-bytes", 0, "allocatable memory (0=auto)")
+		disk    = flag.Int64("disk-bytes", 0, "allocatable disk (0=auto probe with reserve)")
+		storage = flag.String("storage-path", env("HA_STORAGE_PATH", ""), "storage path for disk probe (default /var/lib/incus or /)")
+		every   = flag.Duration("interval", 15*time.Second, "heartbeat interval")
+		once    = flag.Bool("once", false, "send one heartbeat and exit")
+		token   = flag.String("token", env("HA_NODE_TOKEN", env("HA_INTERNAL_TOKEN", "")), "node authentication token")
+		listen  = flag.String("listen", env("HA_AGENT_LISTEN", ":9091"), "orchestration listen address (empty or 'none' to disable)")
 	)
 	flag.Parse()
-	st := agent.DetectStatus(*name, *fabric, *cpu, *mem, *disk)
+	st := agent.DetectStatus(*name, *fabric, *cpu, *mem, *disk, *storage)
 	st.Power = *power
 	st.Class = *class
 	if st.FabricIP == "" {
@@ -58,6 +62,17 @@ func main() {
 		return
 	}
 
+	var srv *agent.Server
+	if *listen != "" && *listen != "none" {
+		srv = agent.NewServer(nil, *token, *listen)
+		go func() {
+			log.Printf("ha-agent orchestrator listening on %s", *listen)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("orchestrator server error: %v", err)
+			}
+		}()
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
@@ -68,9 +83,14 @@ func main() {
 		select {
 		case <-sigCh:
 			log.Printf("ha-agent shutting down gracefully on signal")
+			if srv != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = srv.Shutdown(ctx)
+				cancel()
+			}
 			return
 		case <-t.C:
-			st = agent.DetectStatus(*name, st.FabricIP, *cpu, *mem, *disk)
+			st = agent.DetectStatus(*name, st.FabricIP, *cpu, *mem, *disk, *storage)
 			st.Power = *power
 			st.Class = *class
 			if err := agent.PostHeartbeat(nil, *api, st, *token); err != nil {
