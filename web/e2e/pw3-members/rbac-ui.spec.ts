@@ -1,6 +1,7 @@
 import { test, expect } from "../fixtures/auth";
 import { api } from "../helpers/api";
 import { seedProject } from "../fixtures/seed";
+import { openCreateDialog } from "../helpers/dialog";
 
 test.describe("PW-3 权限控制与界面交互", () => {
   test("PW3-10 @pw3 @smoke viewer 不能加成员", async ({ pageAs }) => {
@@ -11,6 +12,7 @@ test.describe("PW-3 权限控制与界面交互", () => {
     const { page: viewerPage } = await pageAs("viewer");
     await viewerPage.goto(`/projects/${p.id}/members`);
 
+    await openCreateDialog(viewerPage, "member-add-open");
     await viewerPage.getByTestId("member-username").fill("another_user");
     await viewerPage.getByTestId("member-add").click();
 

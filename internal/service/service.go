@@ -26,10 +26,10 @@ func validProjectSlug(slug string) bool {
 }
 
 type App struct {
-	Store   store.Store
-	Ledger  *ledger.Service
-	Runtime workspace.Runtime
-	JWT     []byte
+	Store     store.Store
+	Ledger    *ledger.Service
+	Runtime   workspace.Runtime
+	JWT       []byte
 	AccessTTL time.Duration
 }
 
@@ -125,15 +125,19 @@ type CreateWorkspaceInput struct {
 	Plan       string
 	Arch       string
 	Visibility string
+	CPUMilli   int64
+	MemBytes   int64
+	DiskBytes  int64
 	Actor      models.User
 }
 
 func (a *App) CreateWorkspace(ctx context.Context, in CreateWorkspaceInput) (*models.Workspace, error) {
-	if _, err := a.RequireMembership(ctx, in.Actor, in.ProjectID, models.RoleDeveloper); err != nil {
+	mem, err := a.RequireMembership(ctx, in.Actor, in.ProjectID, models.RoleDeveloper)
+	if err != nil {
 		return nil, err
 	}
-	plan, ok := models.Plans()[in.Plan]
-	if !ok {
+	spec, err := models.ResolveSpec(in.Plan, in.CPUMilli, in.MemBytes, in.DiskBytes)
+	if err != nil {
 		return nil, store.ErrInvalidInput
 	}
 	arch := in.Arch
@@ -146,41 +150,81 @@ func (a *App) CreateWorkspace(ctx context.Context, in CreateWorkspaceInput) (*mo
 	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
-		name = "ws-" + in.Plan
+		name = "ws-" + spec.Name
 	}
-	if err := a.checkProjectBudget(ctx, in.ProjectID, plan); err != nil {
+	in.Arch = arch
+	in.Visibility = vis
+	in.Name = name
+	in.Plan = spec.Name
+	in.CPUMilli = spec.CPUMilli
+	in.MemBytes = spec.MemBytes
+	in.DiskBytes = spec.DiskBytes
+	if !models.CanApproveWorkspace(mem.Role) {
+		return a.requestWorkspace(ctx, in, spec)
+	}
+	return a.provisionNewWorkspace(ctx, in, spec)
+}
+
+func (a *App) requestWorkspace(ctx context.Context, in CreateWorkspaceInput, spec models.Plan) (*models.Workspace, error) {
+	if err := a.checkProjectBudget(ctx, in.ProjectID, spec); err != nil {
 		return nil, err
 	}
+	now := time.Now()
+	w := &models.Workspace{
+		ID: uuid.New(), ProjectID: in.ProjectID, Name: in.Name, Plan: spec.Name,
+		Arch: in.Arch, Visibility: in.Visibility, OwnerUserID: in.Actor.ID,
+		Status: models.WSRequested, CreatedAt: now, UpdatedAt: now,
+	}
+	*w = w.ApplySpec(spec)
+	if err := a.Store.CreateWorkspace(ctx, w); err != nil {
+		return nil, err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: in.Actor.ID, Action: "workspace.request",
+		ResourceType: "workspace", ResourceID: w.ID.String(),
+		Meta: map[string]any{"plan": spec.Name, "arch": in.Arch, "cpu_milli": spec.CPUMilli, "mem_bytes": spec.MemBytes, "disk_bytes": spec.DiskBytes},
+	})
+	return w, nil
+}
 
-	res, err := a.Ledger.Reserve(ctx, ledger.ReserveRequest{ProjectID: in.ProjectID, Plan: plan, Arch: arch})
+func (a *App) provisionNewWorkspace(ctx context.Context, in CreateWorkspaceInput, spec models.Plan) (*models.Workspace, error) {
+	if err := a.checkProjectBudget(ctx, in.ProjectID, spec); err != nil {
+		return nil, err
+	}
+	res, err := a.Ledger.Reserve(ctx, ledger.ReserveRequest{ProjectID: in.ProjectID, Plan: spec, Arch: in.Arch})
 	if err != nil {
 		return nil, err
 	}
 	w := &models.Workspace{
-		ID: uuid.New(), ProjectID: in.ProjectID, Name: name, Plan: in.Plan,
-		Arch: res.Node.Arch, Visibility: vis, OwnerUserID: in.Actor.ID,
+		ID: uuid.New(), ProjectID: in.ProjectID, Name: in.Name, Plan: spec.Name,
+		Arch: res.Node.Arch, Visibility: in.Visibility, OwnerUserID: in.Actor.ID,
 		NodeID: res.Node.ID, AllocationID: res.Allocation.ID,
 		Status: models.WSProvisioning, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
+	*w = w.ApplySpec(spec)
 	if err := a.Store.CreateWorkspace(ctx, w); err != nil {
 		_ = a.Ledger.Release(ctx, res.Allocation.ID)
 		return nil, err
 	}
-	keys, _ := a.Store.ListSSHKeys(ctx, in.Actor.ID)
+	return a.finishProvision(ctx, w, res.Node, res.Allocation.ID, in.Actor.ID, "workspace.create")
+}
+
+func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node models.Node, allocID, actorID uuid.UUID, action string) (*models.Workspace, error) {
+	keys, _ := a.Store.ListSSHKeys(ctx, w.OwnerUserID)
 	pubs := make([]string, 0, len(keys))
 	for _, k := range keys {
 		pubs = append(pubs, k.PublicKey)
 	}
-	inst, err := a.Runtime.Launch(ctx, *w, res.Node, pubs)
+	inst, err := a.Runtime.Launch(ctx, *w, node, pubs)
 	if err != nil {
 		w.Status = models.WSFailed
 		_ = a.Store.UpdateWorkspace(ctx, w)
-		_ = a.Ledger.Release(ctx, res.Allocation.ID)
+		_ = a.Ledger.Release(ctx, allocID)
 		return nil, fmt.Errorf("provision: %w", err)
 	}
-	if err := a.Store.ActivateAllocation(ctx, res.Allocation.ID); err != nil {
+	if err := a.Store.ActivateAllocation(ctx, allocID); err != nil {
 		_ = a.Runtime.Destroy(ctx, w.ID)
-		_ = a.Ledger.Release(ctx, res.Allocation.ID)
+		_ = a.Ledger.Release(ctx, allocID)
 		return nil, err
 	}
 	w.Status = models.WSRunning
@@ -191,11 +235,208 @@ func (a *App) CreateWorkspace(ctx context.Context, in CreateWorkspaceInput) (*mo
 		return nil, err
 	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
-		ActorUserID: in.Actor.ID, Action: "workspace.create",
+		ActorUserID: actorID, Action: action,
 		ResourceType: "workspace", ResourceID: w.ID.String(),
-		Meta: map[string]any{"plan": in.Plan, "node": res.Node.Name},
+		Meta: map[string]any{"plan": w.Plan, "node": node.Name},
 	})
 	return w, nil
+}
+
+func (a *App) ApproveWorkspace(ctx context.Context, actor models.User, id uuid.UUID) (*models.Workspace, error) {
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
+		return nil, err
+	}
+	if w.Status != models.WSRequested {
+		return nil, store.ErrInvalidInput
+	}
+	spec := w.Spec()
+	if spec.CPUMilli == 0 {
+		return nil, store.ErrInvalidInput
+	}
+	if err := a.checkProjectBudget(ctx, w.ProjectID, spec); err != nil {
+		return nil, err
+	}
+	res, err := a.Ledger.Reserve(ctx, ledger.ReserveRequest{ProjectID: w.ProjectID, Plan: spec, Arch: w.Arch})
+	if err != nil {
+		return nil, err
+	}
+	w.Arch = res.Node.Arch
+	w.NodeID = res.Node.ID
+	w.AllocationID = res.Allocation.ID
+	w.Status = models.WSProvisioning
+	w.UpdatedAt = time.Now()
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		_ = a.Ledger.Release(ctx, res.Allocation.ID)
+		return nil, err
+	}
+	return a.finishProvision(ctx, w, res.Node, res.Allocation.ID, actor.ID, "workspace.approve")
+}
+
+func (a *App) RejectWorkspace(ctx context.Context, actor models.User, id uuid.UUID, reason string) error {
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
+		return err
+	}
+	if w.Status != models.WSRequested {
+		return store.ErrInvalidInput
+	}
+	w.Status = models.WSRejected
+	w.UpdatedAt = time.Now()
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		return err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "workspace.reject",
+		ResourceType: "workspace", ResourceID: w.ID.String(),
+		Meta: map[string]any{"reason": strings.TrimSpace(reason)},
+	})
+	return nil
+}
+
+func (a *App) RequestResize(ctx context.Context, actor models.User, id uuid.UUID, cpu, mem, disk int64) (*models.Workspace, error) {
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
+		return nil, err
+	}
+	if w.Visibility == models.VisPrivate && w.OwnerUserID != actor.ID && actor.PlatformRole != models.RolePlatformAdmin {
+		m, _ := a.Store.GetMembership(ctx, w.ProjectID, actor.ID)
+		if m == nil || models.RoleRank(m.Role) < models.RoleRank(models.RoleAdmin) {
+			return nil, store.ErrForbidden
+		}
+	}
+	switch w.Status {
+	case models.WSRunning, models.WSStopped, models.WSDegraded:
+	default:
+		return nil, store.ErrInvalidInput
+	}
+	if w.HasPendingResize() {
+		return nil, store.ErrConflict
+	}
+	cur := w.Spec()
+	target, err := models.ResolveSpec("custom", cpu, mem, disk)
+	if err != nil {
+		return nil, store.ErrInvalidInput
+	}
+	if target.DiskBytes < cur.DiskBytes {
+		return nil, store.ErrDiskShrink
+	}
+	if target.CPUMilli < cur.CPUMilli || target.MemBytes < cur.MemBytes {
+		return nil, store.ErrNotExpansion
+	}
+	if target.CPUMilli == cur.CPUMilli && target.MemBytes == cur.MemBytes && target.DiskBytes == cur.DiskBytes {
+		return nil, store.ErrNotExpansion
+	}
+	delta := models.Plan{
+		CPUMilli:  target.CPUMilli - cur.CPUMilli,
+		MemBytes:  target.MemBytes - cur.MemBytes,
+		DiskBytes: target.DiskBytes - cur.DiskBytes,
+	}
+	if err := a.checkProjectBudget(ctx, w.ProjectID, delta); err != nil {
+		return nil, err
+	}
+	w.PendingCPUMilli = target.CPUMilli
+	w.PendingMemBytes = target.MemBytes
+	w.PendingDiskBytes = target.DiskBytes
+	w.ResizeStatus = models.ResizePending
+	w.UpdatedAt = time.Now()
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		return nil, err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "workspace.resize.request",
+		ResourceType: "workspace", ResourceID: w.ID.String(),
+		Meta: map[string]any{"cpu_milli": target.CPUMilli, "mem_bytes": target.MemBytes, "disk_bytes": target.DiskBytes},
+	})
+	return w, nil
+}
+
+func (a *App) ApproveResize(ctx context.Context, actor models.User, id uuid.UUID) (*models.Workspace, error) {
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
+		return nil, err
+	}
+	if !w.HasPendingResize() {
+		return nil, store.ErrInvalidInput
+	}
+	cur := w.Spec()
+	target := models.Plan{Name: w.Plan, CPUMilli: w.PendingCPUMilli, MemBytes: w.PendingMemBytes, DiskBytes: w.PendingDiskBytes}
+	if target.DiskBytes < cur.DiskBytes {
+		return nil, store.ErrDiskShrink
+	}
+	if target.CPUMilli < cur.CPUMilli || target.MemBytes < cur.MemBytes {
+		return nil, store.ErrNotExpansion
+	}
+	deltaCPU := target.CPUMilli - cur.CPUMilli
+	deltaMem := target.MemBytes - cur.MemBytes
+	deltaDisk := target.DiskBytes - cur.DiskBytes
+	if err := a.checkProjectBudget(ctx, w.ProjectID, models.Plan{CPUMilli: deltaCPU, MemBytes: deltaMem, DiskBytes: deltaDisk}); err != nil {
+		return nil, err
+	}
+	if w.AllocationID == uuid.Nil {
+		return nil, store.ErrInvalidInput
+	}
+	if err := a.Ledger.Expand(ctx, w.AllocationID, deltaCPU, deltaMem, deltaDisk); err != nil {
+		return nil, err
+	}
+	resized := w.ApplySpec(target)
+	resized.PendingCPUMilli = 0
+	resized.PendingMemBytes = 0
+	resized.PendingDiskBytes = 0
+	resized.ResizeStatus = ""
+	resized.UpdatedAt = time.Now()
+	if err := a.Runtime.Resize(ctx, resized); err != nil {
+		_ = a.Ledger.Expand(ctx, w.AllocationID, -deltaCPU, -deltaMem, -deltaDisk)
+		return nil, fmt.Errorf("resize: %w", err)
+	}
+	if err := a.Store.UpdateWorkspace(ctx, &resized); err != nil {
+		return nil, err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "workspace.resize.approve",
+		ResourceType: "workspace", ResourceID: w.ID.String(),
+		Meta: map[string]any{"cpu_milli": target.CPUMilli, "mem_bytes": target.MemBytes, "disk_bytes": target.DiskBytes},
+	})
+	return &resized, nil
+}
+
+func (a *App) RejectResize(ctx context.Context, actor models.User, id uuid.UUID, reason string) error {
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
+		return err
+	}
+	if !w.HasPendingResize() {
+		return store.ErrInvalidInput
+	}
+	w.PendingCPUMilli = 0
+	w.PendingMemBytes = 0
+	w.PendingDiskBytes = 0
+	w.ResizeStatus = ""
+	w.UpdatedAt = time.Now()
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		return err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "workspace.resize.reject",
+		ResourceType: "workspace", ResourceID: w.ID.String(),
+		Meta: map[string]any{"reason": strings.TrimSpace(reason)},
+	})
+	return nil
 }
 
 func (a *App) DestroyWorkspace(ctx context.Context, actor models.User, id uuid.UUID) error {
@@ -214,9 +455,12 @@ func (a *App) DestroyWorkspace(ctx context.Context, actor models.User, id uuid.U
 	}
 	w.Status = models.WSDestroying
 	_ = a.Store.UpdateWorkspace(ctx, w)
-	_ = a.Runtime.Destroy(ctx, w.ID)
-	if err := a.Ledger.Release(ctx, w.AllocationID); err != nil && !errors.Is(err, store.ErrNotFound) {
-		return err
+	a.dropWorkspaceIngress(ctx, w.ID)
+	if w.AllocationID != uuid.Nil {
+		_ = a.Runtime.Destroy(ctx, w.ID)
+		if err := a.Ledger.Release(ctx, w.AllocationID); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
 	}
 	w.Status = models.WSDestroyed
 	w.UpdatedAt = time.Now()
@@ -233,6 +477,9 @@ func (a *App) StopWorkspace(ctx context.Context, actor models.User, id uuid.UUID
 	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
 		return err
 	}
+	if w.Status == models.WSRequested || w.Status == models.WSRejected {
+		return store.ErrInvalidInput
+	}
 	if err := a.Runtime.Stop(ctx, id); err != nil {
 		return err
 	}
@@ -248,6 +495,9 @@ func (a *App) StartWorkspace(ctx context.Context, actor models.User, id uuid.UUI
 	}
 	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
 		return err
+	}
+	if w.Status == models.WSRequested || w.Status == models.WSRejected {
+		return store.ErrInvalidInput
 	}
 	if err := a.Runtime.Start(ctx, id); err != nil {
 		return err

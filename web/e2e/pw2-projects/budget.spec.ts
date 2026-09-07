@@ -44,7 +44,7 @@ test.describe("PW-2 项目预算与拦截", () => {
 
     // 前往创建 workspace 页面
     await page.goto(`/workspaces?project_id=${p.id}`);
-    await page.getByRole("button", { name: "创建 Workspace" }).click();
+    await page.getByTestId("ws-create").click();
 
     // 断言出现 409 资源不足错误提示
     const err = page.getByTestId("ws-error");

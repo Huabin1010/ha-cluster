@@ -5,9 +5,9 @@ export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
 export const ROLE_HELP: Record<string, string> = {
   viewer: "只读：可查看项目与 Workspace，不可 SSH / 建机 / 管成员",
-  developer: "可 SSH、创建与启停 Workspace",
+  developer: "可申请服务器、SSH 进入已批准的隔离环境",
   admin: "可管成员与邀请，并具备 developer 能力",
-  owner: "可改项目预算；不可通过「添加成员」表单转让",
+  owner: "可改项目名称、slug 与预算，可删除项目；不可通过「添加成员」表单转让",
 };
 
 export function roleLabel(role: string): string {

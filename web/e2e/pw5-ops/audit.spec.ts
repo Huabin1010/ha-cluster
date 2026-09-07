@@ -6,7 +6,7 @@ test.describe("PW-5 审计日志", () => {
 
     const table = adminPage.getByTestId("audit-table");
     await expect(table).toBeVisible();
-    await expect(table).toContainText("user.login");
+    await expect(table).toContainText("用户登录");
   });
 
   test("PW5-11 @pw5 @smoke 非 admin 审计", async ({ ownerPage }) => {

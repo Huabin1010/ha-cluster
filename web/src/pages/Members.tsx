@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useList } from "@refinedev/core";
 import { MemberList } from "./members/MemberList";
+import { PageHeader } from "../ui";
+import { SelectBox } from "../components/ui/select";
+import { Input } from "../components/ui/input";
+import { Field } from "../components/ui/field";
+import { Button } from "../components/ui/button";
+import { PageFrame } from "../components/ui/page-frame";
 
 type Project = { id: string; name: string; slug: string };
 
-/**
- * 成员与邀请（U3）。
- * 入口：`/members?project_id=` 或 `/projects/:id/members`
- */
 export function MembersPage() {
   const { id: routeProjectId } = useParams<{ id?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,53 +42,77 @@ export function MembersPage() {
     else setSearchParams({}, { replace: true });
   }
 
-  return (
-    <section>
-      <h2>成员 / 邀请</h2>
-      <p className="muted">
-        管理项目成员与邀请。已有 token？去 <Link to="/invitations/accept">接受邀请</Link>。
-      </p>
-
-      <div className="row wrap">
-        <label>
-          项目
-          <select
-            data-testid="member-project"
+  const filters = (
+    <div className="flex flex-wrap items-end gap-3">
+      <Field label="项目" className="min-w-52">
+        <SelectBox
+          testId="member-project"
+          value={projectId || "__none__"}
+          onValueChange={(v) => onSelectProject(v === "__none__" ? "" : v)}
+          disabled={isLoading}
+          placeholder="— 选择项目 —"
+          options={[
+            { value: "__none__", label: "— 选择项目 —" },
+            ...(!projectId || projects.some((p) => p.id === projectId)
+              ? []
+              : [{ value: projectId, label: `${projectId}（粘贴 / 路由）` }]),
+            ...projects.map((p) => ({
+              value: p.id,
+              label: `${p.name}${p.slug ? ` (${p.slug})` : ""}`,
+            })),
+          ]}
+        />
+      </Field>
+      {routeProjectId === undefined && (
+        <Field label="或粘贴 project uuid" className="min-w-64">
+          <Input
+            className="mono font-mono"
+            placeholder="uuid"
             value={projectId}
-            onChange={(e) => onSelectProject(e.target.value)}
-            disabled={isLoading}
-          >
-            <option value="">— 选择项目 —</option>
-            {projectId && !projects.some((p) => p.id === projectId) && (
-              <option value={projectId}>{projectId}（粘贴 / 路由）</option>
-            )}
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {p.slug ? ` (${p.slug})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        {routeProjectId === undefined && (
-          <label>
-            或粘贴 project uuid
-            <input
-              className="mono"
-              placeholder="uuid"
-              value={projectId}
-              onChange={(e) => onSelectProject(e.target.value.trim())}
-              aria-label="project uuid"
-            />
-          </label>
-        )}
-      </div>
-
-      {projectId ? (
-        <MemberList projectId={projectId} projectName={selected?.name} />
-      ) : (
-        <p className="muted">从上方选择项目，或从项目详情带入 project_id。</p>
+            onChange={(e) => onSelectProject(e.target.value.trim())}
+            aria-label="project uuid"
+          />
+        </Field>
       )}
-    </section>
+    </div>
+  );
+
+  if (!projectId) {
+    return (
+      <PageFrame
+        header={
+          <div className="grid gap-3">
+            <PageHeader title="成员 / 邀请" />
+            <p className="m-0 text-sm text-muted-foreground">
+              管理项目成员与邀请。已有 token？去{" "}
+              <Button variant="link" className="h-auto p-0" asChild>
+                <Link to="/invitations/accept">接受邀请</Link>
+              </Button>
+              。
+            </p>
+            {filters}
+          </div>
+        }
+      >
+        <p className="text-sm text-muted-foreground">从上方选择项目，或从项目详情带入 project_id。</p>
+      </PageFrame>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="shrink-0 grid gap-3">
+        <PageHeader title="成员 / 邀请" />
+        <p className="m-0 text-sm text-muted-foreground">
+          管理项目成员与邀请。已有 token？去{" "}
+          <Button variant="link" className="h-auto p-0" asChild>
+            <Link to="/invitations/accept">接受邀请</Link>
+          </Button>
+          。
+        </p>
+        {filters}
+      </div>
+      <MemberList projectId={projectId} projectName={selected?.name} />
+    </div>
   );
 }

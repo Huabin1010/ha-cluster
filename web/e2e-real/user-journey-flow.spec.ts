@@ -2,6 +2,7 @@ import { expect } from "@playwright/test";
 import { test } from "../e2e/fixtures/auth";
 import { api } from "../e2e/helpers/api";
 import { uniq, uniqEmail } from "../e2e/helpers/ids";
+import { openCreateDialog, chooseSelect } from "../e2e/helpers/dialog";
 import { generateSSHKeyPair, getIncusContainerInfo, runCmd } from "./helpers";
 
 test.describe("Real Machine & Container: 端到端完整用户流程（User Journey）", () => {
@@ -77,6 +78,7 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     const projName = `演示项目_${ts.toString().slice(-6)}`;
     const projSlug = `proj-${ts.toString().slice(-6)}`;
 
+    await openCreateDialog(ownerPage, "project-create-open");
     await ownerPage.fill("[data-testid=project-name]", projName);
     await ownerPage.fill("[data-testid=project-slug]", projSlug);
     await ownerPage.click("[data-testid=project-create]");
@@ -105,9 +107,10 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     // Owner 前往成员页面发起邀请（指定受邀人为预置开发者 qa_dev@mnnumath.vip）
     await ownerPage.goto(`/projects/${projId}/members`);
     const devEmail = "qa_dev@mnnumath.vip";
+    await openCreateDialog(ownerPage, "invite-open");
     await ownerPage.fill("[data-testid=invite-email]", devEmail);
-    await ownerPage.selectOption("[data-testid=invite-role]", "developer");
-    await ownerPage.click("button:has-text('生成邀请')");
+    await chooseSelect(ownerPage, "invite-role", "developer");
+    await ownerPage.getByRole("dialog").getByRole("button", { name: "生成邀请" }).click();
 
     const tokenBox = ownerPage.locator("[data-testid=invite-token]");
     await expect(tokenBox).toBeVisible({ timeout: 10_000 });
@@ -136,6 +139,7 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     const keyName = uniq("key-journey");
 
     await ownerPage.goto("/settings/keys");
+    await openCreateDialog(ownerPage, "keys-add-open");
     await expect(ownerPage.locator("[data-testid=keys-name]")).toBeVisible({ timeout: 15_000 });
     await ownerPage.fill("[data-testid=keys-name]", keyName);
     await ownerPage.fill("[data-testid=keys-pubkey]", keyPair.publicKey);
@@ -151,11 +155,12 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     // ==========================================
     const wsName = uniq("ws-jou");
     await ownerPage.goto(`/workspaces?project_id=${projId}`);
-    await expect(ownerPage.getByTestId("ws-submit")).toBeVisible({ timeout: 15_000 });
+    await expect(ownerPage.getByTestId("ws-create")).toBeVisible({ timeout: 15_000 });
+    await openCreateDialog(ownerPage, "ws-create");
 
     await ownerPage.getByTestId("ws-name-input").fill(wsName);
-    await ownerPage.getByTestId("ws-plan-select").selectOption("nano");
-    await ownerPage.getByTestId("ws-arch-select").selectOption("amd64");
+    await chooseSelect(ownerPage, "ws-plan-select", "nano");
+    await chooseSelect(ownerPage, "ws-arch-select", "amd64");
 
     // 提交创建（后端真实通过挂载的 Incus Socket 调用 incus launch）
     await ownerPage.getByTestId("ws-submit").click();

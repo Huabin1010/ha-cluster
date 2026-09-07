@@ -1,8 +1,8 @@
 import { test, expect } from "../fixtures/auth";
-import { api } from "../helpers/api";
 import { uniq } from "../helpers/ids";
 import { seedProject } from "../fixtures/seed";
 import { expectNoHorizontalOverflow } from "../helpers/assert";
+import { confirmAlert, openCreateDialog } from "../helpers/dialog";
 
 test.describe("PW-2 项目列表与创建", () => {
   test("PW2-01 @pw2 @smoke 空态", async ({ freshUser }) => {
@@ -20,6 +20,7 @@ test.describe("PW-2 项目列表与创建", () => {
     const slug = uniq("prj");
     const name = `Project ${slug}`;
 
+    await openCreateDialog(page, "project-create-open");
     await page.getByTestId("project-name").fill(name);
     await page.getByTestId("project-slug").fill(slug);
     await page.getByTestId("project-create").click();
@@ -39,6 +40,7 @@ test.describe("PW-2 项目列表与创建", () => {
     const { page } = await pageAs("owner");
     await page.goto("/projects");
 
+    await openCreateDialog(page, "project-create-open");
     await page.getByTestId("project-name").fill("Invalid Slug Test");
     const slugIn = page.getByTestId("project-slug");
     await slugIn.fill("Invalid Slug!");
@@ -57,6 +59,7 @@ test.describe("PW-2 项目列表与创建", () => {
     const existing = await seedProject(tokens.token, "conflict");
 
     await page.goto("/projects");
+    await openCreateDialog(page, "project-create-open");
     await page.getByTestId("project-name").fill("Another Project");
     await page.getByTestId("project-slug").fill(existing.slug);
     await page.getByTestId("project-create").click();
@@ -112,6 +115,7 @@ test.describe("PW-2 项目列表与创建", () => {
     const longName = "超长项目名称演示测试-" + uniq("long-name");
     const slug = uniq("slug");
 
+    await openCreateDialog(page, "project-create-open");
     await page.getByTestId("project-name").fill(longName);
     await page.getByTestId("project-slug").fill(slug);
     await page.getByTestId("project-create").click();
@@ -119,5 +123,56 @@ test.describe("PW-2 项目列表与创建", () => {
     await expect(page).toHaveURL(/\/projects\/[a-f0-9-]+$/);
     await expect(page.locator("h2")).toContainText(longName);
     await expectNoHorizontalOverflow(page);
+  });
+
+  test("PW2-14 @pw2 @smoke 编辑项目", async ({ pageAs }) => {
+    const { page, tokens } = await pageAs("owner");
+    const p = await seedProject(tokens.token, "edit");
+    const nextSlug = uniq("edited");
+    const nextName = `Edited ${nextSlug}`;
+
+    await page.goto("/projects");
+    const row = page.locator("tr", { hasText: p.name });
+    await expect(row).toBeVisible();
+    await row.getByTestId("project-edit").click();
+
+    await expect(page.getByTestId("project-edit-form")).toBeVisible();
+    await page.getByTestId("project-name").fill(nextName);
+    await page.getByTestId("project-slug").fill(nextSlug);
+    await page.getByTestId("project-save").click();
+
+    await expect(page.getByTestId("project-edit-form")).toBeHidden();
+    await expect(page.locator("tr", { hasText: nextName })).toBeVisible();
+    await expect(page.locator("tr", { hasText: nextSlug })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects\/?$/);
+  });
+
+  test("PW2-15 @pw2 @smoke 删除项目", async ({ pageAs }) => {
+    const { page, tokens } = await pageAs("owner");
+    const p = await seedProject(tokens.token, "del");
+
+    await page.goto("/projects");
+    const row = page.locator("tr", { hasText: p.name });
+    await expect(row).toBeVisible();
+    await row.getByTestId("project-delete").click();
+    await confirmAlert(page, true);
+
+    await expect(page.locator("tr", { hasText: p.name })).toHaveCount(0);
+  });
+
+  test("PW2-16 @pw2 编辑 slug 冲突", async ({ pageAs }) => {
+    const { page, tokens } = await pageAs("owner");
+    const a = await seedProject(tokens.token, "keep");
+    const b = await seedProject(tokens.token, "clash");
+
+    await page.goto("/projects");
+    const row = page.locator("tr", { hasText: b.name });
+    await row.getByTestId("project-edit").click();
+    await page.getByTestId("project-slug").fill(a.slug);
+    await page.getByTestId("project-save").click();
+
+    const err = page.getByTestId("project-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText("已被占用");
   });
 });

@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
-import { useGetIdentity } from "@refinedev/core";
-import { api, ApiError, friendlyError } from "../../providers";
-import { Button, Empty, PageBody, useToast } from "../../ui";
-import { fmtTime } from "./format";
+import { CanAccess, useCustomMutation, useGetIdentity, useList } from "@refinedev/core";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Alert, AlertDescription } from "../../components/ui/alert";
+import { Button } from "../../components/ui/button";
+import { PageFrame } from "../../components/ui/page-frame";
+import { Paginator } from "../../components/ui/pagination";
+import { ApiError, friendlyError } from "../../providers";
+import { Hint } from "../../components/ui/tooltip";
+import { Empty, PageBody, PageHeader } from "../../ui";
+import { actionLabel, fmtTime, resourceLabel, shortId } from "./format";
+import { useClientPager } from "../../lib/use-client-pager";
 
 type AuditLog = {
   id: number;
@@ -18,119 +24,141 @@ type Identity = { platform_role?: string };
 
 type ReconcileResult = { released: number; stale_nodes: number };
 
-function shortId(id?: string): string {
-  if (!id) return "—";
-  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
+function Forbidden() {
+  return (
+    <section className="grid gap-3">
+      <h2 className="m-0 text-xl font-semibold">审计日志</h2>
+      <Alert variant="destructive" data-testid="audit-forbidden">
+        <AlertDescription>你没有权限查看审计日志。</AlertDescription>
+      </Alert>
+      <p className="m-0 text-sm text-muted-foreground">仅 platform_admin / platform_ops 可访问此页。</p>
+    </section>
+  );
 }
 
-export function AuditPage() {
+function AuditList() {
   const { data: me } = useGetIdentity<Identity>();
-  const { push } = useToast();
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [forbidden, setForbidden] = useState(false);
-  const [err, setErr] = useState("");
-  const [reconciling, setReconciling] = useState(false);
   const canReconcile = me?.platform_role === "platform_admin";
+  const { data, isLoading, error } = useList<AuditLog>({
+    resource: "audit-logs",
+    pagination: { mode: "off" },
+    errorNotification: false,
+    queryOptions: { retry: false },
+  });
+  const { mutate: reconcile, isLoading: reconciling } = useCustomMutation<ReconcileResult>();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setErr("");
-      setForbidden(false);
-      try {
-        const json = await api<{ data: AuditLog[] }>("/audit-logs");
-        if (!cancelled) setLogs(json.data ?? []);
-      } catch (e) {
-        if (!cancelled) {
-          if ((e as ApiError).status === 403) {
-            setForbidden(true);
-          } else {
-            setErr(friendlyError(e));
-          }
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const forbidden = (error as ApiError | undefined)?.status === 403;
+  if (forbidden) return <Forbidden />;
 
-  async function reconcile() {
-    setReconciling(true);
-    try {
-      const out = await api<ReconcileResult>("/admin/reconcile", { method: "POST" });
-      push(
-        "success",
-        `对账完成：released=${out.released} stale_nodes=${out.stale_nodes}`,
-      );
-    } catch (e) {
-      push("error", friendlyError(e));
-    } finally {
-      setReconciling(false);
-    }
-  }
-
-  if (forbidden) {
-    return (
-      <section>
-        <h2>审计日志</h2>
-        <p className="error" data-testid="audit-forbidden">
-          你没有权限查看审计日志。
-        </p>
-        <p className="muted">仅 platform_admin / platform_ops 可访问此页。</p>
-      </section>
-    );
-  }
+  const logs = data?.data ?? [];
+  const pager = useClientPager(logs);
 
   return (
-    <section>
-      <div className="page-head">
-        <div>
-          <h2>审计日志</h2>
-          <p className="muted">最近 200 条平台操作记录（登录、创建 Workspace 等）。</p>
+    <PageFrame
+      header={
+        <div className="grid gap-3">
+          <PageHeader
+            title="审计日志"
+            description="最近 200 条平台操作记录（登录、创建 Workspace 等）。"
+            actions={
+              canReconcile ? (
+                <Button
+                  data-testid="audit-reconcile"
+                  disabled={reconciling}
+                  type="button"
+                  onClick={() =>
+                    reconcile({
+                      url: "/admin/reconcile",
+                      method: "post",
+                      values: {},
+                      successNotification: (res) => {
+                        const out = res?.data;
+                        return {
+                          message: `对账完成：released=${out?.released ?? 0} stale_nodes=${out?.stale_nodes ?? 0}`,
+                          type: "success",
+                        };
+                      },
+                      errorNotification: (e) => ({
+                        message: friendlyError(e),
+                        type: "error",
+                      }),
+                    })
+                  }
+                >
+                  {reconciling ? "对账中…" : "对账"}
+                </Button>
+              ) : null
+            }
+          />
+          {error && !forbidden && (
+            <Alert variant="destructive">
+              <AlertDescription>{friendlyError(error)}</AlertDescription>
+            </Alert>
+          )}
         </div>
-        {canReconcile && (
-          <Button data-testid="audit-reconcile" disabled={reconciling} type="button" onClick={() => void reconcile()}>
-            {reconciling ? "对账中…" : "对账"}
-          </Button>
-        )}
-      </div>
-      {err && <p className="error">{err}</p>}
-      <PageBody loading={loading}>
+      }
+      footer={
+        <Paginator
+          page={pager.page}
+          pageCount={pager.pageCount}
+          pageSize={pager.pageSize}
+          total={pager.total}
+          onPageChange={pager.setPage}
+          onPageSizeChange={pager.setPageSize}
+        />
+      }
+    >
+      <PageBody loading={isLoading}>
         {logs.length === 0 ? (
           <Empty text="暂无审计记录。" />
         ) : (
-          <table data-testid="audit-table">
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>操作</th>
-                <th>资源</th>
-                <th>操作者</th>
-                <th>IP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((l) => (
-                <tr key={l.id}>
-                  <td>{fmtTime(l.created_at)}</td>
-                  <td>{l.action}</td>
-                  <td className="mono">
-                    {l.resource_type}
-                    {l.resource_id ? `:${shortId(l.resource_id)}` : ""}
-                  </td>
-                  <td className="mono">{shortId(l.actor_user_id)}</td>
-                  <td className="mono">{l.ip || "—"}</td>
-                </tr>
+          <Table data-testid="audit-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>时间</TableHead>
+                <TableHead>操作</TableHead>
+                <TableHead>资源</TableHead>
+                <TableHead>操作者</TableHead>
+                <TableHead>IP</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pager.slice.map((l) => (
+                <TableRow key={l.id}>
+                  <TableCell>{fmtTime(l.created_at)}</TableCell>
+                  <TableCell>
+                    <Hint label={l.action} className="font-mono">
+                      <span className="cursor-default">{actionLabel(l.action)}</span>
+                    </Hint>
+                  </TableCell>
+                  <TableCell className="mono font-mono text-xs">
+                    <Hint
+                      label={l.resource_id ? `${l.resource_type}:${l.resource_id}` : l.resource_type}
+                      className="font-mono"
+                    >
+                      <span className="cursor-default">{resourceLabel(l.resource_type, l.resource_id)}</span>
+                    </Hint>
+                  </TableCell>
+                  <TableCell className="mono font-mono text-xs">
+                    <Hint label={l.actor_user_id} className="font-mono">
+                      <span className="cursor-default">{shortId(l.actor_user_id)}</span>
+                    </Hint>
+                  </TableCell>
+                  <TableCell className="mono font-mono text-xs">{l.ip || "—"}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </PageBody>
-    </section>
+    </PageFrame>
+  );
+}
+
+export function AuditPage() {
+  return (
+    <CanAccess resource="audit-logs" action="list" fallback={<Forbidden />}>
+      <AuditList />
+    </CanAccess>
   );
 }

@@ -26,8 +26,7 @@ test.describe("PW-2 项目详情与用量", () => {
     await link.click();
 
     await expect(page).toHaveURL(new RegExp(`/workspaces\\?project_id=${p.id}`));
-    // 检查项目下拉框已选中该项目
-    const select = page.locator("select").first();
-    await expect(select).toHaveValue(p.id);
+    const select = page.getByTestId("ws-filter-project");
+    await expect(select).toHaveAttribute("data-value", p.id);
   });
 });

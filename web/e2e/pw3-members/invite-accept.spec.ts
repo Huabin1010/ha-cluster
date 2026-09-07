@@ -2,6 +2,7 @@ import { test, expect } from "../fixtures/auth";
 import { api } from "../helpers/api";
 import { seedProject } from "../fixtures/seed";
 import { uniqEmail } from "../helpers/ids";
+import { openCreateDialog, chooseSelect } from "../helpers/dialog";
 
 test.describe("PW-3 邀请与接受流程", () => {
   test("PW3-05 @pw3 生成邀请", async ({ pageAs }) => {
@@ -9,9 +10,10 @@ test.describe("PW-3 邀请与接受流程", () => {
     const p = await seedProject(tokens.token, "inv");
 
     await page.goto(`/projects/${p.id}/members`);
+    await openCreateDialog(page, "invite-open");
     await page.getByTestId("invite-email").fill(uniqEmail("inv"));
-    await page.getByTestId("invite-role").selectOption("developer");
-    await page.getByRole("button", { name: "生成邀请" }).click();
+    await chooseSelect(page, "invite-role", "developer");
+    await page.getByRole("dialog").getByRole("button", { name: "生成邀请" }).click();
 
     const box = page.getByTestId("invite-token");
     await expect(box).toBeVisible();
@@ -24,8 +26,9 @@ test.describe("PW-3 邀请与接受流程", () => {
     const p = await seedProject(tokens.token, "link-inv");
 
     await page.goto(`/projects/${p.id}/members`);
+    await openCreateDialog(page, "invite-open");
     await page.getByTestId("invite-email").fill(uniqEmail("link"));
-    await page.getByRole("button", { name: "生成邀请" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "生成邀请" }).click();
 
     const acceptLink = page.getByTestId("invite-accept-link");
     await expect(acceptLink).toBeVisible();
@@ -109,13 +112,14 @@ test.describe("PW-3 邀请与接受流程", () => {
     const p = await seedProject(tokens.token, "email-fmt");
 
     await page.goto(`/projects/${p.id}/members`);
+    await openCreateDialog(page, "invite-open");
     const emailInput = page.getByTestId("invite-email");
     await emailInput.fill("not-an-email");
 
     const valid = await emailInput.evaluate((el: HTMLInputElement) => el.checkValidity());
     expect(valid).toBe(false);
 
-    await page.getByRole("button", { name: "生成邀请" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "生成邀请" }).click();
     await expect(page.getByTestId("invite-token")).not.toBeVisible();
   });
 });

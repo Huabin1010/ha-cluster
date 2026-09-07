@@ -14,6 +14,16 @@ import (
 	"ha-cluster/internal/models"
 )
 
+const dockerCloudInit = `#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - rsync
+runcmd:
+  - [ bash, -lc, "systemctl enable --now docker || true" ]
+  - [ bash, -lc, "usermod -aG docker root || true" ]
+`
+
 // IncusRuntime shells out to the incus CLI on this machine.
 type IncusRuntime struct {
 	Bin   string
@@ -52,17 +62,25 @@ func (r *IncusRuntime) cmd(ctx context.Context, args ...string) *exec.Cmd {
 }
 
 func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node models.Node, sshKeys []string) (Instance, error) {
-	plan := models.Plans()[w.Plan]
+	spec := w.Spec()
 	name := instName(w.ID)
-	mem := fmt.Sprintf("%dMiB", plan.MemBytes/(1024*1024))
-	cpu := fmt.Sprintf("%d", plan.CPUMilli/1000)
-	if plan.CPUMilli < 1000 {
+	mem := fmt.Sprintf("%dMiB", spec.MemBytes/(1024*1024))
+	cpu := fmt.Sprintf("%d", spec.CPUMilli/1000)
+	if spec.CPUMilli < 1000 {
 		cpu = "1"
 	}
 	args := []string{"launch", r.Image, name,
 		"--config", "limits.memory=" + mem,
 		"--config", "limits.cpu=" + cpu,
-		"--config", "security.nesting=false",
+		"--config", "security.nesting=true",
+		"--config", "cloud-init.user-data=" + dockerCloudInit,
+	}
+	if spec.DiskBytes > 0 {
+		gi := spec.DiskBytes / (1024 * 1024 * 1024)
+		if gi < 1 {
+			gi = 1
+		}
+		args = append(args, "-d", fmt.Sprintf("root,size=%dGiB", gi))
 	}
 	out, err := r.cmd(ctx, args...).CombinedOutput()
 	if err != nil {
@@ -141,6 +159,30 @@ func (r *IncusRuntime) Destroy(ctx context.Context, id uuid.UUID) error {
 	out, err := r.cmd(ctx, "delete", instName(id), "--force").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("incus delete: %w: %s", err, out)
+	}
+	return nil
+}
+
+func (r *IncusRuntime) Resize(ctx context.Context, w models.Workspace) error {
+	name := instName(w.ID)
+	spec := w.Spec()
+	cpu := spec.CPUMilli / 1000
+	if cpu < 1 {
+		cpu = 1
+	}
+	mem := fmt.Sprintf("%dMiB", spec.MemBytes/(1024*1024))
+	if out, err := r.cmd(ctx, "config", "set", name,
+		fmt.Sprintf("limits.cpu=%d", cpu),
+		"limits.memory="+mem,
+	).CombinedOutput(); err != nil {
+		return fmt.Errorf("incus resize cpu/mem: %w: %s", err, out)
+	}
+	gi := spec.DiskBytes / (1024 * 1024 * 1024)
+	if gi < 1 {
+		gi = 1
+	}
+	if out, err := r.cmd(ctx, "config", "device", "set", name, "root", fmt.Sprintf("size=%dGiB", gi)).CombinedOutput(); err != nil {
+		return fmt.Errorf("incus resize disk: %w: %s", err, out)
 	}
 	return nil
 }

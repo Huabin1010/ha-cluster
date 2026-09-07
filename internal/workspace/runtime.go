@@ -26,13 +26,14 @@ type Runtime interface {
 	Stop(ctx context.Context, id uuid.UUID) error
 	Start(ctx context.Context, id uuid.UUID) error
 	Destroy(ctx context.Context, id uuid.UUID) error
+	Resize(ctx context.Context, w models.Workspace) error
 	Get(ctx context.Context, id uuid.UUID) (Instance, bool)
 }
 
 type MemoryRuntime struct {
-	mu      sync.Mutex
+	mu       sync.Mutex
 	nextPort int
-	inst    map[uuid.UUID]Instance
+	inst     map[uuid.UUID]Instance
 }
 
 func NewMemoryRuntime() *MemoryRuntime {
@@ -86,6 +87,15 @@ func (r *MemoryRuntime) Destroy(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (r *MemoryRuntime) Resize(_ context.Context, w models.Workspace) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.inst[w.ID]; !ok {
+		return fmt.Errorf("not found")
+	}
+	return nil
+}
+
 func (r *MemoryRuntime) Get(_ context.Context, id uuid.UUID) (Instance, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -96,7 +106,7 @@ func (r *MemoryRuntime) Get(_ context.Context, id uuid.UUID) (Instance, bool) {
 func FailLaunchOnce() Runtime { return &failOnce{inner: NewMemoryRuntime()} }
 
 type failOnce struct {
-	inner *MemoryRuntime
+	inner  *MemoryRuntime
 	failed bool
 }
 
@@ -110,6 +120,9 @@ func (f *failOnce) Launch(ctx context.Context, w models.Workspace, node models.N
 func (f *failOnce) Stop(ctx context.Context, id uuid.UUID) error    { return f.inner.Stop(ctx, id) }
 func (f *failOnce) Start(ctx context.Context, id uuid.UUID) error   { return f.inner.Start(ctx, id) }
 func (f *failOnce) Destroy(ctx context.Context, id uuid.UUID) error { return f.inner.Destroy(ctx, id) }
+func (f *failOnce) Resize(ctx context.Context, w models.Workspace) error {
+	return f.inner.Resize(ctx, w)
+}
 func (f *failOnce) Get(ctx context.Context, id uuid.UUID) (Instance, bool) {
 	return f.inner.Get(ctx, id)
 }

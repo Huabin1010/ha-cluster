@@ -88,6 +88,13 @@ CREATE TABLE IF NOT EXISTS workspaces (
   status TEXT NOT NULL,
   ssh_port INT NOT NULL DEFAULT 0,
   host_key_fp TEXT NOT NULL DEFAULT '',
+  cpu_milli BIGINT NOT NULL DEFAULT 0,
+  mem_bytes BIGINT NOT NULL DEFAULT 0,
+  disk_bytes BIGINT NOT NULL DEFAULT 0,
+  pending_cpu_milli BIGINT NOT NULL DEFAULT 0,
+  pending_mem_bytes BIGINT NOT NULL DEFAULT 0,
+  pending_disk_bytes BIGINT NOT NULL DEFAULT 0,
+  resize_status TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );

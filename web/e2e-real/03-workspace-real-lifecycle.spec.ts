@@ -4,6 +4,7 @@ import { seedProject } from "../e2e/fixtures/seed";
 import { uniq } from "../e2e/helpers/ids";
 import { api } from "../e2e/helpers/api";
 import { generateSSHKeyPair, getIncusContainerInfo, runCmd } from "./helpers";
+import { openCreateDialog, chooseSelect } from "../e2e/helpers/dialog";
 
 test.describe("Real Machine: 03 真机 Incus 容器创建、真实 SSH 连通与生命周期", () => {
   test("REAL-WS-01 从 UI 创建真实 Incus 容器并通过私钥执行真机 SSH 交互", async ({ pageAs }) => {
@@ -14,6 +15,7 @@ test.describe("Real Machine: 03 真机 Incus 容器创建、真实 SSH 连通与
     const keyName = uniq("key-ws");
 
     await ownerPage.goto("/settings/keys");
+    await openCreateDialog(ownerPage, "keys-add-open");
     await expect(ownerPage.locator("[data-testid=keys-name]")).toBeVisible({ timeout: 15_000 });
     await ownerPage.fill("[data-testid=keys-name]", keyName);
     await ownerPage.fill("[data-testid=keys-pubkey]", keyPair.publicKey);
@@ -26,11 +28,12 @@ test.describe("Real Machine: 03 真机 Incus 容器创建、真实 SSH 连通与
     // 3. 前往 /workspaces?project_id=xxx 创建真实 amd64 容器
     const wsName = uniq("ws-real");
     await ownerPage.goto(`/workspaces?project_id=${p.id}`);
-    await expect(ownerPage.getByTestId("ws-submit")).toBeVisible({ timeout: 15_000 });
+    await expect(ownerPage.getByTestId("ws-create")).toBeVisible({ timeout: 15_000 });
+    await openCreateDialog(ownerPage, "ws-create");
 
     await ownerPage.getByTestId("ws-name-input").fill(wsName);
-    await ownerPage.getByTestId("ws-plan-select").selectOption("nano");
-    await ownerPage.getByTestId("ws-arch-select").selectOption("amd64");
+    await chooseSelect(ownerPage, "ws-plan-select", "nano");
+    await chooseSelect(ownerPage, "ws-arch-select", "amd64");
 
     // 提交创建（后端通过 IncusRuntime 实际调用 incus launch）
     await ownerPage.getByTestId("ws-submit").click();

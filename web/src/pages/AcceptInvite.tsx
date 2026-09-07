@@ -1,10 +1,13 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, friendlyError } from "../providers";
+import { PageHeader } from "../ui";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Field } from "../components/ui/field";
+import { Card, CardContent } from "../components/ui/card";
+import { Alert, AlertDescription } from "../components/ui/alert";
 
-/**
- * 接受邀请（U3）：输入 token → POST /invitations/accept → 跳项目详情。
- */
 export function AcceptInvitePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -31,7 +34,6 @@ export function AcceptInvitePage() {
     setOk("");
     setBusy(true);
     try {
-      // 记录接受前的项目列表，以便在后端未返回 project_id 时定位新加入的项目
       const before = await api<{ data: Array<{ id: string }> }>("/projects").catch(() => null);
       const beforeIds = new Set(before?.data?.map((p) => p.id) ?? []);
 
@@ -51,7 +53,6 @@ export function AcceptInvitePage() {
         }
       }
       timer.current = window.setTimeout(() => {
-        // 验收：另一用户接受后能看到该项目
         if (pid) navigate(`/projects/${pid}`);
         else navigate("/projects");
       }, 300);
@@ -63,41 +64,50 @@ export function AcceptInvitePage() {
   }
 
   return (
-    <section>
-      <h2>接受邀请</h2>
-      <p className="muted">
-        粘贴管理员发给你的邀请 token。需已登录；未登录请先 <Link to="/login">登录</Link>。
+    <section className="grid gap-4">
+      <PageHeader title="接受邀请" description="粘贴管理员发给你的邀请 token。需已登录。" />
+      <p className="m-0 -mt-2 text-sm text-muted-foreground">
+        未登录请先{" "}
+        <Button variant="link" className="h-auto p-0" asChild>
+          <Link to="/login">登录</Link>
+        </Button>
+        。
       </p>
-      <form className="card accept-card" onSubmit={onSubmit}>
-        <label>
-          邀请 token
-          <input
-            data-testid="accept-token"
-            className="mono"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            required
-            autoComplete="off"
-            placeholder="粘贴 token"
-          />
-        </label>
-        {err && (
-          <p className="error" role="alert" data-testid="accept-error">
-            {err}
-          </p>
-        )}
-        {ok && (
-          <p className="success" data-testid="accept-ok">
-            {ok}，正在跳转到项目…
-          </p>
-        )}
-        <button data-testid="accept-submit" type="submit" disabled={busy || !token.trim()}>
-          {busy ? "提交中…" : "接受邀请"}
-        </button>
-        <Link className="muted" to="/members">
-          返回成员页
-        </Link>
-      </form>
+      <Card className="max-w-lg">
+        <CardContent className="pt-6">
+          <form className="grid gap-4" onSubmit={onSubmit}>
+            <Field label="邀请 token">
+              <Input
+                data-testid="accept-token"
+                className="mono font-mono"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                required
+                autoComplete="off"
+                placeholder="粘贴 token"
+              />
+            </Field>
+            {err && (
+              <Alert variant="destructive" role="alert" data-testid="accept-error">
+                <AlertDescription>{err}</AlertDescription>
+              </Alert>
+            )}
+            {ok && (
+              <Alert variant="success" data-testid="accept-ok">
+                <AlertDescription>
+                  {ok}，正在跳转到项目…
+                </AlertDescription>
+              </Alert>
+            )}
+            <Button data-testid="accept-submit" type="submit" disabled={busy || !token.trim()}>
+              {busy ? "提交中…" : "接受邀请"}
+            </Button>
+            <Button variant="link" className="h-auto w-fit p-0" asChild>
+              <Link to="/members">返回成员页</Link>
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   );
 }

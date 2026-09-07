@@ -1,19 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, friendlyError, isInsufficientCapacity } from "../providers";
-import { Banner, Empty, Loading, useToast } from "../ui";
+import { useGetIdentity, useList } from "@refinedev/core";
+import { isInsufficientCapacity, type AuthUser } from "../providers";
+import { Banner, Empty, Loading, PageHeader, useToast } from "../ui";
 import { CreateForm } from "./workspaces/CreateForm";
 import { WorkspaceRow } from "./workspaces/WorkspaceRow";
-import { ProjectOption, Workspace } from "./workspaces/types";
+import { canApproveRole, ProjectOption, Workspace } from "./workspaces/types";
+import { Button } from "../components/ui/button";
+import { SelectBox } from "../components/ui/select";
+import { Field } from "../components/ui/field";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { PageFrame } from "../components/ui/page-frame";
+import { Paginator } from "../components/ui/pagination";
+import { useClientPager } from "../lib/use-client-pager";
+import { writeCurrentProject } from "../lib/current-project";
 
 export function WorkspacesPage() {
   const toast = useToast();
+  const { data: me } = useGetIdentity<AuthUser>();
   const [searchParams, setSearchParams] = useSearchParams();
   const projectFilter = searchParams.get("project_id") || "";
 
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [rows, setRows] = useState<Workspace[]>([]);
-  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [insufficient, setInsufficient] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -24,131 +31,145 @@ export function WorkspacesPage() {
     setInsufficient(!!msg && (isInsufficient || isInsufficientCapacity(msg)));
   }, []);
 
-  const loadProjects = useCallback(async () => {
-    try {
-      const json = await api<{ data: ProjectOption[]; total: number }>("/projects");
-      setProjects(json.data ?? []);
-    } catch (e) {
-      showError(friendlyError(e));
-    }
-  }, [showError]);
+  const { data: projectData } = useList<ProjectOption>({
+    resource: "projects",
+    pagination: { mode: "off" },
+  });
+  const { data, isLoading, refetch } = useList<Workspace>({
+    resource: "workspaces",
+    pagination: { mode: "off" },
+    filters: projectFilter ? [{ field: "project_id", operator: "eq", value: projectFilter }] : [],
+    errorNotification: false,
+  });
 
-  const loadWorkspaces = useCallback(async () => {
-    setLoading(true);
-    try {
-      const q = projectFilter ? `?project_id=${encodeURIComponent(projectFilter)}` : "";
-      const json = await api<{ data: Workspace[]; total: number }>(`/workspaces${q}`);
-      const list = json.data ?? [];
-      setRows(list.filter((w) => w.status !== "destroyed"));
-    } catch (e) {
-      showError(friendlyError(e), isInsufficientCapacity(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [projectFilter, showError]);
-
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    loadWorkspaces();
-  }, [loadWorkspaces]);
+  const projects = projectData?.data ?? [];
+  const selected = projects.find((p) => p.id === projectFilter);
+  const canApprove = canApproveRole(selected?.my_role, me?.platform_role);
+  const rows = (data?.data ?? []).filter((w) => w.status !== "destroyed");
+  const pending = rows.filter((w) => w.status === "requested").length;
+  const pendingResize = rows.filter((w) => w.resize_status === "pending").length;
+  const pager = useClientPager(rows, projectFilter);
 
   function setProjectFilter(id: string) {
     const next = new URLSearchParams(searchParams);
     if (id) next.set("project_id", id);
     else next.delete("project_id");
+    writeCurrentProject(id);
     setSearchParams(next, { replace: true });
   }
 
   function afterMutation() {
     reloadUsageRef.current?.();
-    loadWorkspaces();
+    void refetch();
   }
 
   return (
-    <section className="ws-page">
-      <h2>Workspace</h2>
-      <p className="muted">
-        创建时硬占用账本；停止后仍占配额，销毁才释放。超卖返回 409 INSUFFICIENT_CAPACITY。
-      </p>
-
-      {err && (
-        <Banner
-          kind="error"
-          className={insufficient ? "ws-insufficient" : undefined}
-          onClose={() => showError("")}
-        >
-          <span data-testid="ws-error">{err}</span>
-        </Banner>
-      )}
-
-      <CreateForm
-        projects={projects}
-        initialProjectId={projectFilter}
-        reloadUsageRef={reloadUsageRef}
-        onCreated={() => {
-          showError("");
-          toast.show("创建成功", "success");
-          afterMutation();
-        }}
-        onError={showError}
-      />
-
-      <div className="row wrap filter-bar">
-        <label>
-          按项目筛选
-          <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
-            <option value="">全部项目</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.slug})
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="button" className="ghost" onClick={() => loadWorkspaces()}>
-          刷新
-        </button>
-      </div>
-
-      {loading ? (
-        <Loading label="加载 Workspace…" />
+    <PageFrame
+      header={
+        <div className="grid gap-3">
+          <PageHeader
+            title="服务器"
+            description="按项目申请隔离机器（例如 2 核 / 2GiB / 5GiB 盘）。开通后可再提交扩容，均需管理员批准；不提供硬盘缩容。"
+            actions={
+              <CreateForm
+                projects={projects}
+                initialProjectId={projectFilter}
+                reloadUsageRef={reloadUsageRef}
+                canApprove={canApprove}
+                platformRole={me?.platform_role}
+                onCreated={() => {
+                  showError("");
+                  toast.show(canApprove ? "创建成功" : "已提交申请，等待管理员审批", "success");
+                  afterMutation();
+                }}
+                onError={showError}
+              />
+            }
+          />
+          {pending > 0 && canApprove && (
+            <Banner kind="info">
+              <span data-testid="ws-pending-banner">有 {pending} 条服务器申请待审批</span>
+            </Banner>
+          )}
+          {pendingResize > 0 && canApprove && (
+            <Banner kind="info">
+              <span data-testid="ws-resize-banner">有 {pendingResize} 条扩容申请待审批</span>
+            </Banner>
+          )}
+          {err && (
+            <Banner
+              kind="error"
+              className={insufficient ? "ws-insufficient border-destructive" : undefined}
+              onClose={() => showError("")}
+            >
+              <span data-testid="ws-error">{err}</span>
+            </Banner>
+          )}
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="按项目筛选" className="min-w-52">
+              <SelectBox
+                testId="ws-filter-project"
+                value={projectFilter || "__all__"}
+                onValueChange={(v) => setProjectFilter(v === "__all__" ? "" : v)}
+                placeholder="全部项目"
+                options={[
+                  { value: "__all__", label: "全部项目" },
+                  ...projects.map((p) => ({ value: p.id, label: `${p.name} (${p.slug})` })),
+                ]}
+              />
+            </Field>
+            <Button type="button" variant="outline" onClick={() => void refetch()}>
+              刷新
+            </Button>
+          </div>
+        </div>
+      }
+      footer={
+        <Paginator
+          page={pager.page}
+          pageCount={pager.pageCount}
+          pageSize={pager.pageSize}
+          total={pager.total}
+          onPageChange={pager.setPage}
+          onPageSizeChange={pager.setPageSize}
+        />
+      }
+    >
+      {isLoading ? (
+        <Loading label="加载服务器…" />
       ) : rows.length === 0 ? (
         <Empty
-          title={projectFilter ? "该项目还没有 Workspace" : "还没有 Workspace"}
-          description="选择项目与套餐后创建一个；停止不会释放配额。"
+          title={projectFilter ? "该项目还没有服务器" : "还没有服务器"}
+          description="在项目里申请隔离环境；普通成员需管理员批准后才能连接。"
         />
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>套餐</th>
-                <th>arch</th>
-                <th>状态</th>
-                <th>可见性</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((w) => (
-                <WorkspaceRow
-                  key={w.id}
-                  ws={w}
-                  busyId={busyId}
-                  onBusy={setBusyId}
-                  onRefresh={afterMutation}
-                  onToast={(msg) => toast.show(msg, "info")}
-                  onError={(msg) => showError(msg)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>名称</TableHead>
+              <TableHead>套餐</TableHead>
+              <TableHead>arch</TableHead>
+              <TableHead>状态</TableHead>
+              <TableHead>可见性</TableHead>
+              <TableHead>操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pager.slice.map((w) => (
+              <WorkspaceRow
+                key={w.id}
+                ws={w}
+                busyId={busyId}
+                canApprove={canApprove}
+                onBusy={setBusyId}
+                onRefresh={afterMutation}
+                onToast={(msg) => toast.show(msg, "info")}
+                onError={(msg) => showError(msg)}
+              />
+            ))}
+          </TableBody>
+        </Table>
       )}
-    </section>
+    </PageFrame>
   );
 }

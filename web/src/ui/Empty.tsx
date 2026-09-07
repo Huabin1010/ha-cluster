@@ -1,5 +1,7 @@
+import { Inbox } from "lucide-react";
+import { Card, CardContent } from "../components/ui/card";
+
 type Props = {
-  /** Preferred short empty-state copy used by U2–U5 pages */
   text?: string;
   title?: string;
   description?: string;
@@ -8,9 +10,12 @@ type Props = {
 export function Empty({ text, title, description }: Props) {
   const heading = title || text || "暂无数据";
   return (
-    <div className="empty" data-testid="empty-state">
-      <p className="empty-title">{heading}</p>
-      {description && <p className="muted">{description}</p>}
-    </div>
+    <Card className="border-dashed" data-testid="empty-state">
+      <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+        <Inbox className="h-8 w-8 text-muted-foreground" aria-hidden />
+        <p className="empty-title m-0 font-semibold">{heading}</p>
+        {description && <p className="m-0 text-sm text-muted-foreground">{description}</p>}
+      </CardContent>
+    </Card>
   );
 }

@@ -1,16 +1,34 @@
-import { FormEvent, MutableRefObject, useCallback, useEffect, useState } from "react";
+import { FormEvent, MutableRefObject, ReactNode, useCallback, useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { api, friendlyError, isInsufficientCapacity } from "../../providers";
 import { formatUsageHint } from "./format";
-import { ARCHES, formatPlanSpec, PlanItem, PLANS, PLAN_SPECS, ProjectOption, ProjectUsage } from "./types";
+import { ARCHES, canApproveRole, formatPlanSpec, PlanItem, PLANS, PLAN_SPECS, ProjectOption, ProjectUsage } from "./types";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { SelectBox } from "../../components/ui/select";
+import { Field } from "../../components/ui/field";
+import { Alert, AlertDescription } from "../../components/ui/alert";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "../../components/ui/dialog";
 
 type Props = {
   projects: ProjectOption[];
   initialProjectId: string;
-  /** optional ref to trigger usage refresh without state tick */
   reloadUsageRef?: MutableRefObject<(() => void) | undefined>;
   usageTick?: number;
   onCreated: () => void;
   onError: (msg: string, insufficient?: boolean) => void;
+  trigger?: ReactNode;
+  canApprove?: boolean;
+  platformRole?: string;
 };
 
 export function CreateForm({
@@ -20,7 +38,11 @@ export function CreateForm({
   usageTick = 0,
   onCreated,
   onError,
+  trigger,
+  canApprove: canApproveProp = false,
+  platformRole,
 }: Props) {
+  const [open, setOpen] = useState(false);
   const [projectId, setProjectId] = useState(initialProjectId);
   const [advancedId, setAdvancedId] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -30,6 +52,7 @@ export function CreateForm({
   const [name, setName] = useState("");
   const [usageHint, setUsageHint] = useState("");
   const [busy, setBusy] = useState(false);
+  const [formErr, setFormErr] = useState("");
   const [availablePlans, setAvailablePlans] = useState<PlanItem[]>([]);
 
   useEffect(() => {
@@ -53,6 +76,8 @@ export function CreateForm({
   }, [initialProjectId]);
 
   const effectiveProjectId = (showAdvanced && advancedId.trim() ? advancedId.trim() : projectId).trim();
+  const formProject = projects.find((p) => p.id === effectiveProjectId);
+  const canApprove = canApproveRole(formProject?.my_role, platformRole) || canApproveProp;
 
   const loadUsage = useCallback(async () => {
     if (!effectiveProjectId) {
@@ -75,15 +100,17 @@ export function CreateForm({
 
   useEffect(() => {
     void loadUsage();
-  }, [loadUsage, usageTick]);
+  }, [loadUsage, usageTick, open]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!effectiveProjectId) {
+      setFormErr("请选择项目");
       onError("请选择项目");
       return;
     }
     setBusy(true);
+    setFormErr("");
     onError("");
     try {
       const wsName = name.trim() || `${plan}-${arch}`;
@@ -98,109 +125,125 @@ export function CreateForm({
       });
       setName("");
       void loadUsage();
+      setOpen(false);
       onCreated();
     } catch (err) {
       const insufficient = isInsufficientCapacity(err);
-      onError(friendlyError(err), insufficient);
+      const msg = friendlyError(err);
+      setFormErr(msg);
+      onError(msg, insufficient);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <form className="ws-create" onSubmit={onSubmit} data-testid="ws-create">
-      <div className="row wrap">
-        <label>
-          项目
-          <select
-            data-testid="ws-project-select"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            disabled={showAdvanced}
-            required={!showAdvanced}
-          >
-            <option value="">选择项目…</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.slug})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          名称
-          <input
-            data-testid="ws-name-input"
-            placeholder="可选，默认 plan-arch"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-        <label>
-          套餐
-          <select
-            data-testid="ws-plan-select"
-            value={plan}
-            onChange={(e) => setPlan(e.target.value)}
-          >
-            {availablePlans.length > 0
-              ? availablePlans.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name} {formatPlanSpec(p) ? `(${formatPlanSpec(p)})` : ""}
-                  </option>
-                ))
-              : PLANS.map((p) => (
-                  <option key={p} value={p}>
-                    {p} {PLAN_SPECS[p] ? `(${PLAN_SPECS[p]})` : ""}
-                  </option>
-                ))}
-          </select>
-        </label>
-        <label>
-          架构
-          <select
-            data-testid="ws-arch-select"
-            value={arch}
-            onChange={(e) => setArch(e.target.value)}
-          >
-            {ARCHES.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          可见性
-          <select
-            data-testid="ws-visibility-select"
-            value={visibility}
-            onChange={(e) => setVisibility(e.target.value as "shared" | "private")}
-          >
-            <option value="shared">shared（项目成员可 SSH）</option>
-            <option value="private">private（仅 owner）</option>
-          </select>
-        </label>
-        <button data-testid="ws-submit" disabled={busy} type="submit">
-          {busy ? "创建中…" : "创建 Workspace"}
-        </button>
-      </div>
-      <div className="row wrap">
-        <button type="button" className="ghost" onClick={() => setShowAdvanced((v) => !v)}>
-          {showAdvanced ? "收起高级" : "高级：粘贴 project uuid"}
-        </button>
-        {showAdvanced && (
-          <input
-            className="mono"
-            style={{ minWidth: "280px" }}
-            placeholder="project uuid"
-            value={advancedId}
-            onChange={(e) => setAdvancedId(e.target.value)}
-            aria-label="project uuid"
-          />
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        {trigger ?? (
+          <Button type="button" data-testid="ws-create">
+            <Plus className="h-4 w-4" />
+            {canApprove ? "开通服务器" : "申请服务器"}
+          </Button>
         )}
-      </div>
-      {usageHint && <p className="muted usage-hint">{usageHint}</p>}
-    </form>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{canApprove ? "开通服务器" : "申请服务器"}</DialogTitle>
+          <DialogDescription>
+            {canApprove
+              ? "选择套餐后开通隔离机器。示例规格 2c2g = 2 核 / 2GiB 内存 / 5GiB 盘。停止后仍占配额。"
+              : "提交申请后由项目管理员审批。通过后才会占用配额并创建机器。开通后可再申请扩容（硬盘不能缩小）。"}
+          </DialogDescription>
+        </DialogHeader>
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+          <DialogBody className="grid gap-4">
+            <Field label="项目">
+              <SelectBox
+                testId="ws-project-select"
+                value={projectId}
+                onValueChange={setProjectId}
+                disabled={showAdvanced}
+                placeholder="选择项目…"
+                options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.slug})` }))}
+              />
+            </Field>
+            <Field label="名称">
+              <Input
+                data-testid="ws-name-input"
+                placeholder="可选，默认 plan-arch"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            <Field label="套餐">
+              <SelectBox
+                testId="ws-plan-select"
+                value={plan}
+                onValueChange={setPlan}
+                options={
+                  availablePlans.length > 0
+                    ? availablePlans.map((p) => ({
+                        value: p.name,
+                        label: `${p.name}${formatPlanSpec(p) ? ` (${formatPlanSpec(p)})` : ""}`,
+                      }))
+                    : PLANS.map((p) => ({
+                        value: p,
+                        label: `${p}${PLAN_SPECS[p] ? ` (${PLAN_SPECS[p]})` : ""}`,
+                      }))
+                }
+              />
+            </Field>
+            <Field label="架构">
+              <SelectBox
+                testId="ws-arch-select"
+                value={arch}
+                onValueChange={setArch}
+                options={ARCHES.map((a) => ({ value: a, label: a }))}
+              />
+            </Field>
+            <Field label="可见性">
+              <SelectBox
+                testId="ws-visibility-select"
+                value={visibility}
+                onValueChange={(v) => setVisibility(v as "shared" | "private")}
+                options={[
+                  { value: "shared", label: "shared（项目成员可 SSH）" },
+                  { value: "private", label: "private（仅 owner）" },
+                ]}
+              />
+            </Field>
+            <div className="grid gap-2">
+              <Button type="button" variant="ghost" className="w-fit px-0" onClick={() => setShowAdvanced((v) => !v)}>
+                {showAdvanced ? "收起高级" : "高级：粘贴 project uuid"}
+              </Button>
+              {showAdvanced && (
+                <Input
+                  className="mono font-mono"
+                  placeholder="project uuid"
+                  value={advancedId}
+                  onChange={(e) => setAdvancedId(e.target.value)}
+                  aria-label="project uuid"
+                />
+              )}
+            </div>
+            {usageHint && <p className="m-0 text-sm text-muted-foreground">{usageHint}</p>}
+            {formErr && (
+              <Alert variant="destructive">
+                <AlertDescription>{formErr}</AlertDescription>
+              </Alert>
+            )}
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              取消
+            </Button>
+            <Button data-testid="ws-submit" disabled={busy} type="submit">
+              {busy ? "创建中…" : canApprove ? "开通服务器" : "提交申请"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

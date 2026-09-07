@@ -7,7 +7,7 @@ test.describe("PW-1 Layout 与壳子体验", () => {
     const links = [
       { id: "nav-projects", url: "/projects", title: "项目" },
       { id: "nav-members", url: "/members", title: "成员" },
-      { id: "nav-workspaces", url: "/workspaces", title: "Workspace" },
+      { id: "nav-workspaces", url: "/workspaces", title: "服务器" },
       { id: "nav-nodes", url: "/nodes", title: "节点" },
       { id: "nav-capacity", url: "/capacity", title: "容量" },
       { id: "nav-keys", url: "/settings/keys", title: "SSH 公钥" },

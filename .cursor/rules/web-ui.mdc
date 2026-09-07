@@ -1,0 +1,35 @@
+---
+description: ha-web 必须用 shadcn/ui；创建走弹窗；列表顶底固定；Sonner；Tooltip；明暗主题
+globs: web/**
+alwaysApply: true
+---
+
+# ha-web UI 约定
+
+前端控制台只使用 `web/src/components/ui/` 下的 **shadcn/ui** 组件。页面里不要写原生 `<select>` / `<option>`、`window.confirm`、`window.alert`、自定义 toast 实现。
+
+- 选择器：`Select` / `SelectBox`（Radix），打开时用 shadcn 标准微动画（fade + zoom + slide）。不要原生 select。
+- 通知：`sonner`（`toast.success/error/info` 或 `useToast()`）。
+- 确认：`AlertDialog`（顶栏标题固定、中间可滚、底栏按钮固定）。
+- Hover 提示：`Tooltip` / `Hint`（Radix）。截断 id、中文映射后的原文、图标按钮含义都用它，不要写原生 `title`。例外：表单 `pattern` 校验失败文案可以保留 `title`。根上已有 `TooltipProvider`，页面里直接用 `Hint`。
+- 主题：`next-themes` + `ThemeToggle`，页面必须同时支持浅色 / 暗色（token 走 CSS 变量，不要写死 `bg-white`）。
+
+## 创建：按钮 + 弹窗
+
+所有「创建 / 添加 / 生成邀请」都是列表页顶部一个按钮，点开 `Dialog`：
+
+- **顶部固定**：`DialogHeader`
+- **中间可滚**：`DialogBody`
+- **底部固定**：`DialogFooter`（取消 + 提交）
+
+## 列表：顶底固定 + 中间滚动
+
+用 `PageFrame`：
+
+- **顶部固定**：`PageHeader` + 筛选 / 创建
+- **中间可滚**：表格或空态
+- **底部固定**：完整 `Paginator`
+
+## 测试
+
+弹窗内才有表单。E2E 用 `openCreateDialog`、`chooseSelect`、`confirmAlert`（见 `web/e2e/helpers/dialog.ts`），不要 `selectOption` / 原生 `page.on("dialog")`。

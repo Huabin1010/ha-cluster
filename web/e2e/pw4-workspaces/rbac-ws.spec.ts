@@ -1,5 +1,6 @@
 import { test, expect } from "../fixtures/auth";
 import { seedProjectWithMembers } from "../fixtures/seed";
+import { openCreateDialog, chooseSelect } from "../helpers/dialog";
 
 test.describe("PW-4 RBAC 成员建机权限", () => {
   test("PW4-19 @pw4 viewer 不能创建", async ({ pageAs }) => {
@@ -8,6 +9,7 @@ test.describe("PW-4 RBAC 成员建机权限", () => {
 
     const { page: viewerPage } = await pageAs("viewer");
     await viewerPage.goto(`/workspaces?project_id=${p.id}`);
+    await openCreateDialog(viewerPage, "ws-create");
     await viewerPage.getByTestId("ws-submit").click();
 
     const err = viewerPage.getByTestId("ws-error");
@@ -21,11 +23,16 @@ test.describe("PW-4 RBAC 成员建机权限", () => {
 
     const { page: devPage } = await pageAs("dev");
     await devPage.goto(`/workspaces?project_id=${p.id}`);
-    await devPage.getByTestId("ws-plan-select").selectOption("nano");
-    await devPage.getByTestId("ws-arch-select").selectOption("amd64");
+    await openCreateDialog(devPage, "ws-create");
+    await chooseSelect(devPage, "ws-plan-select", "nano");
+    await chooseSelect(devPage, "ws-arch-select", "amd64");
     await devPage.getByTestId("ws-submit").click();
 
     const row = devPage.locator('[data-testid="ws-row"]');
     await expect(row).toBeVisible();
+    await expect(row).toHaveAttribute("data-status", "requested");
+    await expect(row).toContainText("待审批");
+    await expect(row.getByTestId("ws-ssh-download")).not.toBeVisible();
+    await expect(row.getByTestId("ws-approve")).not.toBeVisible();
   });
 });

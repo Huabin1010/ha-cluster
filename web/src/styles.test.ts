@@ -3,15 +3,16 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-describe("Frontend Dark Mode Stylesheet Verification", () => {
+describe("Frontend theme stylesheet verification", () => {
   const cssPath = resolve(process.cwd(), "src/styles.css");
   const css = readFileSync(cssPath, "utf-8");
 
-  it("declares color-scheme: dark in :root", () => {
-    expect(css).toMatch(/color-scheme:\s*dark/);
+  it("declares light and dark color-scheme", () => {
+    expect(css).toMatch(/:root\s*\{[^}]*color-scheme:\s*light/s);
+    expect(css).toMatch(/\.dark\s*\{[^}]*color-scheme:\s*dark/s);
   });
 
-  it("contains all required semantic CSS variables in :root", () => {
+  it("contains all required semantic CSS variables in :root and .dark", () => {
     const requiredVariables = [
       "--bg",
       "--panel",
@@ -42,12 +43,15 @@ describe("Frontend Dark Mode Stylesheet Verification", () => {
       "--token-box-bg",
     ];
 
+    const root = css.match(/:root\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+    const dark = css.match(/\.dark\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
     requiredVariables.forEach((varName) => {
-      expect(css).toContain(`${varName}:`);
+      expect(root).toContain(`${varName}:`);
+      expect(dark).toContain(`${varName}:`);
     });
   });
 
-  it("provides WebKit autofill override for dark theme", () => {
+  it("provides WebKit autofill override for theme tokens", () => {
     expect(css).toMatch(/input:-webkit-autofill/);
     expect(css).toMatch(/-webkit-box-shadow:\s*0 0 0 1000px var\(--input-bg\) inset/);
   });
@@ -58,22 +62,22 @@ describe("Frontend Dark Mode Stylesheet Verification", () => {
     expect(css).toMatch(/::-webkit-scrollbar-thumb/);
   });
 
-  it("locks option background to match dark theme", () => {
+  it("locks option background to match theme tokens", () => {
     expect(css).toMatch(/option\s*\{[^}]*background-color:\s*var\(--panel\)/);
   });
 
-  it("has zero hardcoded hex colors outside :root declaration block", () => {
+  it("has zero hardcoded hex colors outside :root and .dark declaration blocks", () => {
     const lines = css.split("\n");
-    let inRoot = false;
+    let inTokenBlock = false;
     const leakedHexColors: { line: number; text: string }[] = [];
 
     lines.forEach((line: string, idx: number) => {
-      if (line.includes(":root {")) inRoot = true;
-      if (inRoot && line.includes("}")) {
-        inRoot = false;
+      if (line.includes(":root {") || line.includes(".dark {")) inTokenBlock = true;
+      if (inTokenBlock && line.includes("}")) {
+        inTokenBlock = false;
         return;
       }
-      if (inRoot) return;
+      if (inTokenBlock) return;
 
       const hexMatches = line.match(/#[0-9a-fA-F]{3,8}\b/g);
       if (hexMatches) {

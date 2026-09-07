@@ -121,6 +121,22 @@ export const api = {
     return res.data;
   },
 
+  async patchProject(
+    token: string,
+    id: string,
+    data: { name?: string; slug?: string; budget_cpu_milli?: number; budget_mem_bytes?: number; budget_disk_bytes?: number },
+  ) {
+    const res = await request("/projects/" + id, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }, token);
+    return res.data;
+  },
+
+  async deleteProject(token: string, id: string) {
+    return request("/projects/" + id, { method: "DELETE" }, token);
+  },
+
   async usage(token: string, id: string) {
     const res = await request<{
       project_id: string;
@@ -197,7 +213,23 @@ export const api = {
     return res.data;
   },
 
-  async startWorkspace(token: string, id: string) {
+  async approveWorkspace(token: string, id: string) {
+    return request("/workspaces/" + id + "/approve", { method: "POST", body: "{}" }, token);
+  },
+
+  async rejectWorkspace(token: string, id: string, reason = "") {
+    return request("/workspaces/" + id + "/reject", {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }, token);
+  },
+
+  async getConnection(token: string, id: string) {
+    const res = await request<{ command: string; host: string; port: number }>("/workspaces/" + id + "/connection", {
+      method: "GET",
+    }, token);
+    return res.data;
+  },
     return request("/workspaces/" + id + "/start", { method: "POST" }, token);
   },
 

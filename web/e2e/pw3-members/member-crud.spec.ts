@@ -1,6 +1,7 @@
 import { test, expect } from "../fixtures/auth";
 import { api } from "../helpers/api";
 import { seedProject } from "../fixtures/seed";
+import { openCreateDialog, chooseSelect } from "../helpers/dialog";
 
 test.describe("PW-3 成员管理与列表", () => {
   test("PW3-01 @pw3 @smoke 从项目进成员", async ({ pageAs }) => {
@@ -22,7 +23,7 @@ test.describe("PW-3 成员管理与列表", () => {
 
     await page.goto(`/members?project_id=${p.id}`);
     const select = page.getByTestId("member-project");
-    await expect(select).toHaveValue(p.id);
+    await expect(select).toHaveAttribute("data-value", p.id);
 
     await expect(page.getByTestId("member-table")).toBeVisible();
   });
@@ -32,8 +33,9 @@ test.describe("PW-3 成员管理与列表", () => {
     const p = await seedProject(tokens.token, "add-dev");
 
     await page.goto(`/projects/${p.id}/members`);
+    await openCreateDialog(page, "member-add-open");
     await page.getByTestId("member-username").fill("qa_dev");
-    await page.getByTestId("member-role").selectOption("developer");
+    await chooseSelect(page, "member-role", "developer");
     await page.getByTestId("member-add").click();
 
     // 表格中出现两条成员记录，并且包含 developer
@@ -63,8 +65,8 @@ test.describe("PW-3 成员管理与列表", () => {
     await page.goto(`/projects/${p.id}/members`);
     await expect(page.getByTestId("member-row")).toHaveCount(2);
 
-    page.once("dialog", (d) => d.accept());
     await page.getByTestId("member-remove").click();
+    await page.getByRole("alertdialog").getByTestId("confirm-ok").click();
 
     await expect(page.getByTestId("member-row")).toHaveCount(1);
   });
@@ -74,8 +76,10 @@ test.describe("PW-3 成员管理与列表", () => {
     const p = await seedProject(tokens.token, "no-owner");
 
     await page.goto(`/projects/${p.id}/members`);
+    await openCreateDialog(page, "member-add-open");
     const roleSelect = page.getByTestId("member-role");
-    const options = await roleSelect.locator("option").allTextContents();
+    await roleSelect.click();
+    const options = await page.getByRole("option").allTextContents();
     expect(options.some((txt) => txt.includes("owner"))).toBe(false);
 
     await expect(page.locator(".members-panel")).toContainText("owner 不可通过此表单转让");

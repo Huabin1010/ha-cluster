@@ -7,6 +7,52 @@ describe("dataProvider", () => {
     vi.restoreAllMocks();
   });
 
+  it("maps ssh-keys list to /me/ssh-keys", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      expect(String(url)).toContain("/me/ssh-keys");
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ id: "k1" }], total: 1 }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const r = await dataProvider.getList({ resource: "ssh-keys" });
+    expect(r.total).toBe(1);
+  });
+
+  it("maps capacity pools envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        expect(String(url)).toContain("/capacity");
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ pools: [{ arch: "amd64", cpu_milli_free: 1000 }] }),
+        };
+      }),
+    );
+    const r = await dataProvider.getList({ resource: "capacity" });
+    expect(r.total).toBe(1);
+    expect((r.data[0] as { id: string }).id).toBe("amd64");
+  });
+
+  it("custom posts reconcile", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(String(url)).toContain("/admin/reconcile");
+      expect(init?.method).toBe("POST");
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ released: 1, stale_nodes: 0 }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const r = await dataProvider.custom({ url: "/admin/reconcile", method: "post", payload: {} });
+    expect((r.data as { released: number }).released).toBe(1);
+  });
+
   it("maps getList envelope", async () => {
     vi.stubGlobal(
       "fetch",

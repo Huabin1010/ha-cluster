@@ -10,8 +10,8 @@ test.describe("Real Machine: 04 真实动作审计与容量变动对账", () => 
     const rows = adminPage.locator("[data-testid=audit-table] tbody tr");
     await expect(rows.first()).toBeVisible({ timeout: 15_000 });
 
-    // 检查存在 workspace.create 或 workspace.destroy 等真实记录
-    const createLogs = rows.filter({ hasText: "workspace.create" });
+    // 检查存在「创建 Workspace」或「销毁 Workspace」等真实记录
+    const createLogs = rows.filter({ hasText: /开通服务器|创建 Workspace|申请服务器/ });
     await expect(createLogs.first()).toBeVisible();
   });
 });

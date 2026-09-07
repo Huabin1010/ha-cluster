@@ -312,6 +312,54 @@ func TestInternalSSHTarget(t *testing.T) {
 	}
 }
 
+func TestWorkspaceApprovalHTTP(t *testing.T) {
+	h := testServer(t)
+	ownerTok := registerLogin(t, h, "own", "own@x.com")
+	devTok := registerLogin(t, h, "devapp", "devapp@x.com")
+	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "ap", "slug": "ap"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", ownerTok, map[string]string{
+		"username": "devapp", "role": "developer",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", devTok, map[string]string{
+		"name": "wait", "plan": "nano", "arch": "amd64",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var ws models.Workspace
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+	if ws.Status != models.WSRequested {
+		t.Fatalf("want requested got %s", ws.Status)
+	}
+	conn := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/connection", devTok, nil)
+	if conn.Code == http.StatusOK {
+		t.Fatalf("no connect before approve: %d %s", conn.Code, conn.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/approve", ownerTok, map[string]string{})
+	if rr.Code != http.StatusOK {
+		t.Fatal(rr.Body.String())
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+	if ws.Status != models.WSRunning {
+		t.Fatalf("%s", ws.Status)
+	}
+	conn = doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/connection", devTok, nil)
+	if conn.Code != http.StatusOK {
+		t.Fatal(conn.Body.String())
+	}
+	if !strings.Contains(conn.Body.String(), "bastion.mnnumath.vip") {
+		t.Fatal(conn.Body.String())
+	}
+}
+
 func TestProjectCreateUsageAndBudget(t *testing.T) {
 	h := testServer(t)
 	tok := registerLogin(t, h, "projowner", "projowner@example.com")
@@ -369,6 +417,27 @@ func TestProjectCreateUsageAndBudget(t *testing.T) {
 	one := doJSON(t, h, http.MethodGet, "/projects/"+p.ID.String(), tok, nil)
 	if one.Code != 200 {
 		t.Fatal(one.Body.String())
+	}
+
+	rename := doJSON(t, h, http.MethodPatch, "/projects/"+p.ID.String(), tok, map[string]any{
+		"name": "Renamed", "slug": "demo-renamed",
+	})
+	if rename.Code != 200 {
+		t.Fatal(rename.Body.String())
+	}
+	var renamed models.Project
+	_ = json.Unmarshal(rename.Body.Bytes(), &renamed)
+	if renamed.Name != "Renamed" || renamed.Slug != "demo-renamed" {
+		t.Fatalf("rename not saved: %+v", renamed)
+	}
+
+	del := doJSON(t, h, http.MethodDelete, "/projects/"+p.ID.String(), tok, nil)
+	if del.Code != http.StatusNoContent {
+		t.Fatalf("delete want 204 got %d %s", del.Code, del.Body.String())
+	}
+	gone := doJSON(t, h, http.MethodGet, "/projects/"+p.ID.String(), tok, nil)
+	if gone.Code != http.StatusNotFound && gone.Code != http.StatusForbidden {
+		t.Fatalf("deleted project want 404/403 got %d %s", gone.Code, gone.Body.String())
 	}
 }
 
@@ -464,4 +533,3 @@ func TestApiPrefixAndSPAFallback(t *testing.T) {
 		t.Fatalf("expected 404 JSON for unknown API, got %d %s", rec404.Code, rec404.Body.String())
 	}
 }
-

@@ -1,9 +1,19 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { useOne, useUpdate } from "@refinedev/core";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useDelete, useOne, useUpdate } from "@refinedev/core";
 import { api, friendlyError } from "../../providers";
 import { copyText, formatBudget, formatBytes, formatCpuMilli, formatTime } from "./format";
-import type { Project, ProjectUsage } from "./types";
+import { canManageProject, type Project, type ProjectUsage } from "./types";
+import { ProjectFormDialog } from "./FormDialog";
+import { ProjectDeleteDialog } from "./DeleteDialog";
+import { readCurrentProject, writeCurrentProject } from "../../lib/current-project";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Field } from "../../components/ui/field";
+import { Alert, AlertDescription } from "../../components/ui/alert";
+import { Separator } from "../../components/ui/separator";
+import { Loading } from "../../ui";
 
 function parseBudgetInput(raw: string): number | null {
   const t = raw.trim();
@@ -15,11 +25,14 @@ function parseBudgetInput(raw: string): number | null {
 
 export function ProjectDetailPage() {
   const { id = "" } = useParams();
+  const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch } = useOne<Project>({
     resource: "projects",
     id,
   });
-  const { mutate: patch, isLoading: saving } = useUpdate();
+  const { mutate: patch, isLoading: savingBudget } = useUpdate();
+  const { mutate: patchMeta, isLoading: savingMeta } = useUpdate();
+  const { mutate: remove, isLoading: removing } = useDelete();
 
   const [usage, setUsage] = useState<ProjectUsage | null>(null);
   const [usageErr, setUsageErr] = useState("");
@@ -29,8 +42,15 @@ export function ProjectDetailPage() {
   const [formErr, setFormErr] = useState("");
   const [formOk, setFormOk] = useState("");
   const [copied, setCopied] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editErr, setEditErr] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const project = data?.data;
+
+  useEffect(() => {
+    if (project?.id) writeCurrentProject(project.id);
+  }, [project?.id]);
 
   useEffect(() => {
     if (!project) return;
@@ -61,6 +81,53 @@ export function ProjectDetailPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     }
+  }
+
+  function onSaveMeta(name: string, slug: string) {
+    setEditErr("");
+    patchMeta(
+      {
+        resource: "projects",
+        id,
+        values: { name, slug },
+        successNotification: { message: "项目已保存", type: "success" },
+        errorNotification: false,
+      },
+      {
+        onSuccess: () => {
+          setEditOpen(false);
+          void refetch();
+        },
+        onError: (err) => {
+          const raw = err instanceof Error ? err.message : String(err);
+          if (raw === "conflict" || raw.includes("conflict")) {
+            setEditErr("slug 已被占用，请换一个");
+            return;
+          }
+          setEditErr(friendlyError(err));
+        },
+      },
+    );
+  }
+
+  function confirmDelete() {
+    setDeleteOpen(false);
+    setFormErr("");
+    remove(
+      {
+        resource: "projects",
+        id,
+        successNotification: { message: "项目已删除", type: "success" },
+        errorNotification: false,
+      },
+      {
+        onSuccess: () => {
+          if (readCurrentProject() === id) writeCurrentProject("");
+          navigate("/projects");
+        },
+        onError: (err) => setFormErr(friendlyError(err)),
+      },
+    );
   }
 
   function onSaveBudget(e: FormEvent) {
@@ -98,136 +165,204 @@ export function ProjectDetailPage() {
   if (isLoading) {
     return (
       <section>
-        <p className="muted">加载项目…</p>
+        <Loading label="加载项目…" />
       </section>
     );
   }
 
   if (isError || !project) {
     return (
-      <section>
-        <p className="error">{friendlyError(error) || "项目不存在或无权访问"}</p>
-        <Link to="/projects">← 返回项目列表</Link>
+      <section className="grid gap-3">
+        <Alert variant="destructive">
+          <AlertDescription>{friendlyError(error) || "项目不存在或无权访问"}</AlertDescription>
+        </Alert>
+        <Button variant="link" asChild>
+          <Link to="/projects">← 返回项目列表</Link>
+        </Button>
       </section>
     );
   }
 
   return (
-    <section className="project-detail">
-      <p>
+    <section className="project-detail grid gap-6">
+      <Button variant="link" className="h-auto w-fit p-0" asChild>
         <Link to="/projects">← 项目</Link>
-      </p>
-      <header className="project-detail-head">
+      </Button>
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2>{project.name}</h2>
-          <p className="muted">
-            slug <span className="mono">{project.slug}</span>
+          <h2 className="m-0 text-xl font-semibold">{project.name}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            slug <span className="mono font-mono">{project.slug}</span>
             {project.created_at && <> · 创建于 {formatTime(project.created_at)}</>}
           </p>
         </div>
-        <div className="row wrap">
-          <button type="button" className="ghost" data-testid="project-copy-id" onClick={onCopyId}>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" data-testid="project-copy-id" onClick={onCopyId}>
             {copied ? "已复制 id" : "复制 id"}
-          </button>
-          <Link data-testid="project-goto-members" to={`/projects/${encodeURIComponent(project.id)}/members`}>成员 / 邀请</Link>
-          <Link data-testid="project-goto-workspaces" className="btn-link" to={`/workspaces?project_id=${encodeURIComponent(project.id)}`}>
-            去创建 Workspace
-          </Link>
+          </Button>
+          {canManageProject(project.my_role) && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                data-testid="project-edit"
+                onClick={() => {
+                  setEditErr("");
+                  setEditOpen(true);
+                }}
+              >
+                编辑
+              </Button>
+              <Button type="button" variant="destructive" data-testid="project-delete" onClick={() => setDeleteOpen(true)} disabled={removing}>
+                删除
+              </Button>
+            </>
+          )}
+          <Button variant="outline" asChild>
+            <Link data-testid="project-goto-members" to={`/projects/${encodeURIComponent(project.id)}/members`}>
+              成员 / 邀请
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link data-testid="project-goto-workspaces" to={`/workspaces?project_id=${encodeURIComponent(project.id)}`}>
+              管理服务器
+            </Link>
+          </Button>
         </div>
       </header>
 
-      <div className="mono muted" data-testid="project-id">
+      <p className="mono m-0 font-mono text-xs text-muted-foreground" data-testid="project-id">
         {project.id}
+      </p>
+
+      <div>
+        <h3 className="mb-3 text-base font-semibold">用量</h3>
+        {usageErr && (
+          <Alert variant="destructive">
+            <AlertDescription>{usageErr}</AlertDescription>
+          </Alert>
+        )}
+        {usage ? (
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3" data-testid="project-usage">
+            <Card>
+              <CardHeader className="p-4">
+                <CardDescription>服务器</CardDescription>
+                <CardTitle>{usage.workspaces}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="p-4">
+                <CardDescription>CPU</CardDescription>
+                <CardTitle>{formatCpuMilli(usage.cpu_milli)}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="p-4">
+                <CardDescription>内存</CardDescription>
+                <CardTitle>{formatBytes(usage.mem_bytes)}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="p-4">
+                <CardDescription>磁盘</CardDescription>
+                <CardTitle>{formatBytes(usage.disk_bytes)}</CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+        ) : (
+          !usageErr && <p className="text-sm text-muted-foreground">加载用量…</p>
+        )}
+        <p className="mt-3 text-sm text-muted-foreground">
+          当前预算：CPU {formatBudget(project.budget_cpu_milli, "cpu")} · 内存{" "}
+          {formatBudget(project.budget_mem_bytes, "bytes")} · 磁盘{" "}
+          {formatBudget(project.budget_disk_bytes, "bytes")}
+        </p>
       </div>
 
-      <h3>用量</h3>
-      {usageErr && <p className="error">{usageErr}</p>}
-      {usage ? (
-        <div className="stat-grid" data-testid="project-usage">
-          <div className="stat">
-            <span className="muted">Workspace</span>
-            <strong>{usage.workspaces}</strong>
-          </div>
-          <div className="stat">
-            <span className="muted">CPU</span>
-            <strong>{formatCpuMilli(usage.cpu_milli)}</strong>
-          </div>
-          <div className="stat">
-            <span className="muted">内存</span>
-            <strong>{formatBytes(usage.mem_bytes)}</strong>
-          </div>
-          <div className="stat">
-            <span className="muted">磁盘</span>
-            <strong>{formatBytes(usage.disk_bytes)}</strong>
-          </div>
-        </div>
-      ) : (
-        !usageErr && <p className="muted">加载用量…</p>
-      )}
-      <p className="muted">
-        当前预算：CPU {formatBudget(project.budget_cpu_milli, "cpu")} · 内存{" "}
-        {formatBudget(project.budget_mem_bytes, "bytes")} · 磁盘{" "}
-        {formatBudget(project.budget_disk_bytes, "bytes")}
-      </p>
+      <Separator />
 
-      <h3>编辑预算</h3>
-      <p className="muted">
-        仅 owner 可改。填 <strong>0</strong> 表示不限制。单位：milli-CPU（1000=1 核）、字节（内存/磁盘）。
-        例：512Mi ≈ 536870912，10Gi ≈ 10737418240。
-      </p>
-      <form className="budget-form" onSubmit={onSaveBudget}>
-        <label>
-          budget_cpu_milli
-          {budgetCpu.trim() && parseBudgetInput(budgetCpu) !== null && (
-            <span className="muted" style={{ marginLeft: "8px", fontSize: "0.85em" }}>
-              (≈ {formatBudget(parseBudgetInput(budgetCpu)!, "cpu")})
-            </span>
+      <Card className="max-w-md">
+        <CardHeader>
+          <CardTitle>编辑预算</CardTitle>
+          <CardDescription>
+            仅 owner 可改。填 <strong>0</strong> 表示不限制。单位：milli-CPU（1000=1 核）、字节（内存/磁盘）。
+            例：512Mi ≈ 536870912，10Gi ≈ 10737418240。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="grid gap-3" onSubmit={onSaveBudget}>
+            <Field
+              label={
+                <>
+                  budget_cpu_milli
+                  {budgetCpu.trim() && parseBudgetInput(budgetCpu) !== null && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      (≈ {formatBudget(parseBudgetInput(budgetCpu)!, "cpu")})
+                    </span>
+                  )}
+                </>
+              }
+            >
+              <Input inputMode="numeric" value={budgetCpu} onChange={(e) => setBudgetCpu(e.target.value)} data-testid="budget-cpu" />
+            </Field>
+            <Field
+              label={
+                <>
+                  budget_mem_bytes
+                  {budgetMem.trim() && parseBudgetInput(budgetMem) !== null && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      (≈ {formatBudget(parseBudgetInput(budgetMem)!, "bytes")})
+                    </span>
+                  )}
+                </>
+              }
+            >
+              <Input inputMode="numeric" value={budgetMem} onChange={(e) => setBudgetMem(e.target.value)} data-testid="budget-mem" />
+            </Field>
+            <Field
+              label={
+                <>
+                  budget_disk_bytes
+                  {budgetDisk.trim() && parseBudgetInput(budgetDisk) !== null && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      (≈ {formatBudget(parseBudgetInput(budgetDisk)!, "bytes")})
+                    </span>
+                  )}
+                </>
+              }
+            >
+              <Input inputMode="numeric" value={budgetDisk} onChange={(e) => setBudgetDisk(e.target.value)} data-testid="budget-disk" />
+            </Field>
+            <Button type="submit" disabled={savingBudget} data-testid="budget-save">
+              {savingBudget ? "保存中…" : "保存预算"}
+            </Button>
+          </form>
+          {formErr && (
+            <Alert variant="destructive" className="mt-3" data-testid="project-error">
+              <AlertDescription>{formErr}</AlertDescription>
+            </Alert>
           )}
-          <input
-            inputMode="numeric"
-            value={budgetCpu}
-            onChange={(e) => setBudgetCpu(e.target.value)}
-            data-testid="budget-cpu"
-          />
-        </label>
-        <label>
-          budget_mem_bytes
-          {budgetMem.trim() && parseBudgetInput(budgetMem) !== null && (
-            <span className="muted" style={{ marginLeft: "8px", fontSize: "0.85em" }}>
-              (≈ {formatBudget(parseBudgetInput(budgetMem)!, "bytes")})
-            </span>
-          )}
-          <input
-            inputMode="numeric"
-            value={budgetMem}
-            onChange={(e) => setBudgetMem(e.target.value)}
-            data-testid="budget-mem"
-          />
-        </label>
-        <label>
-          budget_disk_bytes
-          {budgetDisk.trim() && parseBudgetInput(budgetDisk) !== null && (
-            <span className="muted" style={{ marginLeft: "8px", fontSize: "0.85em" }}>
-              (≈ {formatBudget(parseBudgetInput(budgetDisk)!, "bytes")})
-            </span>
-          )}
-          <input
-            inputMode="numeric"
-            value={budgetDisk}
-            onChange={(e) => setBudgetDisk(e.target.value)}
-            data-testid="budget-disk"
-          />
-        </label>
-        <button type="submit" disabled={saving} data-testid="budget-save">
-          {saving ? "保存中…" : "保存预算"}
-        </button>
-      </form>
-      {formErr && (
-        <p className="error" data-testid="project-error">
-          {formErr}
-        </p>
-      )}
-      {formOk && <p className="ok">{formOk}</p>}
+          {formOk && <p className="ok mt-3 text-sm">{formOk}</p>}
+        </CardContent>
+      </Card>
+      <ProjectFormDialog
+        open={editOpen}
+        onOpenChange={(v) => {
+          setEditOpen(v);
+          if (!v) setEditErr("");
+        }}
+        mode="edit"
+        initial={{ name: project.name, slug: project.slug }}
+        submitting={savingMeta}
+        error={editErr}
+        onSubmit={onSaveMeta}
+      />
+      <ProjectDeleteDialog
+        open={deleteOpen}
+        name={project.name}
+        onOpenChange={setDeleteOpen}
+        onConfirm={confirmDelete}
+      />
     </section>
   );
 }

@@ -2,6 +2,7 @@ import { test, expect } from "../fixtures/auth";
 import { api } from "../helpers/api";
 import { seedProject, seedWorkspace } from "../fixtures/seed";
 import { expectToast } from "../helpers/assert";
+import { openCreateDialog, chooseSelect, confirmAlert } from "../helpers/dialog";
 
 test.describe("PW-4 Workspace 生命周期", () => {
   test("PW4-01 @pw4 @smoke 空态", async ({ pageAs }) => {
@@ -11,7 +12,7 @@ test.describe("PW-4 Workspace 生命周期", () => {
 
     const empty = page.getByTestId("empty-state");
     await expect(empty).toBeVisible();
-    await expect(empty).toContainText("还没有 Workspace");
+    await expect(empty).toContainText("还没有服务器");
     await expect(page.getByTestId("ws-create")).toBeVisible();
   });
 
@@ -20,8 +21,9 @@ test.describe("PW-4 Workspace 生命周期", () => {
     const p = await seedProject(tokens.token, "ws-create");
     await page.goto(`/workspaces?project_id=${p.id}`);
 
-    await page.getByTestId("ws-plan-select").selectOption("nano");
-    await page.getByTestId("ws-arch-select").selectOption("amd64");
+    await openCreateDialog(page, "ws-create");
+    await chooseSelect(page, "ws-plan-select", "nano");
+    await chooseSelect(page, "ws-arch-select", "amd64");
     await page.getByTestId("ws-submit").click();
 
     const row = page.locator('[data-testid="ws-row"][data-status="running"]');
@@ -84,10 +86,10 @@ test.describe("PW-4 Workspace 生命周期", () => {
     const p = await seedProject(tokens.token, "ws-dest");
     await seedWorkspace(tokens.token, p.id, { name: "ws-to-dest" });
 
-    page.on("dialog", (dialog) => dialog.accept());
     await page.goto(`/workspaces?project_id=${p.id}`);
     const row = page.locator('[data-testid="ws-row"]', { hasText: "ws-to-dest" });
     await row.getByTestId("ws-destroy").click();
+    await confirmAlert(page, true);
 
     await expect(row).not.toBeVisible();
     await expectToast(page, "配额已归还");
@@ -98,10 +100,10 @@ test.describe("PW-4 Workspace 生命周期", () => {
     const p = await seedProject(tokens.token, "ws-cancel");
     await seedWorkspace(tokens.token, p.id, { name: "ws-cancel-dest" });
 
-    page.on("dialog", (dialog) => dialog.dismiss());
     await page.goto(`/workspaces?project_id=${p.id}`);
     const row = page.locator('[data-testid="ws-row"]', { hasText: "ws-cancel-dest" });
     await row.getByTestId("ws-destroy").click();
+    await confirmAlert(page, false);
 
     await expect(row).toBeVisible();
   });
@@ -111,7 +113,8 @@ test.describe("PW-4 Workspace 生命周期", () => {
     const p = await seedProject(tokens.token, "ws-vis");
 
     await page.goto(`/workspaces?project_id=${p.id}`);
-    await page.getByTestId("ws-visibility-select").selectOption("private");
+    await openCreateDialog(page, "ws-create");
+    await chooseSelect(page, "ws-visibility-select", "private");
     await page.getByTestId("ws-submit").click();
 
     const row = page.getByTestId("ws-row").first();
@@ -143,6 +146,7 @@ test.describe("PW-4 Workspace 生命周期", () => {
       await route.continue();
     });
 
+    await openCreateDialog(page, "ws-create");
     const submitBtn = page.getByTestId("ws-submit");
     await submitBtn.click();
 
@@ -156,12 +160,14 @@ test.describe("PW-4 Workspace 生命周期", () => {
     const p = await seedProject(tokens.token, "ws-plans");
     await page.goto(`/workspaces?project_id=${p.id}`);
 
+    await openCreateDialog(page, "ws-create");
     const planSelect = page.getByTestId("ws-plan-select");
     await expect(planSelect).toBeVisible();
-    await expect(planSelect.locator("option")).toHaveCount(5);
-    const options = await planSelect.locator("option").allTextContents();
-    for (const expected of ["nano", "small", "medium", "large", "xlarge"]) {
-      expect(options).toContain(expected);
+    await planSelect.click();
+    const options = await page.getByRole("option").allTextContents();
+    expect(options).toHaveLength(6);
+    for (const expected of ["nano", "small", "2c2g", "medium", "large", "xlarge"]) {
+      expect(options.some((txt) => txt.includes(expected))).toBe(true);
     }
   });
 

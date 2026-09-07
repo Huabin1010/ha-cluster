@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -118,6 +119,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Post("/projects/{id}/workspaces", s.createWorkspace)
 		r.Post("/projects/{id}/invitations", s.invite)
 		r.Patch("/projects/{id}", s.patchProject)
+		r.Delete("/projects/{id}", s.deleteProject)
 
 		r.Post("/invitations/accept", s.acceptInvite)
 		r.Post("/admin/reconcile", s.reconcile)
@@ -127,9 +129,19 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/workspaces/{id}", s.getWorkspace)
 		r.Post("/workspaces/{id}/stop", s.stopWorkspace)
 		r.Post("/workspaces/{id}/start", s.startWorkspace)
+		r.Post("/workspaces/{id}/approve", s.approveWorkspace)
+		r.Post("/workspaces/{id}/reject", s.rejectWorkspace)
+		r.Post("/workspaces/{id}/resize", s.requestResize)
+		r.Post("/workspaces/{id}/resize/approve", s.approveResize)
+		r.Post("/workspaces/{id}/resize/reject", s.rejectResize)
 		r.Delete("/workspaces/{id}", s.destroyWorkspace)
 		r.Get("/workspaces/{id}/ssh-target", s.sshTarget)
 		r.Get("/workspaces/{id}/ssh-config", s.sshConfig)
+		r.Get("/workspaces/{id}/connection", s.sshConnection)
+		r.Get("/workspaces/{id}/ingress", s.listIngress)
+		r.Post("/workspaces/{id}/ingress", s.createIngress)
+		r.Delete("/ingress/{id}", s.deleteIngress)
+		r.Get("/ingress/meta", s.ingressMeta)
 
 		r.Get("/nodes", s.listNodes)
 		r.Get("/capacity", s.capacity)
@@ -149,8 +161,8 @@ func spaFileServer(webDir string) http.HandlerFunc {
 			return
 		}
 
-		path := filepath.Clean(r.URL.Path)
-		f, err := fs.Open(path)
+		rel := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
+		f, err := fs.Open(rel)
 		if err == nil {
 			defer f.Close()
 			stat, err := f.Stat()
@@ -219,6 +231,12 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 		code = http.StatusForbidden
 	} else if errors.Is(err, store.ErrUnauthorized) {
 		code = http.StatusUnauthorized
+	} else if errors.Is(err, store.ErrSecondPort) {
+		code = http.StatusConflict
+		msg = err.Error()
+	} else if errors.Is(err, store.ErrDiskShrink) || errors.Is(err, store.ErrNotExpansion) {
+		code = http.StatusBadRequest
+		msg = err.Error()
 	} else if errors.Is(err, store.ErrInvalidInput) {
 		code = http.StatusBadRequest
 	}
@@ -234,6 +252,20 @@ func decodeJSON(r *http.Request, v any) error {
 func listEnvelope(w http.ResponseWriter, items any, total int) {
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	writeJSON(w, http.StatusOK, map[string]any{"data": items, "total": total})
+}
+
+func (s *Server) attachMyRole(ctx context.Context, u *models.User, p *models.Project) {
+	if u == nil || p == nil {
+		return
+	}
+	if m, err := s.App.RequireMembership(ctx, *u, p.ID, models.RoleViewer); err == nil {
+		p.MyRole = m.Role
+	}
+}
+
+func (s *Server) withMyRole(ctx context.Context, u models.User, p *models.Project) *models.Project {
+	s.attachMyRole(ctx, &u, p)
+	return p
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
@@ -348,6 +380,9 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []models.Project{}
 	}
+	for i := range items {
+		s.attachMyRole(r.Context(), u, &items[i])
+	}
 	listEnvelope(w, items, len(items))
 }
 
@@ -365,7 +400,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, p)
+	writeJSON(w, http.StatusCreated, s.withMyRole(r.Context(), *userFrom(r), p))
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
@@ -383,7 +418,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, s.withMyRole(r.Context(), *userFrom(r), p))
 }
 
 func (s *Server) projectUsage(w http.ResponseWriter, r *http.Request) {
@@ -400,7 +435,7 @@ func (s *Server) projectUsage(w http.ResponseWriter, r *http.Request) {
 	var cpu, mem, disk int64
 	active := 0
 	for _, ws := range wss {
-		if ws.Status == models.WSDestroyed || ws.Status == models.WSFailed {
+		if ws.Status == models.WSDestroyed || ws.Status == models.WSFailed || ws.Status == models.WSRequested || ws.Status == models.WSRejected {
 			continue
 		}
 		if a, err := s.App.Store.GetAllocation(r.Context(), ws.AllocationID); err == nil && a.State != models.AllocReleased {
@@ -523,6 +558,9 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		Plan       string `json:"plan"`
 		Arch       string `json:"arch"`
 		Visibility string `json:"visibility"`
+		CPUMilli   int64  `json:"cpu_milli"`
+		MemBytes   int64  `json:"mem_bytes"`
+		DiskBytes  int64  `json:"disk_bytes"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
@@ -530,7 +568,8 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := s.App.CreateWorkspace(r.Context(), service.CreateWorkspaceInput{
 		ProjectID: pid, Name: body.Name, Plan: body.Plan, Arch: body.Arch,
-		Visibility: body.Visibility, Actor: *userFrom(r),
+		Visibility: body.Visibility, CPUMilli: body.CPUMilli, MemBytes: body.MemBytes, DiskBytes: body.DiskBytes,
+		Actor: *userFrom(r),
 	})
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -667,7 +706,10 @@ func (s *Server) sshConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	u := userFrom(r)
 	port := bastionSSHPort()
-	cfg := "Host ha-" + ws.ID.String()[:8] + "\n" +
+	cfg := "# Isolated workspace " + ws.ID.String() + "\n" +
+		"# scp: scp -P " + strconv.Itoa(port) + " -o RequestTTY=force -o RemoteCommand=" + ws.ID.String() +
+		" ./file " + u.Username + "@bastion.mnnumath.vip:/root/\n" +
+		"Host ha-" + ws.ID.String()[:8] + "\n" +
 		"  HostName bastion.mnnumath.vip\n" +
 		"  User " + u.Username + "\n" +
 		"  Port " + strconv.Itoa(port) + "\n" +
@@ -744,12 +786,7 @@ func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) plans(w http.ResponseWriter, r *http.Request) {
-	m := models.Plans()
-	list := make([]models.Plan, 0, len(m))
-	for _, p := range m {
-		list = append(list, p)
-	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, models.PlanList())
 }
 
 func (s *Server) audit(w http.ResponseWriter, r *http.Request) {

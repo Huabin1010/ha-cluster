@@ -128,6 +128,19 @@ export async function apiText(path: string, init: RequestInit = {}): Promise<str
 
 type ListFilter = { field: string; operator?: string; value?: unknown };
 
+function collectionPath(resource: string): string {
+  switch (resource) {
+    case "ssh-keys":
+      return "/me/ssh-keys";
+    case "audit-logs":
+      return "/audit-logs";
+    case "capacity":
+      return "/capacity";
+    default:
+      return `/${resource}`;
+  }
+}
+
 export const dataProvider = {
   getList: async ({
     resource,
@@ -143,10 +156,18 @@ export const dataProvider = {
       }
     }
     const q = qs.toString();
-    const json = await api<{ data: unknown[]; total: number }>(`/${resource}${q ? `?${q}` : ""}`);
+    const json = await api<Record<string, unknown>>(`${collectionPath(resource)}${q ? `?${q}` : ""}`);
+    if (resource === "capacity") {
+      const pools = Array.isArray(json.pools) ? json.pools : [];
+      const list = pools.map((p) => {
+        const row = (p ?? {}) as Record<string, unknown>;
+        return { id: String(row.arch ?? ""), ...row };
+      });
+      return { data: list, total: list.length };
+    }
     const data = json.data ?? json;
     const list = Array.isArray(data) ? data : [];
-    return { data: list, total: json.total ?? list.length };
+    return { data: list, total: typeof json.total === "number" ? json.total : list.length };
   },
   getOne: async ({ resource, id }: { resource: string; id: string | number }) => {
     const data = await api(`/${resource}/${id}`);
@@ -167,7 +188,11 @@ export const dataProvider = {
       });
       return { data };
     }
-    const data = await api(`/${resource}`, { method: "POST", body: JSON.stringify(variables) });
+    if (resource === "ssh-keys") {
+      const data = await api("/me/ssh-keys", { method: "POST", body: JSON.stringify(variables) });
+      return { data };
+    }
+    const data = await api(collectionPath(resource), { method: "POST", body: JSON.stringify(variables) });
     return { data };
   },
   update: async ({
@@ -186,8 +211,26 @@ export const dataProvider = {
     return { data };
   },
   deleteOne: async ({ resource, id }: { resource: string; id: string | number }) => {
-    await api(`/${resource}/${id}`, { method: "DELETE" });
+    const path = resource === "ssh-keys" ? `/me/ssh-keys/${id}` : `${collectionPath(resource)}/${id}`;
+    await api(path, { method: "DELETE" });
     return { data: { id } };
+  },
+  custom: async ({
+    url,
+    method,
+    payload,
+  }: {
+    url: string;
+    method: string;
+    payload?: unknown;
+  }) => {
+    const path = url.startsWith("/api") ? url.slice(4) : url;
+    const init: RequestInit = { method: method.toUpperCase() };
+    if (payload !== undefined && method !== "get" && method !== "head") {
+      init.body = JSON.stringify(payload);
+    }
+    const data = await api(path, init);
+    return { data };
   },
   getApiUrl: () => API_BASE,
 };
@@ -303,6 +346,9 @@ export function friendlyError(e: unknown): string {
     return "网络异常，请稍后重试";
   }
   const msg = e instanceof Error ? e.message : String(e);
+  if (msg === "SECOND_PORT_CONFIRM_REQUIRED") return "这台机器已有一个服务端口。多站点请在主机内用 nginx 做路径路由。";
+  if (msg === "DISK_SHRINK_NOT_SUPPORTED") return "不提供硬盘缩容，请只申请更大的磁盘";
+  if (msg === "ONLY_EXPANSION") return "只支持扩容：CPU / 内存 / 磁盘均不可下调";
   if (msg === "unauthorized" || msg === "Unauthorized") return "用户名或密码错误";
   if (msg === "forbidden") return "没有权限做这件事";
   if (msg === "not found") return "找不到该用户或资源";

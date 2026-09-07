@@ -99,6 +99,64 @@ func TestProjectBudget(t *testing.T) {
 	}
 }
 
+func TestPatchAndDeleteProject(t *testing.T) {
+	app, u := setupApp(t)
+	ctx := context.Background()
+	p, err := app.CreateProject(ctx, u.ID, "old", "old-slug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := app.CreateProject(ctx, u.ID, "other", "other-slug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, slug := "renamed", "new-slug"
+	got, err := app.PatchProject(ctx, *u, p.ID, PatchProjectInput{Name: &name, Slug: &slug})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "renamed" || got.Slug != "new-slug" {
+		t.Fatalf("%+v", got)
+	}
+	dup := "other-slug"
+	if _, err := app.PatchProject(ctx, *u, p.ID, PatchProjectInput{Slug: &dup}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("dup slug: %v", err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Plan: "nano", Arch: models.ArchAMD64, Actor: *u,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DeleteProject(ctx, *u, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Store.GetProject(ctx, p.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("project still there: %v", err)
+	}
+	if _, err := app.Store.GetWorkspace(ctx, ws.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("workspace still there: %v", err)
+	}
+	nodes, _ := app.Store.ListNodes(ctx)
+	if nodes[0].UsedMem != 0 || nodes[0].UsedCPU != 0 {
+		t.Fatalf("quota not released: %+v", nodes[0])
+	}
+	dev, err := app.Register(ctx, "dev", "dev@x.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Store.AddMembership(ctx, models.Membership{ProjectID: other.ID, UserID: dev.ID, Role: models.RoleDeveloper}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DeleteProject(ctx, *dev, other.ID); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("developer should not delete: %v", err)
+	}
+	bad := "Bad_Slug"
+	if _, err := app.PatchProject(ctx, *u, other.ID, PatchProjectInput{Slug: &bad}); !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("invalid slug: %v", err)
+	}
+}
+
 func TestReconcileReleasesOrphans(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()

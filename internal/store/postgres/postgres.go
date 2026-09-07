@@ -19,6 +19,12 @@ import (
 //go:embed sql/001_init.sql
 var initSQL string
 
+//go:embed sql/002_workspace_spec.sql
+var specSQL string
+
+//go:embed sql/003_ingress.sql
+var ingressSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -34,6 +40,14 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, initSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, specSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, ingressSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -176,9 +190,42 @@ func (s *Store) GetProject(ctx context.Context, id uuid.UUID) (*models.Project, 
 }
 
 func (s *Store) UpdateProject(ctx context.Context, p *models.Project) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE projects SET name=$2,slug=$3,status=$4,budget_cpu_milli=$5,budget_mem_bytes=$6,budget_disk_bytes=$7 WHERE id=$1`,
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name=$2,slug=$3,status=$4,budget_cpu_milli=$5,budget_mem_bytes=$6,budget_disk_bytes=$7 WHERE id=$1`,
 		p.ID, p.Name, p.Slug, p.Status, p.BudgetCPUMilli, p.BudgetMemBytes, p.BudgetDiskBytes)
-	return err
+	if err != nil {
+		return store.ErrConflict
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) DeleteProject(ctx context.Context, id uuid.UUID) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ingress_routes WHERE project_id=$1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM workspaces WHERE project_id=$1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM allocations WHERE project_id=$1`, id); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ListProjectsForUser(ctx context.Context, userID uuid.UUID) ([]models.Project, error) {
@@ -389,20 +436,69 @@ func (s *Store) GetAllocation(ctx context.Context, id uuid.UUID) (*models.Alloca
 	return a, nil
 }
 
+func (s *Store) ExpandAllocation(ctx context.Context, id uuid.UUID, dCPU, dMem, dDisk int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var a models.Allocation
+	err = tx.QueryRowContext(ctx, `SELECT id,project_id,node_id,cpu_milli,mem_bytes,disk_bytes,state FROM allocations WHERE id=$1 FOR UPDATE`, id).
+		Scan(&a.ID, &a.ProjectID, &a.NodeID, &a.CPUMilli, &a.MemBytes, &a.DiskBytes, &a.State)
+	if err != nil {
+		return mapErr(err)
+	}
+	if a.State == models.AllocReleased {
+		return store.ErrAlreadyReleased
+	}
+	var allocCPU, allocMem, allocDisk, usedCPU, usedMem, usedDisk int64
+	err = tx.QueryRowContext(ctx, `SELECT allocatable_cpu_milli,allocatable_mem_bytes,allocatable_disk_bytes,used_cpu_milli,used_mem_bytes,used_disk_bytes
+		FROM nodes WHERE id=$1 FOR UPDATE`, a.NodeID).Scan(&allocCPU, &allocMem, &allocDisk, &usedCPU, &usedMem, &usedDisk)
+	if err != nil {
+		return mapErr(err)
+	}
+	if dCPU > 0 && allocCPU-usedCPU < dCPU {
+		return store.ErrNoCapacity
+	}
+	if dMem > 0 && allocMem-usedMem < dMem {
+		return store.ErrNoCapacity
+	}
+	if dDisk > 0 && allocDisk-usedDisk < dDisk {
+		return store.ErrNoCapacity
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE nodes SET used_cpu_milli=GREATEST(used_cpu_milli+$2,0), used_mem_bytes=GREATEST(used_mem_bytes+$3,0), used_disk_bytes=GREATEST(used_disk_bytes+$4,0) WHERE id=$1`,
+		a.NodeID, dCPU, dMem, dDisk)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE allocations SET cpu_milli=GREATEST(cpu_milli+$2,0), mem_bytes=GREATEST(mem_bytes+$3,0), disk_bytes=GREATEST(disk_bytes+$4,0) WHERE id=$1`,
+		id, dCPU, dMem, dDisk)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+const wsCols = `id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at,cpu_milli,mem_bytes,disk_bytes,pending_cpu_milli,pending_mem_bytes,pending_disk_bytes,resize_status`
+
 func (s *Store) CreateWorkspace(ctx context.Context, w *models.Workspace) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO workspaces (id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-		w.ID, w.ProjectID, w.Name, w.Plan, w.Arch, w.Visibility, w.OwnerUserID, w.NodeID, w.AllocationID, w.Status, w.SSHPort, w.HostKeyFP, w.CreatedAt, w.UpdatedAt)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO workspaces (`+wsCols+`)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		w.ID, w.ProjectID, w.Name, w.Plan, w.Arch, w.Visibility, w.OwnerUserID, w.NodeID, w.AllocationID, w.Status, w.SSHPort, w.HostKeyFP, w.CreatedAt, w.UpdatedAt,
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus)
 	if err != nil {
 		return store.ErrConflict
 	}
-	_, _ = s.db.ExecContext(ctx, `UPDATE allocations SET workspace_id=$2 WHERE id=$1`, w.AllocationID, w.ID)
+	if w.AllocationID != uuid.Nil {
+		_, _ = s.db.ExecContext(ctx, `UPDATE allocations SET workspace_id=$2 WHERE id=$1`, w.AllocationID, w.ID)
+	}
 	return nil
 }
 
 func scanWS(row interface{ Scan(dest ...any) error }) (*models.Workspace, error) {
 	w := &models.Workspace{}
-	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Plan, &w.Arch, &w.Visibility, &w.OwnerUserID, &w.NodeID, &w.AllocationID, &w.Status, &w.SSHPort, &w.HostKeyFP, &w.CreatedAt, &w.UpdatedAt)
+	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Plan, &w.Arch, &w.Visibility, &w.OwnerUserID, &w.NodeID, &w.AllocationID, &w.Status, &w.SSHPort, &w.HostKeyFP, &w.CreatedAt, &w.UpdatedAt,
+		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -410,11 +506,11 @@ func scanWS(row interface{ Scan(dest ...any) error }) (*models.Workspace, error)
 }
 
 func (s *Store) GetWorkspace(ctx context.Context, id uuid.UUID) (*models.Workspace, error) {
-	return scanWS(s.db.QueryRowContext(ctx, `SELECT id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at FROM workspaces WHERE id=$1`, id))
+	return scanWS(s.db.QueryRowContext(ctx, `SELECT `+wsCols+` FROM workspaces WHERE id=$1`, id))
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, projectID *uuid.UUID) ([]models.Workspace, error) {
-	q := `SELECT id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at FROM workspaces`
+	q := `SELECT ` + wsCols + ` FROM workspaces`
 	var rows *sql.Rows
 	var err error
 	if projectID != nil {
@@ -438,9 +534,17 @@ func (s *Store) ListWorkspaces(ctx context.Context, projectID *uuid.UUID) ([]mod
 }
 
 func (s *Store) UpdateWorkspace(ctx context.Context, w *models.Workspace) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE workspaces SET name=$2,plan=$3,arch=$4,visibility=$5,status=$6,ssh_port=$7,host_key_fp=$8,updated_at=$9 WHERE id=$1`,
-		w.ID, w.Name, w.Plan, w.Arch, w.Visibility, w.Status, w.SSHPort, w.HostKeyFP, w.UpdatedAt)
-	return err
+	_, err := s.db.ExecContext(ctx, `UPDATE workspaces SET name=$2,plan=$3,arch=$4,visibility=$5,status=$6,ssh_port=$7,host_key_fp=$8,updated_at=$9,node_id=$10,allocation_id=$11,
+		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18 WHERE id=$1`,
+		w.ID, w.Name, w.Plan, w.Arch, w.Visibility, w.Status, w.SSHPort, w.HostKeyFP, w.UpdatedAt, w.NodeID, w.AllocationID,
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus)
+	if err != nil {
+		return err
+	}
+	if w.AllocationID != uuid.Nil {
+		_, _ = s.db.ExecContext(ctx, `UPDATE allocations SET workspace_id=$2 WHERE id=$1`, w.AllocationID, w.ID)
+	}
+	return nil
 }
 
 func (s *Store) AddAudit(ctx context.Context, l models.AuditLog) error {
@@ -538,4 +642,74 @@ func (s *Store) GetRefreshByHash(ctx context.Context, hash string) (*models.Refr
 func (s *Store) DeleteRefresh(ctx context.Context, hash string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM refresh_sessions WHERE hash=$1`, hash)
 	return err
+}
+
+const ingressCols = `id,workspace_id,project_id,domain,path,port,preset,extra_nginx,status,created_at`
+
+func scanIngress(row interface{ Scan(dest ...any) error }) (*models.IngressRoute, error) {
+	r := &models.IngressRoute{}
+	err := row.Scan(&r.ID, &r.WorkspaceID, &r.ProjectID, &r.Domain, &r.Path, &r.Port, &r.Preset, &r.ExtraNginx, &r.Status, &r.CreatedAt)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return r, nil
+}
+
+func (s *Store) CreateIngress(ctx context.Context, r *models.IngressRoute) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO ingress_routes (`+ingressCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		r.ID, r.WorkspaceID, r.ProjectID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status, r.CreatedAt)
+	if err != nil {
+		return store.ErrConflict
+	}
+	return nil
+}
+
+func (s *Store) GetIngress(ctx context.Context, id uuid.UUID) (*models.IngressRoute, error) {
+	return scanIngress(s.db.QueryRowContext(ctx, `SELECT `+ingressCols+` FROM ingress_routes WHERE id=$1`, id))
+}
+
+func (s *Store) GetIngressByDomain(ctx context.Context, domain string) (*models.IngressRoute, error) {
+	return scanIngress(s.db.QueryRowContext(ctx, `SELECT `+ingressCols+` FROM ingress_routes WHERE lower(domain)=lower($1)`, domain))
+}
+
+func (s *Store) ListIngress(ctx context.Context, workspaceID *uuid.UUID) ([]models.IngressRoute, error) {
+	q := `SELECT ` + ingressCols + ` FROM ingress_routes`
+	var rows *sql.Rows
+	var err error
+	if workspaceID != nil {
+		rows, err = s.db.QueryContext(ctx, q+` WHERE workspace_id=$1 ORDER BY created_at`, *workspaceID)
+	} else {
+		rows, err = s.db.QueryContext(ctx, q+` ORDER BY created_at`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.IngressRoute
+	for rows.Next() {
+		r, err := scanIngress(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) UpdateIngress(ctx context.Context, r *models.IngressRoute) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE ingress_routes SET domain=$2,path=$3,port=$4,preset=$5,extra_nginx=$6,status=$7 WHERE id=$1`,
+		r.ID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status)
+	return err
+}
+
+func (s *Store) DeleteIngress(ctx context.Context, id uuid.UUID) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM ingress_routes WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }

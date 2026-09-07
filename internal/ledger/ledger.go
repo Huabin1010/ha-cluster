@@ -129,6 +129,10 @@ func (s *Service) Release(ctx context.Context, id uuid.UUID) error {
 	return s.Store.ReleaseAllocation(ctx, id)
 }
 
+func (s *Service) Expand(ctx context.Context, id uuid.UUID, dCPU, dMem, dDisk int64) error {
+	return s.Store.ExpandAllocation(ctx, id, dCPU, dMem, dDisk)
+}
+
 func RemainingError(node models.Node, plan models.Plan) error {
 	return fmt.Errorf("%w: remaining cpu=%d mem=%d disk=%d requested cpu=%d mem=%d disk=%d",
 		store.ErrNoCapacity,

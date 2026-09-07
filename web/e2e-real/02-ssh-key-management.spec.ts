@@ -2,6 +2,7 @@ import { expect } from "@playwright/test";
 import { test } from "../e2e/fixtures/auth";
 import { generateSSHKeyPair } from "./helpers";
 import { uniq } from "../e2e/helpers/ids";
+import { openCreateDialog } from "../e2e/helpers/dialog";
 
 test.describe("Real Machine: 02 真实 SSH 密钥管理与分发预备", () => {
   test("REAL-SSH-01 在用户控制台登记真实 ED25519 公钥", async ({ ownerPage }) => {
@@ -9,6 +10,7 @@ test.describe("Real Machine: 02 真实 SSH 密钥管理与分发预备", () => {
     const keyName = uniq("key-real");
 
     await ownerPage.goto("/settings/keys");
+    await openCreateDialog(ownerPage, "keys-add-open");
     await expect(ownerPage.locator("[data-testid=keys-name]")).toBeVisible({ timeout: 15_000 });
 
     await ownerPage.fill("[data-testid=keys-name]", keyName);

@@ -16,6 +16,87 @@ import (
 	"ha-cluster/internal/store"
 )
 
+type PatchProjectInput struct {
+	Name            *string
+	Slug            *string
+	BudgetCPUMilli  *int64
+	BudgetMemBytes  *int64
+	BudgetDiskBytes *int64
+}
+
+func (a *App) PatchProject(ctx context.Context, actor models.User, id uuid.UUID, in PatchProjectInput) (*models.Project, error) {
+	if _, err := a.RequireMembership(ctx, actor, id, models.RoleOwner); err != nil {
+		return nil, err
+	}
+	p, err := a.Store.GetProject(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if in.Name != nil {
+		name := strings.TrimSpace(*in.Name)
+		if name == "" || len(name) > 128 {
+			return nil, store.ErrInvalidInput
+		}
+		p.Name = name
+	}
+	if in.Slug != nil {
+		slug := strings.ToLower(strings.TrimSpace(*in.Slug))
+		if slug == "" || len(slug) > 64 || !validProjectSlug(slug) {
+			return nil, store.ErrInvalidInput
+		}
+		p.Slug = slug
+	}
+	if in.BudgetCPUMilli != nil {
+		if *in.BudgetCPUMilli < 0 {
+			return nil, store.ErrInvalidInput
+		}
+		p.BudgetCPUMilli = *in.BudgetCPUMilli
+	}
+	if in.BudgetMemBytes != nil {
+		if *in.BudgetMemBytes < 0 {
+			return nil, store.ErrInvalidInput
+		}
+		p.BudgetMemBytes = *in.BudgetMemBytes
+	}
+	if in.BudgetDiskBytes != nil {
+		if *in.BudgetDiskBytes < 0 {
+			return nil, store.ErrInvalidInput
+		}
+		p.BudgetDiskBytes = *in.BudgetDiskBytes
+	}
+	if err := a.Store.UpdateProject(ctx, p); err != nil {
+		return nil, err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "project.update", ResourceType: "project", ResourceID: p.ID.String()})
+	return p, nil
+}
+
+func (a *App) DeleteProject(ctx context.Context, actor models.User, id uuid.UUID) error {
+	if _, err := a.RequireMembership(ctx, actor, id, models.RoleOwner); err != nil {
+		return err
+	}
+	if _, err := a.Store.GetProject(ctx, id); err != nil {
+		return err
+	}
+	wss, err := a.Store.ListWorkspaces(ctx, &id)
+	if err != nil {
+		return err
+	}
+	for _, w := range wss {
+		if w.Status == models.WSDestroyed {
+			continue
+		}
+		if err := a.DestroyWorkspace(ctx, actor, w.ID); err != nil {
+			return err
+		}
+	}
+	if err := a.Store.DeleteProject(ctx, id); err != nil {
+		return err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "project.delete", ResourceType: "project", ResourceID: id.String()})
+	return nil
+}
+
 func (a *App) checkProjectBudget(ctx context.Context, projectID uuid.UUID, plan models.Plan) error {
 	p, err := a.Store.GetProject(ctx, projectID)
 	if err != nil {
@@ -46,7 +127,7 @@ func (a *App) projectUsed(ctx context.Context, projectID uuid.UUID) (cpu, mem, d
 		return 0, 0, 0, err
 	}
 	for _, ws := range wss {
-		if ws.Status == models.WSDestroyed || ws.Status == models.WSFailed {
+		if ws.Status == models.WSDestroyed || ws.Status == models.WSFailed || ws.Status == models.WSRequested || ws.Status == models.WSRejected {
 			continue
 		}
 		al, e := a.Store.GetAllocation(ctx, ws.AllocationID)

@@ -13,21 +13,22 @@ import (
 )
 
 type Store struct {
-	mu           sync.Mutex
-	users        map[uuid.UUID]*models.User
-	userByName   map[string]uuid.UUID
-	userByEmail  map[string]uuid.UUID
-	sshKeys      map[uuid.UUID]*models.SSHKey
-	projects     map[uuid.UUID]*models.Project
-	memberships  map[string]models.Membership // projectID|userID
-	nodes        map[uuid.UUID]*models.Node
-	nodeByName   map[string]uuid.UUID
-	allocs       map[uuid.UUID]*models.Allocation
-	workspaces   map[uuid.UUID]*models.Workspace
-	audit        []models.AuditLog
-	auditSeq     int64
-	invites      map[string]*models.Invitation
-	refresh      map[string]models.RefreshSession
+	mu          sync.Mutex
+	users       map[uuid.UUID]*models.User
+	userByName  map[string]uuid.UUID
+	userByEmail map[string]uuid.UUID
+	sshKeys     map[uuid.UUID]*models.SSHKey
+	projects    map[uuid.UUID]*models.Project
+	memberships map[string]models.Membership // projectID|userID
+	nodes       map[uuid.UUID]*models.Node
+	nodeByName  map[string]uuid.UUID
+	allocs      map[uuid.UUID]*models.Allocation
+	workspaces  map[uuid.UUID]*models.Workspace
+	audit       []models.AuditLog
+	auditSeq    int64
+	invites     map[string]*models.Invitation
+	refresh     map[string]models.RefreshSession
+	ingress     map[uuid.UUID]*models.IngressRoute
 }
 
 func New() *Store {
@@ -44,6 +45,7 @@ func New() *Store {
 		workspaces:  map[uuid.UUID]*models.Workspace{},
 		invites:     map[string]*models.Invitation{},
 		refresh:     map[string]models.RefreshSession{},
+		ingress:     map[uuid.UUID]*models.IngressRoute{},
 	}
 }
 
@@ -209,8 +211,48 @@ func (s *Store) UpdateProject(_ context.Context, p *models.Project) error {
 	if _, ok := s.projects[p.ID]; !ok {
 		return store.ErrNotFound
 	}
+	for _, e := range s.projects {
+		if e.ID != p.ID && e.Slug == p.Slug {
+			return store.ErrConflict
+		}
+	}
 	cp := *p
 	s.projects[p.ID] = &cp
+	return nil
+}
+
+func (s *Store) DeleteProject(_ context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.projects[id]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.projects, id)
+	for k, m := range s.memberships {
+		if m.ProjectID == id {
+			delete(s.memberships, k)
+		}
+	}
+	for tok, inv := range s.invites {
+		if inv.ProjectID == id {
+			delete(s.invites, tok)
+		}
+	}
+	for wid, w := range s.workspaces {
+		if w.ProjectID == id {
+			delete(s.workspaces, wid)
+		}
+	}
+	for aid, a := range s.allocs {
+		if a.ProjectID == id {
+			delete(s.allocs, aid)
+		}
+	}
+	for iid, r := range s.ingress {
+		if r.ProjectID == id {
+			delete(s.ingress, iid)
+		}
+	}
 	return nil
 }
 
@@ -402,6 +444,56 @@ func (s *Store) GetAllocation(_ context.Context, id uuid.UUID) (*models.Allocati
 	return &cp, nil
 }
 
+func (s *Store) ExpandAllocation(_ context.Context, id uuid.UUID, dCPU, dMem, dDisk int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.allocs[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if a.State == models.AllocReleased {
+		return store.ErrAlreadyReleased
+	}
+	n, ok := s.nodes[a.NodeID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if dCPU > 0 && n.AllocatableCPU-n.UsedCPU < dCPU {
+		return store.ErrNoCapacity
+	}
+	if dMem > 0 && n.AllocatableMem-n.UsedMem < dMem {
+		return store.ErrNoCapacity
+	}
+	if dDisk > 0 && n.AllocatableDisk-n.UsedDisk < dDisk {
+		return store.ErrNoCapacity
+	}
+	n.UsedCPU += dCPU
+	n.UsedMem += dMem
+	n.UsedDisk += dDisk
+	if n.UsedCPU < 0 {
+		n.UsedCPU = 0
+	}
+	if n.UsedMem < 0 {
+		n.UsedMem = 0
+	}
+	if n.UsedDisk < 0 {
+		n.UsedDisk = 0
+	}
+	a.CPUMilli += dCPU
+	a.MemBytes += dMem
+	a.DiskBytes += dDisk
+	if a.CPUMilli < 0 {
+		a.CPUMilli = 0
+	}
+	if a.MemBytes < 0 {
+		a.MemBytes = 0
+	}
+	if a.DiskBytes < 0 {
+		a.DiskBytes = 0
+	}
+	return nil
+}
+
 func (s *Store) CreateWorkspace(_ context.Context, w *models.Workspace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -546,3 +638,80 @@ func (s *Store) DeleteRefresh(_ context.Context, hash string) error {
 	return nil
 }
 
+func (s *Store) CreateIngress(_ context.Context, r *models.IngressRoute) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dom := strings.ToLower(strings.TrimSpace(r.Domain))
+	for _, e := range s.ingress {
+		if strings.ToLower(e.Domain) == dom {
+			return store.ErrConflict
+		}
+	}
+	cp := *r
+	s.ingress[r.ID] = &cp
+	return nil
+}
+
+func (s *Store) GetIngress(_ context.Context, id uuid.UUID) (*models.IngressRoute, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.ingress[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	cp := *r
+	return &cp, nil
+}
+
+func (s *Store) GetIngressByDomain(_ context.Context, domain string) (*models.IngressRoute, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dom := strings.ToLower(strings.TrimSpace(domain))
+	for _, r := range s.ingress {
+		if strings.ToLower(r.Domain) == dom {
+			cp := *r
+			return &cp, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
+func (s *Store) ListIngress(_ context.Context, workspaceID *uuid.UUID) ([]models.IngressRoute, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]models.IngressRoute, 0)
+	for _, r := range s.ingress {
+		if workspaceID != nil && r.WorkspaceID != *workspaceID {
+			continue
+		}
+		out = append(out, *r)
+	}
+	return out, nil
+}
+
+func (s *Store) UpdateIngress(_ context.Context, r *models.IngressRoute) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.ingress[r.ID]; !ok {
+		return store.ErrNotFound
+	}
+	dom := strings.ToLower(strings.TrimSpace(r.Domain))
+	for _, e := range s.ingress {
+		if e.ID != r.ID && strings.ToLower(e.Domain) == dom {
+			return store.ErrConflict
+		}
+	}
+	cp := *r
+	s.ingress[r.ID] = &cp
+	return nil
+}
+
+func (s *Store) DeleteIngress(_ context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.ingress[id]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.ingress, id)
+	return nil
+}

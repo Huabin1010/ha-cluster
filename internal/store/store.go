@@ -10,13 +10,16 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrConflict      = errors.New("conflict")
-	ErrNoCapacity    = errors.New("insufficient capacity")
-	ErrUnauthorized  = errors.New("unauthorized")
-	ErrForbidden     = errors.New("forbidden")
-	ErrInvalidInput  = errors.New("invalid input")
+	ErrNotFound        = errors.New("not found")
+	ErrConflict        = errors.New("conflict")
+	ErrNoCapacity      = errors.New("insufficient capacity")
+	ErrUnauthorized    = errors.New("unauthorized")
+	ErrForbidden       = errors.New("forbidden")
+	ErrInvalidInput    = errors.New("invalid input")
 	ErrAlreadyReleased = errors.New("already released")
+	ErrDiskShrink      = errors.New("DISK_SHRINK_NOT_SUPPORTED")
+	ErrNotExpansion    = errors.New("ONLY_EXPANSION")
+	ErrSecondPort      = errors.New("SECOND_PORT_CONFIRM_REQUIRED")
 )
 
 type Store interface {
@@ -35,6 +38,7 @@ type Store interface {
 	CreateProject(ctx context.Context, p *models.Project, ownerRole string) error
 	GetProject(ctx context.Context, id uuid.UUID) (*models.Project, error)
 	UpdateProject(ctx context.Context, p *models.Project) error
+	DeleteProject(ctx context.Context, id uuid.UUID) error
 	ListProjectsForUser(ctx context.Context, userID uuid.UUID) ([]models.Project, error)
 	AddMembership(ctx context.Context, m models.Membership) error
 	RemoveMembership(ctx context.Context, projectID, userID uuid.UUID) error
@@ -51,6 +55,7 @@ type Store interface {
 	ActivateAllocation(ctx context.Context, id uuid.UUID) error
 	ReleaseAllocation(ctx context.Context, id uuid.UUID) error
 	GetAllocation(ctx context.Context, id uuid.UUID) (*models.Allocation, error)
+	ExpandAllocation(ctx context.Context, id uuid.UUID, dCPU, dMem, dDisk int64) error
 
 	CreateWorkspace(ctx context.Context, w *models.Workspace) error
 	GetWorkspace(ctx context.Context, id uuid.UUID) (*models.Workspace, error)
@@ -67,4 +72,11 @@ type Store interface {
 	PutRefresh(ctx context.Context, s models.RefreshSession) error
 	GetRefreshByHash(ctx context.Context, hash string) (*models.RefreshSession, error)
 	DeleteRefresh(ctx context.Context, hash string) error
+
+	CreateIngress(ctx context.Context, r *models.IngressRoute) error
+	GetIngress(ctx context.Context, id uuid.UUID) (*models.IngressRoute, error)
+	GetIngressByDomain(ctx context.Context, domain string) (*models.IngressRoute, error)
+	ListIngress(ctx context.Context, workspaceID *uuid.UUID) ([]models.IngressRoute, error)
+	UpdateIngress(ctx context.Context, r *models.IngressRoute) error
+	DeleteIngress(ctx context.Context, id uuid.UUID) error
 }
