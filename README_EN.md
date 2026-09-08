@@ -65,10 +65,18 @@
 ### Prerequisites
 
 - **Go**: 1.24+
-- **Node.js**: 20.x+ (with npm)
+- **Bun** (recommended for `bun install` / `bun dev`) or **Node.js** 20.x+ (with npm)
 - **Docker & Docker Compose** (Optional, for running with PostgreSQL)
 
 ### 1. Run Locally (In-Memory Ledger Mode)
+
+```bash
+# Start API hot reload + web together (Windows / macOS / Linux)
+bun install
+bun dev
+```
+
+Or start them in separate terminals:
 
 ```bash
 # Start backend API (uses in-memory store by default)

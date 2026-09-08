@@ -4,6 +4,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+if command -v bun >/dev/null 2>&1; then
+  exec bun "${ROOT_DIR}/scripts/dev.ts" --api "$@"
+fi
+
 export PATH="${HOME}/.local/go/bin:${HOME}/go/bin:${PATH}"
 
 cd "${ROOT_DIR}"

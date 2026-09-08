@@ -65,10 +65,18 @@
 ### 依赖环境
 
 - **Go**：1.24 或更高版本
-- **Node.js**：20.x 或更高版本（搭配 npm）
+- **Bun**（推荐，用于 `bun install` / `bun dev`）或 **Node.js** 20.x+（搭配 npm）
 - **Docker & Docker Compose**（可选，用于一键启动后端与数据库）
 
 ### 1. 本地快速运行（内存账本模式）
+
+```bash
+# 同时启动 API 热重载 + 前端（Windows / macOS / Linux）
+bun install
+bun dev
+```
+
+也可分终端启动：
 
 ```bash
 # 启动 API 服务（默认内存数据存储）

@@ -7,15 +7,12 @@
     "web"
   ],
   "scripts": {
-    "dev": "concurrently -k -p \"[{name}]\" -c \"blue.bold,green.bold\" -n \"api,web\" \"bun run dev:api\" \"bun run dev:web\"",
-    "dev:api": "./scripts/dev.sh",
+    "dev": "bun scripts/dev.ts",
+    "dev:api": "bun scripts/dev.ts --api",
     "dev:web": "bun --filter ha-web dev",
     "build:web": "bun --filter ha-web build",
     "test:web": "bun --filter ha-web test",
-    "test:go": "make test-go",
-    "test": "concurrently -k \"bun run test:go\" \"bun run test:web\""
-  },
-  "devDependencies": {
-    "concurrently": "^9.1.2"
+    "test:go": "go test ./...",
+    "test": "bun run test:go && bun run test:web"
   }
 }
