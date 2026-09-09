@@ -60,9 +60,17 @@ func (a *App) Register(ctx context.Context, username, email, password string) (*
 		return nil, err
 	}
 	now := time.Now()
+	role := models.RolePlatformUser
+	users, err := a.Store.ListUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		role = models.RolePlatformAdmin
+	}
 	u := &models.User{
 		ID: uuid.New(), Username: username, Email: email,
-		PasswordHash: hash, PlatformRole: models.RolePlatformUser,
+		PasswordHash: hash, PlatformRole: role,
 		Status: models.UserActive, TokenVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := a.Store.CreateUser(ctx, u); err != nil {
@@ -503,7 +511,9 @@ func (a *App) StartWorkspace(ctx context.Context, actor models.User, id uuid.UUI
 		return err
 	}
 	w.Status = models.WSRunning
-	w.UpdatedAt = time.Now()
+	now := time.Now()
+	w.LastActivityAt = now
+	w.UpdatedAt = now
 	return a.Store.UpdateWorkspace(ctx, w)
 }
 
@@ -527,9 +537,19 @@ func (a *App) SSHTarget(ctx context.Context, actor models.User, workspaceID uuid
 	if w.Visibility == models.VisPrivate && w.OwnerUserID != actor.ID && models.RoleRank(m.Role) < models.RoleRank(models.RoleAdmin) {
 		return nil, nil, store.ErrForbidden
 	}
-	if w.Status != models.WSRunning && w.Status != models.WSDegraded {
+	if w.Status != models.WSRunning && w.Status != models.WSDegraded && w.Status != models.WSSuspended {
 		return nil, nil, store.ErrInvalidInput
 	}
+	if w.Status == models.WSSuspended || w.Status == models.WSStopped {
+		if err := a.WakeWorkspaceIfSuspended(ctx, w); err != nil {
+			return nil, nil, err
+		}
+		w, err = a.Store.GetWorkspace(ctx, workspaceID)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	a.touchWorkspaceActivity(ctx, w)
 	n, err := a.Store.GetNode(ctx, w.NodeID)
 	if err != nil {
 		return nil, nil, err
@@ -549,6 +569,10 @@ func (a *App) Heartbeat(ctx context.Context, n models.Node) (*models.Node, error
 	}
 	n.LastHeartbeat = time.Now()
 	n.Ready = true
+	n.HealthStatus = models.NodeHealthy
+	if n.FabricPath == "degraded" || n.FabricPath == "offline" || n.FabricPath == "stale" {
+		n.FabricPath = "p2p"
+	}
 	if n.Role == "" {
 		n.Role = "worker"
 	}

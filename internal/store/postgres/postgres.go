@@ -28,6 +28,9 @@ var ingressSQL string
 //go:embed sql/004_ingress_approval.sql
 var ingressApprovalSQL string
 
+//go:embed sql/005_node_metrics_and_activity.sql
+var metricsSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -58,6 +61,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if _, err := db.ExecContext(ctx, metricsSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 
@@ -68,6 +75,13 @@ func mapErr(err error) error {
 		return store.ErrNotFound
 	}
 	return err
+}
+
+func nullTime(t time.Time) sql.NullTime {
+	if t.IsZero() {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: t, Valid: true}
 }
 
 func (s *Store) CreateUser(ctx context.Context, u *models.User) error {
@@ -302,47 +316,50 @@ func scanNode(row interface{ Scan(dest ...any) error }) (*models.Node, error) {
 	n := &models.Node{}
 	err := row.Scan(&n.ID, &n.Name, &n.Arch, &n.Class, &n.Power, &n.Role, &n.FabricIP, &n.LanIP, &n.BreakglassSSH,
 		&n.AllocatableCPU, &n.AllocatableMem, &n.AllocatableDisk, &n.UsedCPU, &n.UsedMem, &n.UsedDisk,
-		&n.FabricPath, &n.FabricRTTMS, &n.Ready, &n.LastHeartbeat)
+		&n.FabricPath, &n.FabricRTTMS, &n.HealthStatus, &n.CPUUsagePct, &n.MemAvailableBytes, &n.DiskFreeBytes,
+		&n.Ready, &n.LastHeartbeat)
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	return n, nil
 }
 
-func (s *Store) UpsertNode(ctx context.Context, n *models.Node) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (id,name,arch,class,power,role,fabric_ip,lan_ip,breakglass_ssh,
+const nodeCols = `id,name,arch,class,power,role,fabric_ip,lan_ip,breakglass_ssh,
 		allocatable_cpu_milli,allocatable_mem_bytes,allocatable_disk_bytes,used_cpu_milli,used_mem_bytes,used_disk_bytes,
-		fabric_path,fabric_rtt_ms,ready,last_heartbeat)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		fabric_path,fabric_rtt_ms,health_status,cpu_usage_pct,mem_available_bytes,disk_free_bytes,ready,last_heartbeat`
+
+func (s *Store) UpsertNode(ctx context.Context, n *models.Node) error {
+	if n.HealthStatus == "" {
+		n.HealthStatus = models.NodeHealthy
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
 		ON CONFLICT (name) DO UPDATE SET
 			arch=EXCLUDED.arch, class=EXCLUDED.class, power=EXCLUDED.power, role=EXCLUDED.role,
 			fabric_ip=EXCLUDED.fabric_ip, lan_ip=EXCLUDED.lan_ip, breakglass_ssh=EXCLUDED.breakglass_ssh,
 			allocatable_cpu_milli=EXCLUDED.allocatable_cpu_milli, allocatable_mem_bytes=EXCLUDED.allocatable_mem_bytes,
 			allocatable_disk_bytes=EXCLUDED.allocatable_disk_bytes,
-			fabric_path=EXCLUDED.fabric_path, fabric_rtt_ms=EXCLUDED.fabric_rtt_ms, ready=EXCLUDED.ready,
-			last_heartbeat=EXCLUDED.last_heartbeat`,
+			fabric_path=EXCLUDED.fabric_path, fabric_rtt_ms=EXCLUDED.fabric_rtt_ms,
+			health_status=EXCLUDED.health_status, cpu_usage_pct=EXCLUDED.cpu_usage_pct,
+			mem_available_bytes=EXCLUDED.mem_available_bytes, disk_free_bytes=EXCLUDED.disk_free_bytes,
+			ready=EXCLUDED.ready, last_heartbeat=EXCLUDED.last_heartbeat`,
 		n.ID, n.Name, n.Arch, n.Class, n.Power, n.Role, n.FabricIP, n.LanIP, n.BreakglassSSH,
 		n.AllocatableCPU, n.AllocatableMem, n.AllocatableDisk, n.UsedCPU, n.UsedMem, n.UsedDisk,
-		n.FabricPath, n.FabricRTTMS, n.Ready, n.LastHeartbeat)
+		n.FabricPath, n.FabricRTTMS, n.HealthStatus, n.CPUUsagePct, n.MemAvailableBytes, n.DiskFreeBytes,
+		n.Ready, n.LastHeartbeat)
 	return err
 }
 
 func (s *Store) GetNode(ctx context.Context, id uuid.UUID) (*models.Node, error) {
-	return scanNode(s.db.QueryRowContext(ctx, `SELECT id,name,arch,class,power,role,fabric_ip,lan_ip,breakglass_ssh,
-		allocatable_cpu_milli,allocatable_mem_bytes,allocatable_disk_bytes,used_cpu_milli,used_mem_bytes,used_disk_bytes,
-		fabric_path,fabric_rtt_ms,ready,last_heartbeat FROM nodes WHERE id=$1`, id))
+	return scanNode(s.db.QueryRowContext(ctx, `SELECT `+nodeCols+` FROM nodes WHERE id=$1`, id))
 }
 
 func (s *Store) GetNodeByName(ctx context.Context, name string) (*models.Node, error) {
-	return scanNode(s.db.QueryRowContext(ctx, `SELECT id,name,arch,class,power,role,fabric_ip,lan_ip,breakglass_ssh,
-		allocatable_cpu_milli,allocatable_mem_bytes,allocatable_disk_bytes,used_cpu_milli,used_mem_bytes,used_disk_bytes,
-		fabric_path,fabric_rtt_ms,ready,last_heartbeat FROM nodes WHERE name=$1`, name))
+	return scanNode(s.db.QueryRowContext(ctx, `SELECT `+nodeCols+` FROM nodes WHERE name=$1`, name))
 }
 
 func (s *Store) ListNodes(ctx context.Context) ([]models.Node, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,arch,class,power,role,fabric_ip,lan_ip,breakglass_ssh,
-		allocatable_cpu_milli,allocatable_mem_bytes,allocatable_disk_bytes,used_cpu_milli,used_mem_bytes,used_disk_bytes,
-		fabric_path,fabric_rtt_ms,ready,last_heartbeat FROM nodes`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+nodeCols+` FROM nodes`)
 	if err != nil {
 		return nil, err
 	}
@@ -383,6 +400,82 @@ func (s *Store) ReserveOnNode(ctx context.Context, nodeID uuid.UUID, a *models.A
 	a.State = models.AllocReserved
 	_, err = tx.ExecContext(ctx, `INSERT INTO allocations (id,workspace_id,project_id,node_id,cpu_milli,mem_bytes,disk_bytes,arch,state,created_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, a.ID, uuid.Nil, a.ProjectID, nodeID, a.CPUMilli, a.MemBytes, a.DiskBytes, a.Arch, a.State, a.CreatedAt)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) ReserveBestNode(ctx context.Context, arch string, cpu, mem, disk int64, a *models.Allocation) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	archFilter := arch
+	if archFilter == "" || archFilter == models.ArchAny {
+		archFilter = ""
+	}
+
+	q := `SELECT id, arch, ready, allocatable_cpu_milli, allocatable_mem_bytes, allocatable_disk_bytes,
+		used_cpu_milli, used_mem_bytes, used_disk_bytes, power, fabric_path
+		FROM nodes
+		WHERE role <> 'control-plane' AND ready = true`
+	args := []any{}
+	if archFilter != "" {
+		q += ` AND arch = $1`
+		args = append(args, archFilter)
+	}
+	q += ` ORDER BY
+		(allocatable_mem_bytes - used_mem_bytes) DESC,
+		CASE WHEN power = 'mains' THEN 1 ELSE 0 END DESC,
+		CASE WHEN fabric_path = 'p2p' THEN 1 ELSE 0 END DESC
+		FOR UPDATE SKIP LOCKED`
+
+	rows, err := tx.QueryContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var pickedID uuid.UUID
+	var pickedArch string
+	for rows.Next() {
+		var id uuid.UUID
+		var nodeArch string
+		var ready bool
+		var allocCPU, allocMem, allocDisk, usedCPU, usedMem, usedDisk int64
+		var power, fabricPath string
+		if err := rows.Scan(&id, &nodeArch, &ready, &allocCPU, &allocMem, &allocDisk, &usedCPU, &usedMem, &usedDisk, &power, &fabricPath); err != nil {
+			return err
+		}
+		if !ready || allocCPU-usedCPU < cpu || allocMem-usedMem < mem || allocDisk-usedDisk < disk {
+			continue
+		}
+		pickedID = id
+		pickedArch = nodeArch
+		break
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if pickedID == uuid.Nil {
+		return store.ErrNoCapacity
+	}
+
+	_, err = tx.ExecContext(ctx, `UPDATE nodes SET used_cpu_milli=used_cpu_milli+$2, used_mem_bytes=used_mem_bytes+$3, used_disk_bytes=used_disk_bytes+$4 WHERE id=$1`,
+		pickedID, cpu, mem, disk)
+	if err != nil {
+		return err
+	}
+	a.NodeID = pickedID
+	if a.Arch == "" {
+		a.Arch = pickedArch
+	}
+	a.State = models.AllocReserved
+	_, err = tx.ExecContext(ctx, `INSERT INTO allocations (id,workspace_id,project_id,node_id,cpu_milli,mem_bytes,disk_bytes,arch,state,created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, a.ID, uuid.Nil, a.ProjectID, pickedID, cpu, mem, disk, a.Arch, a.State, a.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -486,13 +579,13 @@ func (s *Store) ExpandAllocation(ctx context.Context, id uuid.UUID, dCPU, dMem, 
 	return tx.Commit()
 }
 
-const wsCols = `id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at,cpu_milli,mem_bytes,disk_bytes,pending_cpu_milli,pending_mem_bytes,pending_disk_bytes,resize_status`
+const wsCols = `id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at,cpu_milli,mem_bytes,disk_bytes,pending_cpu_milli,pending_mem_bytes,pending_disk_bytes,resize_status,last_activity_at,idle_suspend_hours`
 
 func (s *Store) CreateWorkspace(ctx context.Context, w *models.Workspace) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO workspaces (`+wsCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
 		w.ID, w.ProjectID, w.Name, w.Plan, w.Arch, w.Visibility, w.OwnerUserID, w.NodeID, w.AllocationID, w.Status, w.SSHPort, w.HostKeyFP, w.CreatedAt, w.UpdatedAt,
-		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus)
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, nullTime(w.LastActivityAt), w.IdleSuspendHours)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -504,10 +597,14 @@ func (s *Store) CreateWorkspace(ctx context.Context, w *models.Workspace) error 
 
 func scanWS(row interface{ Scan(dest ...any) error }) (*models.Workspace, error) {
 	w := &models.Workspace{}
+	var lastAct sql.NullTime
 	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Plan, &w.Arch, &w.Visibility, &w.OwnerUserID, &w.NodeID, &w.AllocationID, &w.Status, &w.SSHPort, &w.HostKeyFP, &w.CreatedAt, &w.UpdatedAt,
-		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus)
+		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus, &lastAct, &w.IdleSuspendHours)
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if lastAct.Valid {
+		w.LastActivityAt = lastAct.Time
 	}
 	return w, nil
 }
@@ -542,9 +639,9 @@ func (s *Store) ListWorkspaces(ctx context.Context, projectID *uuid.UUID) ([]mod
 
 func (s *Store) UpdateWorkspace(ctx context.Context, w *models.Workspace) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE workspaces SET name=$2,plan=$3,arch=$4,visibility=$5,status=$6,ssh_port=$7,host_key_fp=$8,updated_at=$9,node_id=$10,allocation_id=$11,
-		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18 WHERE id=$1`,
+		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18,last_activity_at=$19,idle_suspend_hours=$20 WHERE id=$1`,
 		w.ID, w.Name, w.Plan, w.Arch, w.Visibility, w.Status, w.SSHPort, w.HostKeyFP, w.UpdatedAt, w.NodeID, w.AllocationID,
-		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus)
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, nullTime(w.LastActivityAt), w.IdleSuspendHours)
 	if err != nil {
 		return err
 	}
@@ -631,15 +728,15 @@ func (s *Store) AcceptInvitation(ctx context.Context, token string) error {
 }
 
 func (s *Store) PutRefresh(ctx context.Context, sess models.RefreshSession) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO refresh_sessions (id,user_id,hash,expires_at) VALUES ($1,$2,$3,$4)`,
-		sess.ID, sess.UserID, sess.Hash, sess.ExpiresAt)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO refresh_sessions (id,user_id,hash,fingerprint,expires_at) VALUES ($1,$2,$3,$4,$5)`,
+		sess.ID, sess.UserID, sess.Hash, sess.Fingerprint, sess.ExpiresAt)
 	return err
 }
 
 func (s *Store) GetRefreshByHash(ctx context.Context, hash string) (*models.RefreshSession, error) {
 	s1 := &models.RefreshSession{}
-	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,hash,expires_at FROM refresh_sessions WHERE hash=$1`, hash).
-		Scan(&s1.ID, &s1.UserID, &s1.Hash, &s1.ExpiresAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,user_id,hash,fingerprint,expires_at FROM refresh_sessions WHERE hash=$1`, hash).
+		Scan(&s1.ID, &s1.UserID, &s1.Hash, &s1.Fingerprint, &s1.ExpiresAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}

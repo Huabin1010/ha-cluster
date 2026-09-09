@@ -21,7 +21,8 @@ import (
 	"github.com/google/uuid"
 )
 
-var AdminUserID = uuid.MustParse("00000000-0000-0000-0000-000000000009")
+// 固定 UUID，避免开发热重载后 JWT 里的 user id 对不上 store。
+var adminUserID = uuid.MustParse("00000000-0000-0000-0000-000000000009")
 
 func main() {
 	ctx := context.Background()
@@ -39,7 +40,10 @@ func main() {
 	}
 	log.Printf("runtime=%T (fallback=%T) store=%T", rt, localRt, st)
 	app := service.New(st, rt, secret)
-	seedDemo(app)
+	ensureBootstrapAdmin(app)
+
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	service.StartBackgroundTasks(bgCtx, app)
 
 	addr := env("HA_API_ADDR", ":8080")
 	srv := &http.Server{Addr: addr, Handler: api.New(app)}
@@ -52,6 +56,7 @@ func main() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
+	bgCancel()
 	c2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(c2)
@@ -89,48 +94,77 @@ func env(k, d string) string {
 	return d
 }
 
-func seedDemo(app *service.App) {
+// ensureBootstrapAdmin 保证始终有可登录的管理员：
+// 1) 已有 admin 用户 → 修复角色/空密码/ token_version；
+// 2) 没有任何 platform_admin → 自动创建 admin（密码 HA_ADMIN_PASSWORD，默认 adminadmin）。
+// 设 HA_SEED=0 可关闭自动创建（仍允许手动注册首个用户为管理员）。
+func ensureBootstrapAdmin(app *service.App) {
 	if os.Getenv("HA_SEED") == "0" {
 		return
 	}
 	ctx := context.Background()
-	const Gi = int64(1024 * 1024 * 1024)
-	_ = app.Store.UpsertNode(ctx, &models.Node{
-		ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-		Name: "dev-pc", Arch: models.ArchAMD64, Class: "desktop", Power: "mains", Role: "worker",
-		FabricIP: "10.88.0.30", AllocatableCPU: 8000, AllocatableMem: 8 * Gi, AllocatableDisk: 200 * Gi,
-		Ready: true, LastHeartbeat: time.Now(),
-	})
-	_ = app.Store.UpsertNode(ctx, &models.Node{
-		ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"),
-		Name: "phone1", Arch: models.ArchARM64, Class: "phone", Power: "battery", Role: "worker",
-		FabricIP: "10.88.0.10", AllocatableCPU: 2000, AllocatableMem: 1800 * 1024 * 1024, AllocatableDisk: 40 * Gi,
-		Ready: true, LastHeartbeat: time.Now(),
-	})
-
-	// 确保 admin 用户具有固定确定性的 UUID，避免开发热重载或服务重启时随机生成新 UUID，
-	// 导致前端持有旧有效 JWT 时被判定用户不存在（401）而强制退出登录。
-	u, err := app.Store.GetUserByUsername(ctx, "admin")
+	users, err := app.Store.ListUsers(ctx)
 	if err != nil {
-		hash, hashErr := auth.HashPassword(env("HA_ADMIN_PASSWORD", "adminadmin"))
-		if hashErr == nil {
-			u = &models.User{
-				ID:           AdminUserID,
-				Username:     "admin",
-				Email:        "admin@mnnumath.vip",
-				PasswordHash: hash,
-				PlatformRole: models.RolePlatformAdmin,
-				Status:       models.UserActive,
-				TokenVersion: 1,
-				CreatedAt:    time.Now(),
-				UpdatedAt:    time.Now(),
-			}
-			if err := app.Store.CreateUser(ctx, u); err == nil {
-				log.Printf("seeded admin with fixed uuid: %s", AdminUserID)
+		log.Printf("bootstrap admin: list users: %v", err)
+		return
+	}
+	hasPlatformAdmin := false
+	for _, u := range users {
+		if u.PlatformRole == models.RolePlatformAdmin || u.PlatformRole == models.RolePlatformOps {
+			hasPlatformAdmin = true
+			break
+		}
+	}
+
+	u, err := app.Store.GetUserByUsername(ctx, "admin")
+	if err == nil {
+		changed := false
+		if u.PlatformRole != models.RolePlatformAdmin {
+			u.PlatformRole = models.RolePlatformAdmin
+			changed = true
+		}
+		if u.PasswordHash == "" {
+			if hash, hashErr := auth.HashPassword(env("HA_ADMIN_PASSWORD", "adminadmin")); hashErr == nil {
+				u.PasswordHash = hash
+				changed = true
+				log.Printf("repaired empty admin password hash")
 			}
 		}
-	} else if u.PlatformRole != models.RolePlatformAdmin {
-		u.PlatformRole = models.RolePlatformAdmin
-		_ = app.Store.UpdateUser(ctx, u)
+		if u.TokenVersion == 0 {
+			u.TokenVersion = 1
+			changed = true
+		}
+		if changed {
+			u.UpdatedAt = time.Now()
+			_ = app.Store.UpdateUser(ctx, u)
+		}
+		return
 	}
+
+	if hasPlatformAdmin {
+		return
+	}
+
+	hash, hashErr := auth.HashPassword(env("HA_ADMIN_PASSWORD", "adminadmin"))
+	if hashErr != nil {
+		log.Printf("bootstrap admin: hash password: %v", hashErr)
+		return
+	}
+	now := time.Now()
+	admin := &models.User{
+		ID:           adminUserID,
+		Username:     "admin",
+		Email:        "admin@mnnumath.vip",
+		PasswordHash: hash,
+		PlatformRole: models.RolePlatformAdmin,
+		Status:       models.UserActive,
+		TokenVersion: 1,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := app.Store.CreateUser(ctx, admin); err != nil {
+		log.Printf("bootstrap admin: create user: %v", err)
+		return
+	}
+	log.Printf("bootstrapped admin user (id=%s)", adminUserID)
 }

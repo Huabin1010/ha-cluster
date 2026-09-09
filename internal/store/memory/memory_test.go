@@ -94,7 +94,10 @@ func TestSnapshotSaveAndLoad(t *testing.T) {
 	s1 := New()
 	s1.SetSnapshotPath(snapFile)
 	uid := uuid.New()
-	u := &models.User{ID: uid, Username: "bob", Email: "bob@example.com"}
+	u := &models.User{
+		ID: uid, Username: "bob", Email: "bob@example.com",
+		PasswordHash: "argon2id$keep-me", TokenVersion: 3,
+	}
 	if err := s1.CreateUser(ctx, u); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +117,9 @@ func TestSnapshotSaveAndLoad(t *testing.T) {
 	uGot, err := s2.GetUserByID(ctx, uid)
 	if err != nil || uGot.Username != "bob" {
 		t.Fatalf("user not restored: %+v, err=%v", uGot, err)
+	}
+	if uGot.PasswordHash != "argon2id$keep-me" || uGot.TokenVersion != 3 {
+		t.Fatalf("credentials not restored: hash=%q tv=%d", uGot.PasswordHash, uGot.TokenVersion)
 	}
 
 	pGot, err := s2.GetProject(ctx, pid)

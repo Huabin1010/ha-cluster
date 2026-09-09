@@ -21,8 +21,11 @@ type Status struct {
 	AllocatableCPU  int64  `json:"allocatable_cpu_milli"`
 	AllocatableMem  int64  `json:"allocatable_mem_bytes"`
 	AllocatableDisk int64  `json:"allocatable_disk_bytes"`
-	FabricPath      string `json:"fabric_path"`
-	FabricRTTMS     int64  `json:"fabric_rtt_ms"`
+	FabricPath        string  `json:"fabric_path"`
+	FabricRTTMS       int64   `json:"fabric_rtt_ms"`
+	CPUUsagePct       float64 `json:"cpu_usage_pct"`
+	MemAvailableBytes int64   `json:"mem_available_bytes"`
+	DiskFreeBytes     int64   `json:"disk_free_bytes"`
 }
 
 func DetectStatus(name, fabricIP string, cpu, mem, disk int64, storagePath ...string) Status {
@@ -47,10 +50,17 @@ func DetectStatus(name, fabricIP string, cpu, mem, disk int64, storagePath ...st
 		_, allocDisk := HostDiskCapacity(sPath)
 		disk = allocDisk
 	}
+	cpuPct := HostCPUUsagePct()
+	memAvail := HostMemAvailable()
+	diskFree := HostDiskFree("")
+	if len(storagePath) > 0 && storagePath[0] != "" {
+		diskFree = HostDiskFree(storagePath[0])
+	}
 	return Status{
 		Name: name, Arch: arch, Class: "desktop", Role: "worker", Power: "mains",
 		FabricIP: fabricIP, AllocatableCPU: cpu, AllocatableMem: mem, AllocatableDisk: disk,
 		FabricPath: "p2p", FabricRTTMS: 1,
+		CPUUsagePct: cpuPct, MemAvailableBytes: memAvail, DiskFreeBytes: diskFree,
 	}
 }
 

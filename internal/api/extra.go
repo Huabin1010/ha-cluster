@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"ha-cluster/internal/auth"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/service"
 	"ha-cluster/internal/store"
@@ -24,7 +25,7 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	access, next, u, err := s.App.RefreshAccess(r.Context(), body.RefreshToken)
+	access, next, u, err := s.App.RefreshAccess(r.Context(), body.RefreshToken, auth.DeviceFingerprint(r))
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, err)
 		return
@@ -286,7 +287,7 @@ func (s *Server) requestResize(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	ws, err := s.App.RequestResize(r.Context(), *userFrom(r), id, body.CPUMilli, body.MemBytes, body.DiskBytes)
+	ws, err := s.App.ApplyResizeImmediately(r.Context(), *userFrom(r), id, body.CPUMilli, body.MemBytes, body.DiskBytes)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return

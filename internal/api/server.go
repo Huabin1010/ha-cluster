@@ -34,6 +34,7 @@ func New(app *service.App) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	r.Use(metricsMiddleware)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
@@ -93,6 +94,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
+	r.Get("/metrics", s.metrics)
 
 	r.Post("/auth/register", s.register)
 	r.Post("/auth/login", s.login)
@@ -298,11 +300,19 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	tok, refresh, u, err := s.App.LoginTokens(r.Context(), body.Username, body.Password)
+	ip := clientIPFromRequest(r)
+	if !globalLoginLimiter.Allow(ip, body.Username) {
+		writeErr(w, http.StatusTooManyRequests, errors.New("too many login attempts, try again later"))
+		return
+	}
+	fp := auth.DeviceFingerprint(r)
+	tok, refresh, u, err := s.App.LoginTokens(r.Context(), body.Username, body.Password, fp)
 	if err != nil {
+		globalLoginLimiter.RecordFailure(ip, body.Username)
 		writeErr(w, http.StatusUnauthorized, err)
 		return
 	}
+	globalLoginLimiter.RecordSuccess(ip, body.Username)
 	writeJSON(w, http.StatusOK, map[string]any{"token": tok, "refresh_token": refresh, "user": u})
 }
 

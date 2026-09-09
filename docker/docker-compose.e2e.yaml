@@ -13,7 +13,6 @@ services:
       - HA_RUNTIME=incus
       - HA_INCUS_IMAGE=ha-ubuntu-24.04
       - HA_WEB_DIR=/app/web/dist
-      - HA_SEED=1
       - HA_ADMIN_PASSWORD=adminadmin
       - HA_JWT_SECRET=e2e-test-secret-at-least-32-bytes-long
     volumes:

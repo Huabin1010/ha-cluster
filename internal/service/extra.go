@@ -141,19 +141,19 @@ func (a *App) projectUsed(ctx context.Context, projectID uuid.UUID) (cpu, mem, d
 	return cpu, mem, disk, nil
 }
 
-func (a *App) LoginTokens(ctx context.Context, username, password string) (access, refresh string, u *models.User, err error) {
+func (a *App) LoginTokens(ctx context.Context, username, password, fingerprint string) (access, refresh string, u *models.User, err error) {
 	access, u, err = a.Login(ctx, username, password)
 	if err != nil {
 		return "", "", nil, err
 	}
-	refresh, err = a.issueRefresh(ctx, u.ID)
+	refresh, err = a.issueRefresh(ctx, u.ID, fingerprint)
 	if err != nil {
 		return "", "", nil, err
 	}
 	return access, refresh, u, nil
 }
 
-func (a *App) issueRefresh(ctx context.Context, userID uuid.UUID) (string, error) {
+func (a *App) issueRefresh(ctx context.Context, userID uuid.UUID, fingerprint string) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -162,7 +162,8 @@ func (a *App) issueRefresh(ctx context.Context, userID uuid.UUID) (string, error
 	sum := sha256.Sum256([]byte(plain))
 	sess := models.RefreshSession{
 		ID: uuid.New(), UserID: userID, Hash: hex.EncodeToString(sum[:]),
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		Fingerprint: strings.TrimSpace(fingerprint),
+		ExpiresAt:   time.Now().Add(30 * 24 * time.Hour),
 	}
 	if err := a.Store.PutRefresh(ctx, sess); err != nil {
 		return "", err
@@ -170,11 +171,14 @@ func (a *App) issueRefresh(ctx context.Context, userID uuid.UUID) (string, error
 	return plain, nil
 }
 
-func (a *App) RefreshAccess(ctx context.Context, refresh string) (access, next string, u *models.User, err error) {
+func (a *App) RefreshAccess(ctx context.Context, refresh, fingerprint string) (access, next string, u *models.User, err error) {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(refresh)))
 	hash := hex.EncodeToString(sum[:])
 	sess, err := a.Store.GetRefreshByHash(ctx, hash)
 	if err != nil || time.Now().After(sess.ExpiresAt) {
+		return "", "", nil, store.ErrUnauthorized
+	}
+	if sess.Fingerprint != "" && fingerprint != "" && sess.Fingerprint != fingerprint {
 		return "", "", nil, store.ErrUnauthorized
 	}
 	u, err = a.Store.GetUserByID(ctx, sess.UserID)
@@ -186,7 +190,7 @@ func (a *App) RefreshAccess(ctx context.Context, refresh string) (access, next s
 	if err != nil {
 		return "", "", nil, err
 	}
-	next, err = a.issueRefresh(ctx, u.ID)
+	next, err = a.issueRefresh(ctx, u.ID, fingerprint)
 	return access, next, u, err
 }
 
@@ -277,23 +281,11 @@ func (a *App) Reconcile(ctx context.Context) (released int, staleNodes int, err 
 			}
 		}
 	}
-	nodes, err := a.Store.ListNodes(ctx)
+	_, offline, err := a.RefreshNodeHealth(ctx)
 	if err != nil {
 		return released, 0, err
 	}
-	cutoff := time.Now().Add(-2 * time.Minute)
-	for _, n := range nodes {
-		if n.Role == "control-plane" {
-			continue
-		}
-		if n.LastHeartbeat.Before(cutoff) && n.Ready {
-			n.Ready = false
-			n.FabricPath = "stale"
-			_ = a.Store.UpsertNode(ctx, &n)
-			staleNodes++
-		}
-	}
-	return released, staleNodes, nil
+	return released, offline, nil
 }
 
 func (a *App) AuthorizedKeys(ctx context.Context, username string) (string, error) {

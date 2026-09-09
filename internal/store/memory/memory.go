@@ -15,19 +15,66 @@ import (
 	"ha-cluster/internal/store"
 )
 
+// snapshotUser persists credentials that models.User hides from API JSON (json:"-").
+type snapshotUser struct {
+	ID           uuid.UUID `json:"id"`
+	Username     string    `json:"username"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"password_hash,omitempty"`
+	PlatformRole string    `json:"platform_role"`
+	Status       string    `json:"status"`
+	TokenVersion int       `json:"token_version,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 type Snapshot struct {
-	Users       map[uuid.UUID]*models.User        `json:"users,omitempty"`
-	SSHKeys     map[uuid.UUID]*models.SSHKey      `json:"ssh_keys,omitempty"`
-	Projects    map[uuid.UUID]*models.Project     `json:"projects,omitempty"`
-	Memberships map[string]models.Membership      `json:"memberships,omitempty"`
-	Nodes       map[uuid.UUID]*models.Node        `json:"nodes,omitempty"`
-	Allocs      map[uuid.UUID]*models.Allocation  `json:"allocs,omitempty"`
-	Workspaces  map[uuid.UUID]*models.Workspace   `json:"workspaces,omitempty"`
-	Audit       []models.AuditLog                 `json:"audit,omitempty"`
-	AuditSeq    int64                             `json:"audit_seq,omitempty"`
-	Invites     map[string]*models.Invitation     `json:"invites,omitempty"`
-	Refresh     map[string]models.RefreshSession  `json:"refresh,omitempty"`
+	Users       map[uuid.UUID]*snapshotUser        `json:"users,omitempty"`
+	SSHKeys     map[uuid.UUID]*models.SSHKey       `json:"ssh_keys,omitempty"`
+	Projects    map[uuid.UUID]*models.Project      `json:"projects,omitempty"`
+	Memberships map[string]models.Membership       `json:"memberships,omitempty"`
+	Nodes       map[uuid.UUID]*models.Node         `json:"nodes,omitempty"`
+	Allocs      map[uuid.UUID]*models.Allocation   `json:"allocs,omitempty"`
+	Workspaces  map[uuid.UUID]*models.Workspace    `json:"workspaces,omitempty"`
+	Audit       []models.AuditLog                  `json:"audit,omitempty"`
+	AuditSeq    int64                              `json:"audit_seq,omitempty"`
+	Invites     map[string]*models.Invitation      `json:"invites,omitempty"`
+	Refresh     map[string]models.RefreshSession   `json:"refresh,omitempty"`
 	Ingress     map[uuid.UUID]*models.IngressRoute `json:"ingress,omitempty"`
+}
+
+func userToSnapshot(u *models.User) *snapshotUser {
+	if u == nil {
+		return nil
+	}
+	return &snapshotUser{
+		ID:           u.ID,
+		Username:     u.Username,
+		Email:        u.Email,
+		PasswordHash: u.PasswordHash,
+		PlatformRole: u.PlatformRole,
+		Status:       u.Status,
+		TokenVersion: u.TokenVersion,
+		CreatedAt:    u.CreatedAt,
+		UpdatedAt:    u.UpdatedAt,
+	}
+}
+
+func snapshotToUser(u *snapshotUser) *models.User {
+	if u == nil {
+		return nil
+	}
+	return &models.User{
+		ID:           u.ID,
+		Username:     u.Username,
+		Email:        u.Email,
+		PasswordHash: u.PasswordHash,
+		PlatformRole: u.PlatformRole,
+		Status:       u.Status,
+		TokenVersion: u.TokenVersion,
+		CreatedAt:    u.CreatedAt,
+		UpdatedAt:    u.UpdatedAt,
+	}
 }
 
 type Store struct {
@@ -418,6 +465,57 @@ func (s *Store) ReserveOnNode(_ context.Context, nodeID uuid.UUID, a *models.All
 	return nil
 }
 
+func (s *Store) ReserveBestNode(_ context.Context, arch string, cpu, mem, disk int64, a *models.Allocation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	type scored struct {
+		id    uuid.UUID
+		arch  string
+		score int64
+	}
+	var best *scored
+	for _, n := range s.nodes {
+		if !n.Ready || n.Role == "control-plane" {
+			continue
+		}
+		if arch != "" && arch != models.ArchAny && n.Arch != arch {
+			continue
+		}
+		freeCPU := n.AllocatableCPU - n.UsedCPU
+		freeMem := n.AllocatableMem - n.UsedMem
+		freeDisk := n.AllocatableDisk - n.UsedDisk
+		if freeCPU < cpu || freeMem < mem || freeDisk < disk {
+			continue
+		}
+		score := freeMem
+		if n.Power == "mains" {
+			score += 1 << 40
+		}
+		if n.FabricPath == "p2p" {
+			score += 1 << 30
+		}
+		if best == nil || score > best.score {
+			best = &scored{id: n.ID, arch: n.Arch, score: score}
+		}
+	}
+	if best == nil {
+		return store.ErrNoCapacity
+	}
+	n := s.nodes[best.id]
+	n.UsedCPU += cpu
+	n.UsedMem += mem
+	n.UsedDisk += disk
+	a.NodeID = best.id
+	if a.Arch == "" {
+		a.Arch = best.arch
+	}
+	a.State = models.AllocReserved
+	cp := *a
+	s.allocs[a.ID] = &cp
+	s.saveSnapshotLocked()
+	return nil
+}
+
 func (s *Store) ActivateAllocation(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -782,8 +880,12 @@ func (s *Store) saveSnapshotFile(filePath string) error {
 	if filePath == "" {
 		return nil
 	}
+	users := make(map[uuid.UUID]*snapshotUser, len(s.users))
+	for id, u := range s.users {
+		users[id] = userToSnapshot(u)
+	}
 	snap := Snapshot{
-		Users:       s.users,
+		Users:       users,
 		SSHKeys:     s.sshKeys,
 		Projects:    s.projects,
 		Memberships: s.memberships,
@@ -819,10 +921,12 @@ func (s *Store) LoadSnapshot(filePath string) error {
 		return err
 	}
 	if snap.Users != nil {
-		s.users = snap.Users
+		s.users = make(map[uuid.UUID]*models.User, len(snap.Users))
 		s.userByName = make(map[string]uuid.UUID)
 		s.userByEmail = make(map[string]uuid.UUID)
-		for id, u := range s.users {
+		for id, su := range snap.Users {
+			u := snapshotToUser(su)
+			s.users[id] = u
 			s.userByName[strings.ToLower(u.Username)] = id
 			s.userByEmail[strings.ToLower(u.Email)] = id
 		}

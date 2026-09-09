@@ -1,0 +1,51 @@
+---
+description: EasyTier 虚网命名、Hub 与 fabric IP 分配（线上 vs 本地测试）
+alwaysApply: true
+---
+
+# EasyTier Fabric
+
+当前生产 Fabric（旧文档里的 `ha-c1` / `10.88.0.0/16` 已废弃，新节点一律用下表）。
+
+## 固定参数
+
+| 项 | 值 |
+|----|-----|
+| 网络名 | `ha-cluster-easytier` |
+| 网段 | `10.129.129.0/24` |
+| Hub 公网 | `110.40.229.62:15010`（UDP + TCP） |
+| Hub 虚 IP | `10.129.129.1` |
+| 密钥 | 只写 `docs/credentials.local.md`，禁止进 Git / README / join token 明文仓库 |
+
+Worker / 客户端 `--peers`：
+
+```text
+udp://110.40.229.62:15010
+tcp://110.40.229.62:15010
+```
+
+`ha-setup join` / join token 字段：`et_net=ha-cluster-easytier`，`et_peer=tcp://110.40.229.62:15010`。
+
+## IP 分配（`/24` 一次性划段，段内递增）
+
+| 用途 | 虚 IP 范围 | 数量 | 规则 |
+|------|------------|------|------|
+| **Hub** | `10.129.129.1` | 1 | 固定 |
+| **线上 worker** | `10.129.129.10` – `.204` | **195** | 从 `.10` 起逐个 +1，用尽前勿碰本地段 |
+| **本地 / PVE 测试** | `10.129.129.205` – `.254` | **50** | 从 `.205` 起逐个 +1 |
+
+PVE 示例：`ha-test-01`→`.205`，`ha-test-02`→`.206`，`ha-test-03`→`.207`。
+
+`.2`–`.9` 暂不使用（Hub 与业务段缓冲）。不按设备类型再分子块；各段内取下一个空闲 IP 即可。
+
+## 节点 CLI 约定
+
+- `--instance-name`：`et-<hostname>`（如 `et-ha-test-01`）
+- Worker 加 `--no-listener`；Hub 开 `--listeners udp://0.0.0.0:15010 tcp://0.0.0.0:15010`
+- 同机多实例时 `--rpc-portal` 端口互不重复（如 `15891`、`15892`…）
+
+## 与 ha-cluster 行为
+
+- EasyTier 是**默认 Fabric、可降级**：控制台 / ha-api 走公网 443；overlay 断了不删 Workspace。
+- LAN 调试可 `--skip-easytier` + `--api-override`；正式登记节点仍应使用上表虚 IP。
+- k3s `node-ip`、Bastion 路由、ha-agent 监听地址均跟 `fabric_ip` 一致。

@@ -14,15 +14,15 @@ import (
 
 func TestRefreshAndLogout(t *testing.T) {
 	app, u := setupApp(t)
-	_, refresh, got, err := app.LoginTokens(context.Background(), u.Username, "password1")
+	_, refresh, got, err := app.LoginTokens(context.Background(), u.Username, "password1", "test-fp")
 	if err != nil || refresh == "" || got.ID != u.ID {
 		t.Fatal(err, refresh)
 	}
-	access2, refresh2, u2, err := app.RefreshAccess(context.Background(), refresh)
+	access2, refresh2, u2, err := app.RefreshAccess(context.Background(), refresh, "test-fp")
 	if err != nil || access2 == "" || refresh2 == "" || u2.ID != u.ID {
 		t.Fatal(err)
 	}
-	if _, _, _, err := app.RefreshAccess(context.Background(), refresh); !errors.Is(err, store.ErrUnauthorized) {
+	if _, _, _, err := app.RefreshAccess(context.Background(), refresh, "test-fp"); !errors.Is(err, store.ErrUnauthorized) {
 		t.Fatal("old refresh must rotate away")
 	}
 	_ = app.LogoutRefresh(context.Background(), refresh2)

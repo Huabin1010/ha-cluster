@@ -36,8 +36,13 @@ const (
 	WSDestroyed    = "destroyed"
 	WSNodeLost     = "node_lost"
 	WSDegraded     = "fabric_degraded"
+	WSSuspended    = "suspended"
 
 	ResizePending = "pending"
+
+	NodeHealthy  = "healthy"
+	NodeDegraded = "degraded"
+	NodeOffline  = "offline"
 
 	VisShared  = "shared"
 	VisPrivate = "private"
@@ -103,10 +108,14 @@ type Node struct {
 	UsedCPU         int64     `json:"used_cpu_milli"`
 	UsedMem         int64     `json:"used_mem_bytes"`
 	UsedDisk        int64     `json:"used_disk_bytes"`
-	FabricPath      string    `json:"fabric_path,omitempty"`
-	FabricRTTMS     int64     `json:"fabric_rtt_ms,omitempty"`
-	Ready           bool      `json:"ready"`
-	LastHeartbeat   time.Time `json:"last_heartbeat"`
+	FabricPath        string    `json:"fabric_path,omitempty"`
+	FabricRTTMS       int64     `json:"fabric_rtt_ms,omitempty"`
+	HealthStatus      string    `json:"health_status,omitempty"`
+	CPUUsagePct       float64   `json:"cpu_usage_pct,omitempty"`
+	MemAvailableBytes int64     `json:"mem_available_bytes,omitempty"`
+	DiskFreeBytes     int64     `json:"disk_free_bytes,omitempty"`
+	Ready             bool      `json:"ready"`
+	LastHeartbeat     time.Time `json:"last_heartbeat"`
 }
 
 type Allocation struct {
@@ -142,9 +151,11 @@ type Workspace struct {
 	PendingCPUMilli  int64     `json:"pending_cpu_milli,omitempty"`
 	PendingMemBytes  int64     `json:"pending_mem_bytes,omitempty"`
 	PendingDiskBytes int64     `json:"pending_disk_bytes,omitempty"`
-	ResizeStatus     string    `json:"resize_status,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ResizeStatus       string    `json:"resize_status,omitempty"`
+	LastActivityAt     time.Time `json:"last_activity_at,omitempty"`
+	IdleSuspendHours   int       `json:"idle_suspend_hours,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type AuditLog struct {
@@ -296,10 +307,11 @@ type Invitation struct {
 }
 
 type RefreshSession struct {
-	ID        uuid.UUID
-	UserID    uuid.UUID
-	Hash      string
-	ExpiresAt time.Time
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	Hash        string
+	Fingerprint string
+	ExpiresAt   time.Time
 }
 
 const (

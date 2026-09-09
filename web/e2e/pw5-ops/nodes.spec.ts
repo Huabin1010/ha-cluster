@@ -3,14 +3,22 @@ import { api } from "../helpers/api";
 import { expectToast } from "../helpers/assert";
 
 test.describe("PW-5 节点与 Fabric 运维", () => {
-  test("PW5-01 @pw5 @smoke 种子节点可见", async ({ pageAs }) => {
+  test("PW5-01 @pw5 @smoke 节点列表可加载", async ({ pageAs }) => {
+    const nodeName = `e2e-seed-${Date.now()}`;
+    await api.heartbeat({
+      name: nodeName,
+      arch: "amd64",
+      role: "worker",
+      ready: true,
+      fabric_ip: "10.88.0.201",
+    });
+
     const { page } = await pageAs("owner");
     await page.goto("/nodes");
 
     const table = page.locator("table");
     await expect(table).toBeVisible();
-    await expect(page.locator('[data-testid="node-row"]', { hasText: "dev-pc" })).toBeVisible();
-    await expect(page.locator('[data-testid="node-row"]', { hasText: "phone1" })).toBeVisible();
+    await expect(page.locator('[data-testid="node-row"]', { hasText: nodeName })).toBeVisible();
   });
 
   test("PW5-02 @pw5 @smoke 有心跳节点", async ({ pageAs }) => {

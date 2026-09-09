@@ -85,6 +85,7 @@ export const STATUS_LABEL: Record<string, string> = {
   destroyed: "已销毁",
   node_lost: "节点丢失",
   fabric_degraded: "网络降级",
+  suspended: "闲置休眠",
 };
 
 export function statusLabel(status: string): string {

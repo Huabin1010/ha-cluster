@@ -88,6 +88,29 @@ func (s *Service) Reserve(ctx context.Context, req ReserveRequest) (*ReserveResu
 	if arch == "" {
 		arch = models.ArchAny
 	}
+	a := models.Allocation{
+		ID:        uuid.New(),
+		ProjectID: req.ProjectID,
+		CPUMilli:  req.Plan.CPUMilli,
+		MemBytes:  req.Plan.MemBytes,
+		DiskBytes: req.Plan.DiskBytes,
+		Arch:      arch,
+		State:     models.AllocReserved,
+		CreatedAt: time.Now(),
+	}
+	if err := s.Store.ReserveBestNode(ctx, arch, req.Plan.CPUMilli, req.Plan.MemBytes, req.Plan.DiskBytes, &a); err == nil {
+		n2, err := s.Store.GetNode(ctx, a.NodeID)
+		if err != nil {
+			return nil, err
+		}
+		if a.Arch == models.ArchAny || a.Arch == "" {
+			a.Arch = n2.Arch
+		}
+		return &ReserveResult{Allocation: a, Node: *n2}, nil
+	} else if !errors.Is(err, store.ErrNoCapacity) {
+		return nil, err
+	}
+
 	candidates, err := s.PickCandidateNodes(ctx, arch, req.Plan.CPUMilli, req.Plan.MemBytes, req.Plan.DiskBytes)
 	if err != nil {
 		return nil, err
@@ -96,7 +119,7 @@ func (s *Service) Reserve(ctx context.Context, req ReserveRequest) (*ReserveResu
 	var lastErr error
 	for _, node := range candidates {
 		boundArch := node.Arch
-		a := models.Allocation{
+		try := models.Allocation{
 			ID:        uuid.New(),
 			ProjectID: req.ProjectID,
 			CPUMilli:  req.Plan.CPUMilli,
@@ -106,7 +129,7 @@ func (s *Service) Reserve(ctx context.Context, req ReserveRequest) (*ReserveResu
 			State:     models.AllocReserved,
 			CreatedAt: time.Now(),
 		}
-		if err := s.Store.ReserveOnNode(ctx, node.ID, &a); err != nil {
+		if err := s.Store.ReserveOnNode(ctx, node.ID, &try); err != nil {
 			if errors.Is(err, store.ErrNoCapacity) {
 				lastErr = err
 				continue
@@ -117,7 +140,7 @@ func (s *Service) Reserve(ctx context.Context, req ReserveRequest) (*ReserveResu
 		if err != nil {
 			return nil, err
 		}
-		return &ReserveResult{Allocation: a, Node: *n2}, nil
+		return &ReserveResult{Allocation: try, Node: *n2}, nil
 	}
 	if lastErr != nil {
 		return nil, lastErr

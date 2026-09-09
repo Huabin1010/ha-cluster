@@ -52,6 +52,8 @@ type Store interface {
 
 	// ReserveOnNode is atomic: lock node capacity, insert allocation reserved, bump used.
 	ReserveOnNode(ctx context.Context, nodeID uuid.UUID, a *models.Allocation) error
+	// ReserveBestNode atomically picks the best ready node and reserves capacity (postgres: SKIP LOCKED).
+	ReserveBestNode(ctx context.Context, arch string, cpu, mem, disk int64, a *models.Allocation) error
 	ActivateAllocation(ctx context.Context, id uuid.UUID) error
 	ReleaseAllocation(ctx context.Context, id uuid.UUID) error
 	GetAllocation(ctx context.Context, id uuid.UUID) (*models.Allocation, error)

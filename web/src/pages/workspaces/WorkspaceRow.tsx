@@ -42,7 +42,7 @@ async function downloadSSHConfig(id: string): Promise<void> {
 
 function badgeVariant(status: string) {
   if (status === "running") return "ok" as const;
-  if (status === "fabric_degraded" || status === "requested") return "warn" as const;
+  if (status === "fabric_degraded" || status === "requested" || status === "suspended") return "warn" as const;
   if (status === "rejected" || status === "failed") return "danger" as const;
   return "outline" as const;
 }
@@ -52,13 +52,13 @@ export function WorkspaceRow({ ws, busyId, canApprove, onBusy, onRefresh, onToas
   const [rejectOpen, setRejectOpen] = useState(false);
   const busy = busyId === ws.id;
   const pending = ws.status === "requested";
-  const canStart = ws.status === "stopped" || ws.status === "fabric_degraded";
+  const canStart = ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended";
   const canStop = ws.status === "running" || ws.status === "fabric_degraded";
   const canDestroy = ws.status !== "destroyed" && ws.status !== "destroying";
-  const canSSH = ws.status === "running" || ws.status === "fabric_degraded";
+  const canSSH = ws.status === "running" || ws.status === "fabric_degraded" || ws.status === "suspended";
   const spec = workspaceSpec(ws);
   const resizePending = hasPendingResize(ws);
-  const canResize = !pending && !resizePending && (ws.status === "running" || ws.status === "stopped" || ws.status === "fabric_degraded");
+  const canResize = !pending && !resizePending && (ws.status === "running" || ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended");
 
   async function run(action: () => Promise<void>) {
     onBusy(ws.id);
