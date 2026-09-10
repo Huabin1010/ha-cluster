@@ -23,8 +23,13 @@
 - phone1：端口 24396 入口 /abaff8a4
 - vince：未装完
 
-## EasyTier（T2）
-- 网络名：`ha-c1`
+## EasyTier
+- 网络名：`ha-cluster-easytier`
 - 网络密钥：`<et_secret>`
-- 版本：easytier-core 2.6.4
+- Hub：`110.40.229.62:15010`
+
+## Depot CDN（RustFS，bucket typora）
+- Endpoint：`https://rustfs.s.ggss.club:50000`
+- Access Key / Secret Key：`<仅写 credentials.local.md>`
+- 公网根：`https://rustfs.s.ggss.club:50000/typora/ha-cluster`
 ```

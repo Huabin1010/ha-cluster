@@ -46,6 +46,7 @@ type Store interface {
 	ListMemberships(ctx context.Context, projectID uuid.UUID) ([]models.Membership, error)
 
 	UpsertNode(ctx context.Context, n *models.Node) error
+	UpdateNodeMeta(ctx context.Context, id uuid.UUID, machineType, remark string, tags []string) error
 	GetNode(ctx context.Context, id uuid.UUID) (*models.Node, error)
 	GetNodeByName(ctx context.Context, name string) (*models.Node, error)
 	ListNodes(ctx context.Context) ([]models.Node, error)

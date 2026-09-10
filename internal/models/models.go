@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,6 +44,10 @@ const (
 	NodeHealthy  = "healthy"
 	NodeDegraded = "degraded"
 	NodeOffline  = "offline"
+
+	MachineTypeCloud    = "cloud"
+	MachineTypeSelf     = "self"
+	MachineTypeCustomer = "customer"
 
 	VisShared  = "shared"
 	VisPrivate = "private"
@@ -116,6 +121,9 @@ type Node struct {
 	DiskFreeBytes     int64     `json:"disk_free_bytes,omitempty"`
 	Ready             bool      `json:"ready"`
 	LastHeartbeat     time.Time `json:"last_heartbeat"`
+	MachineType       string    `json:"machine_type,omitempty"`
+	Remark            string    `json:"remark,omitempty"`
+	Tags              []string  `json:"tags,omitempty"`
 }
 
 type Allocation struct {
@@ -294,6 +302,49 @@ func CanManageMembers(role string) bool {
 
 func CanApproveWorkspace(role string) bool {
 	return RoleRank(role) >= RoleRank(RoleAdmin)
+}
+
+func ValidMachineType(t string) bool {
+	switch t {
+	case "", MachineTypeCloud, MachineTypeSelf, MachineTypeCustomer:
+		return true
+	default:
+		return false
+	}
+}
+
+func MachineTypeLabel(t string) string {
+	switch t {
+	case MachineTypeCloud:
+		return "云服务"
+	case MachineTypeSelf:
+		return "自建实验室"
+	case MachineTypeCustomer:
+		return "客户主机"
+	default:
+		return t
+	}
+}
+
+// NormalizeNodeTags trims, dedupes, lowercases; max 16 tags, 32 chars each.
+func NormalizeNodeTags(tags []string) []string {
+	seen := make(map[string]struct{}, len(tags))
+	out := make([]string, 0, len(tags))
+	for _, raw := range tags {
+		t := strings.TrimSpace(strings.ToLower(raw))
+		if t == "" || len(t) > 32 {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+		if len(out) >= 16 {
+			break
+		}
+	}
+	return out
 }
 
 type Invitation struct {

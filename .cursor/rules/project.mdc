@@ -5,10 +5,10 @@ alwaysApply: true
 
 # ha-cluster
 
-- 产品说明以 `docs/prd.md` 为准；落地设计以 `docs/implementation/` 为准；设备以 `docs/inventory.md` 为准。
+- 产品说明以 `docs/prd.md` 为准；落地设计以 `docs/implementation/` 为准（**22** 项目/机器/审批、**23** 入口拓扑、**24** SSH）；设备以 `docs/inventory.md` 为准。细则见 `.cursor/rules/product-workspace.mdc`、`ingress-edge.mdc`、`ssh-access.mdc`。
 - 密码只写 `docs/credentials.local.md`，不要写进 README / PRD，不要提交公开远程。
 - 第一期：k3s 在市电控制面；worker 为 amd64 或 arm64；ha-setup 加节点；Workspace + 跳板；账本硬占用。**EasyTier 是默认 Fabric、可降级**（控制台走公网 443；网断不删 Workspace）。
 - 前端控制台：Refine + Vite + **shadcn/ui** + **sonner**。创建用「按钮 + Dialog」；列表用 PageFrame；Select / 确认框 / Tooltip 用 Radix；必须支持浅色/暗色。详见 `.cursor/rules/web-ui.mdc`。
-- 不要占用 NPS 8088–8097；不要把 VPS 80/443 交给 NPS 或 EasyTier；EasyTier 用 11010/11011。
+- 不要占用 NPS 8088–8097；不要把 VPS 80/443 交给 NPS；EasyTier Hub 用 **15010** UDP/TCP（见 `easytier-fabric.mdc`）。
 - 业务/Workspace 镜像必须与节点 arch 一致；禁止默认 qemu 混跑。
 - 手机离线是常态。npc 不当集群底盘（可作 SSH 破窗）。安装走 Depot，不要让手机直拉 Docker Hub。

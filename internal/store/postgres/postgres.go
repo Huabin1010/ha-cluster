@@ -31,6 +31,9 @@ var ingressApprovalSQL string
 //go:embed sql/005_node_metrics_and_activity.sql
 var metricsSQL string
 
+//go:embed sql/006_node_type_remark_tags.sql
+var nodeMetaSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -62,6 +65,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, metricsSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, nodeMetaSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -314,26 +321,38 @@ func (s *Store) ListMemberships(ctx context.Context, projectID uuid.UUID) ([]mod
 
 func scanNode(row interface{ Scan(dest ...any) error }) (*models.Node, error) {
 	n := &models.Node{}
+	var tagsRaw []byte
 	err := row.Scan(&n.ID, &n.Name, &n.Arch, &n.Class, &n.Power, &n.Role, &n.FabricIP, &n.LanIP, &n.BreakglassSSH,
 		&n.AllocatableCPU, &n.AllocatableMem, &n.AllocatableDisk, &n.UsedCPU, &n.UsedMem, &n.UsedDisk,
 		&n.FabricPath, &n.FabricRTTMS, &n.HealthStatus, &n.CPUUsagePct, &n.MemAvailableBytes, &n.DiskFreeBytes,
-		&n.Ready, &n.LastHeartbeat)
+		&n.Ready, &n.LastHeartbeat, &n.MachineType, &n.Remark, &tagsRaw)
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if len(tagsRaw) > 0 {
+		_ = json.Unmarshal(tagsRaw, &n.Tags)
 	}
 	return n, nil
 }
 
 const nodeCols = `id,name,arch,class,power,role,fabric_ip,lan_ip,breakglass_ssh,
 		allocatable_cpu_milli,allocatable_mem_bytes,allocatable_disk_bytes,used_cpu_milli,used_mem_bytes,used_disk_bytes,
-		fabric_path,fabric_rtt_ms,health_status,cpu_usage_pct,mem_available_bytes,disk_free_bytes,ready,last_heartbeat`
+		fabric_path,fabric_rtt_ms,health_status,cpu_usage_pct,mem_available_bytes,disk_free_bytes,ready,last_heartbeat,
+		machine_type,remark,tags`
 
 func (s *Store) UpsertNode(ctx context.Context, n *models.Node) error {
 	if n.HealthStatus == "" {
 		n.HealthStatus = models.NodeHealthy
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+	if n.MachineType == "" {
+		n.MachineType = models.MachineTypeSelf
+	}
+	tagsJSON, err := json.Marshal(n.Tags)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
 		ON CONFLICT (name) DO UPDATE SET
 			arch=EXCLUDED.arch, class=EXCLUDED.class, power=EXCLUDED.power, role=EXCLUDED.role,
 			fabric_ip=EXCLUDED.fabric_ip, lan_ip=EXCLUDED.lan_ip, breakglass_ssh=EXCLUDED.breakglass_ssh,
@@ -346,8 +365,24 @@ func (s *Store) UpsertNode(ctx context.Context, n *models.Node) error {
 		n.ID, n.Name, n.Arch, n.Class, n.Power, n.Role, n.FabricIP, n.LanIP, n.BreakglassSSH,
 		n.AllocatableCPU, n.AllocatableMem, n.AllocatableDisk, n.UsedCPU, n.UsedMem, n.UsedDisk,
 		n.FabricPath, n.FabricRTTMS, n.HealthStatus, n.CPUUsagePct, n.MemAvailableBytes, n.DiskFreeBytes,
-		n.Ready, n.LastHeartbeat)
+		n.Ready, n.LastHeartbeat, n.MachineType, n.Remark, tagsJSON)
 	return err
+}
+
+func (s *Store) UpdateNodeMeta(ctx context.Context, id uuid.UUID, machineType, remark string, tags []string) error {
+	tagsJSON, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET machine_type=$2, remark=$3, tags=$4 WHERE id=$1`,
+		id, machineType, remark, tagsJSON)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) GetNode(ctx context.Context, id uuid.UUID) (*models.Node, error) {

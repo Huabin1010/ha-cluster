@@ -398,10 +398,29 @@ func (s *Store) UpsertNode(_ context.Context, n *models.Node) error {
 		n.UsedCPU = old.UsedCPU
 		n.UsedMem = old.UsedMem
 		n.UsedDisk = old.UsedDisk
+		n.MachineType = old.MachineType
+		n.Remark = old.Remark
+		n.Tags = append([]string(nil), old.Tags...)
+	} else if n.MachineType == "" {
+		n.MachineType = models.MachineTypeSelf
 	}
 	cp := *n
 	s.nodes[n.ID] = &cp
 	s.nodeByName[n.Name] = n.ID
+	s.saveSnapshotLocked()
+	return nil
+}
+
+func (s *Store) UpdateNodeMeta(_ context.Context, id uuid.UUID, machineType, remark string, tags []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.nodes[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	n.MachineType = machineType
+	n.Remark = remark
+	n.Tags = append([]string(nil), tags...)
 	s.saveSnapshotLocked()
 	return nil
 }

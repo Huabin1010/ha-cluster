@@ -41,6 +41,17 @@
 
 ## 3. 用户看到的两种用法
 
+### 3.0 公网 CDN 一键加节点（推荐：新机器有公网）
+
+目标机只需 root，从 RustFS（bucket `typora`）拉瘦脚本 + 离线 payload：
+
+```bash
+curl -fsSL https://rustfs.s.ggss.club:50000/typora/ha-cluster/install.sh \
+  | sudo bash -s join --token 'ha://join/<cluster>/<secret>?et_net=ha-cluster-easytier&et_peer=tcp://110.40.229.62:15010&api=https://<控制台>/api&depot_public=https://rustfs.s.ggss.club:50000/typora/ha-cluster'
+```
+
+发布与凭据见 [28-depot-cdn-one-click-install.md](28-depot-cdn-one-click-install.md)。
+
 ### 3.1 远程一键加入（推荐：坐在开发机上）
 
 管理端已有 `ha-setup`（或完整包）。集群已初始化过，手里有 join token。

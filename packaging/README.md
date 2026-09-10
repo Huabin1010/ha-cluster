@@ -47,6 +47,24 @@ curl -fsS http://127.0.0.1:9090/payload-linux-arm64/manifest.json | head
 
 **禁止** 把 Depot 挂到 OpenResty 80/443（那是 T1）。
 
+## 上传到公网 CDN（RustFS / bucket typora）
+
+构建完成后：
+
+```bash
+# 凭据见 docs/credentials.local.md
+bash packaging/upload-depot-s3.sh
+```
+
+目标机一键加节点：
+
+```bash
+curl -fsSL https://rustfs.s.ggss.club:50000/typora/ha-cluster/install.sh \
+  | sudo bash -s join --token 'ha://join/...'
+```
+
+详见 [docs/implementation/28-depot-cdn-one-click-install.md](../docs/implementation/28-depot-cdn-one-click-install.md)。
+
 ## 给 T4 的使用约定
 
 1. 只读拷贝 `dist/payload-linux-<arch>/`（或对应 `.tar.zst`）。

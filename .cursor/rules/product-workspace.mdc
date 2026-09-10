@@ -1,0 +1,29 @@
+---
+description: 项目、工作区（机器）、审批与一行安装 — 产品模型
+alwaysApply: true
+---
+
+# 项目与工作区（用户口中的「机器」）
+
+- **Project**：协作边界（成员、预算、多台机器）。**Workspace**：用户申请的隔离 Linux 环境（独立文件系统），不是 PVE/KVM 整机。
+- **Node**：经 EasyTier 纳管的宿主机；用户不独占 Node，按套餐 **硬占用** 切片（Ledger）。运行时 **Incus + ha-agent**，PVE 仅可作测试用 Node 仿真。
+- 术语与流程以 `docs/implementation/22-project-machine-concepts.md` 为准。
+
+## 审批（owner / admin 可多名）
+
+| 操作 | 普通成员 | 须管理员批准 |
+|------|----------|--------------|
+| 申请新机器 | `developer` 提交 → `requested` | ✓ 通过后才 Reserve + Launch |
+| 升配 / 降配 | `resize pending` | ✓ `ApproveResize` 后才改规格；降配释放差额配额 |
+| 销毁机器 | 提交申请（产品定稿） | ✓ 批准后释放配额 |
+
+- `viewer` 不能申请机器。owner/admin **直建**工作区可免审；**升配与降配一律 pending**，不可直接改规格。
+- 降配：磁盘不得低于已用数据量；通过后 `Ledger.Shrink`（**代码待实现**，当前仅升配）。
+- 实现对齐 `ApproveWorkspace`、`RequestResize` / `ApproveResize`；销毁待 `destroy_requested`。
+
+## 一行命令
+
+- **纳管 Node**：一行 `curl install.sh | sudo bash -s join --token …`（见 `.cursor/rules/node-install-depot.mdc`）。
+- **工作区**：用户不手工装环境；审批后平台自动 Launch → 控制台提供 **一行 `ssh …@bastion -t <workspace-id>`**。
+- **运行环境**：`container`（Docker+SSH，Incus，默认）或 `k8s`（Namespace+Quota）。创建时 **自动注入**（Docker/SSH 公钥；k8s 则 ns+kubeconfig）。详见 `27-project-monitoring-and-runtimes.md`。
+- **项目监控**：列表展示每台机器 CPU/内存/磁盘快照；详情页 **近期曲线**（agent 上报 workspace 指标，待实现）。

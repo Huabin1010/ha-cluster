@@ -129,6 +129,13 @@ PRD 仍有效；冲突时以本目录的「产品拍板」小节为准，并回�
 | [19-resource-allocation-ssh-and-ingress-design.md](19-resource-allocation-ssh-and-ingress-design.md) | **宿主机资源纳管、项目申请审批、SSH 极速信任与泛域名落地架构方案**（硬件探测预留、硬账本扣减、Bastion 路由、泛域名审批） |
 | [20-architecture-review.md](20-architecture-review.md) | **整体方案合理性审查报告**（七大模块逐一审查、4 处代码-文档不一致、3 个阻塞上线缺口、P0/P1/P2 改进清单） |
 | [21-core-pipeline-spec.md](21-core-pipeline-spec.md) | **核心链路闭环设计与工程规范**（ha-agent 远程编排协议、真实磁盘 Statfs 探测、Bastion 原生 SSH 协议实现、Ingress 审批流） |
+| [22-project-machine-concepts.md](22-project-machine-concepts.md) | **项目、机器与用户概念梳理**（Project / Workspace / Node 分层、非 PVE 隔离、多管理员、申请与销毁审批、owner 转让） |
+| [23-ingress-fabric-topology.md](23-ingress-fabric-topology.md) | **主节点、调度节点与 EasyTier 流量拓扑**（DNS 入主节点、入口只分流、Relay 经虚网转发算力节点） |
+| [24-ssh-access-and-approval.md](24-ssh-access-and-approval.md) | **SSH 公钥、极速连接与连接权限审批**（用户设置公钥、Bastion 直达、管理员控权、无权限可申请、owner/admin 审批） |
+| [25-ingress-portforward-dns.md](25-ingress-portforward-dns.md) | **反向代理、TCP 端口转发、公共/特殊域名、腾讯云与阿里云 DNS 快速配置** |
+| [26-node-types-and-tags.md](26-node-types-and-tags.md) | **算力节点类型（cloud/self/customer）、备注与标签** |
+| [27-project-monitoring-and-runtimes.md](27-project-monitoring-and-runtimes.md) | **项目机器监控与曲线、Docker+SSH / K8s 双运行时、创建时环境自动注入** |
+| [28-depot-cdn-one-click-install.md](28-depot-cdn-one-click-install.md) | **离线 Depot、RustFS CDN（typora）、一键 install.sh 加节点** |
 
 上游需求与库存：
 

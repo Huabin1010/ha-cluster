@@ -131,17 +131,24 @@ Host ha-ws-0a1b2c
 
 ## 6. ACL 规则
 
+完整产品与审批流见 [24-ssh-access-and-approval.md](24-ssh-access-and-approval.md)。跳板鉴权公式：
+
 ```
 allow ssh to workspace W iff
   user.active
-  AND membership(project(W)) in {owner, admin, developer}
+  AND user has registered SSH public key (Bastion handshake)
+  AND membership(project(W)).ssh_access == granted
+      OR role in {owner, admin}
+      OR platform_admin
   AND (W.visibility == shared OR W.owner == user OR role in {owner, admin})
-  AND W.status in {running}
+  AND W.status in {running, ...}   # 见 SSHTarget 实现
 ```
 
-`viewer` 默认拒绝 SSH。  
-`stopped`：提示先到控制台开机。  
+`viewer` 默认 `ssh_access=none`，须申请并由 owner/admin 审批。  
+`stopped`：提示先到控制台开机（或按策略唤醒）。  
 `node_lost`：拒绝并提示重建。
+
+> **实现注记：** `membership.ssh_access` 与申请审批 API 为 [24](24-ssh-access-and-approval.md) 拍板项；当前代码仍以 `CanSSH(role)` 为主，落地时需叠加 `ssh_access` 校验。
 
 ---
 

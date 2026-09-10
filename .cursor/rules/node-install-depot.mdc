@@ -1,0 +1,56 @@
+---
+description: 节点一键安装脚本、离线 Depot 与 CDN 发布约定
+alwaysApply: true
+---
+
+# 节点一键安装与 Depot
+
+纳管 **宿主机 Node**（非 Workspace）= 一条 curl + join token；细则见 `docs/implementation/28-depot-cdn-one-click-install.md`。
+
+## 用户命令（定稿）
+
+```bash
+curl -fsSL https://rustfs.s.ggss.club:50000/typora/ha-cluster/install.sh \
+  | sudo bash -s join --token 'ha://join/<cluster>/<secret>?et_net=ha-cluster-easytier&et_peer=tcp://110.40.229.62:15010&api=https://<控制台>/api&depot_public=https://rustfs.s.ggss.club:50000/typora/ha-cluster'
+```
+
+- 引导脚本：`packaging/install.sh`（瘦，几 KB）；**不要**把大 payload 塞进 install.sh。
+- 目标机流程：识别 `uname -m` → 拉 `ha-setup-linux-{amd64|arm64}` → 拉 `ha-payload-linux-{arch}.tar.zst` → `exec ha-setup join …`。
+
+## CDN 布局（bucket `typora`，前缀 `ha-cluster/`）
+
+| 对象 | 说明 |
+|------|------|
+| `install.sh` | 一键引导 |
+| `ha-setup-linux-{amd64,arm64}` | 静态二进制（`pack.sh` 产出到 `dist/`） |
+| `ha-payload-linux-{amd64,arm64}.tar.zst` | 离线 payload 归档 |
+| `payload-linux-{arch}/` | 解压目录（可选同步） |
+
+公网根 URL：`https://rustfs.s.ggss.club:50000/typora/ha-cluster`（join token 用 `depot_public=`）。
+
+## join token 参数
+
+| 参数 | 用途 |
+|------|------|
+| `et_net` / `et_peer` | EasyTier（见 `easytier-fabric.mdc`） |
+| `api` | 控制面 API |
+| `depot` | overlay 内 `http://10.129.129.1:9090`（可选，LAN 更快） |
+| `depot_public` | 公网 CDN 根；`depot` 为空时 `ha-setup` 回退到此 |
+
+## 维护者发布
+
+```bash
+bash packaging/fetch-deps.sh all
+bash packaging/pack.sh amd64 && bash packaging/pack.sh arm64
+# 凭据见 docs/credentials.local.md
+python packaging/upload-depot-s3.py   # Windows
+# 或 bash packaging/upload-depot-s3.sh  # 需 aws CLI
+```
+
+本地调试 Depot：`bash packaging/depot.sh`（仅 `127.0.0.1:9090`，**禁止**挂 OpenResty 80/443）。
+
+## 实现约束
+
+- RustFS 账号密码 **只写** `docs/credentials.local.md`；禁止进 Git / README / 已跟踪文档。
+- payload 按 **amd64 / arm64** 分包；`ha-setup` 必须校验主机 arch ≠ manifest arch 时拒绝安装。
+- 改 `install.sh`、`pack.sh`、`internal/setup/join.go` 时保持：**先 EasyTier 入网，再从 depot 装 k3s/Incus/ha-agent**；控制台不依赖 overlay 存活。

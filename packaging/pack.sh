@@ -77,6 +77,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" go build -trimpath -ldflags="-s -w" \
   -o "${OUT}/bin/ha-agent" "${ROOT}/cmd/ha-agent"
 CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" go build -trimpath -ldflags="-s -w" \
   -o "${OUT}/bin/ha-setup" "${ROOT}/cmd/ha-setup"
+cp -f "${OUT}/bin/ha-setup" "${DIST}/ha-setup-linux-${ARCH}"
+chmod +x "${DIST}/ha-setup-linux-${ARCH}"
 
 # Convenience copies at payload root (installers often expect flat names).
 cp -f "${OUT}/bin/ha-agent" "${OUT}/ha-agent"
