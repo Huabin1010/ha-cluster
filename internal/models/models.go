@@ -33,13 +33,25 @@ const (
 	WSStopped      = "stopped"
 	WSFailed       = "failed"
 	WSRejected     = "rejected"
-	WSDestroying   = "destroying"
-	WSDestroyed    = "destroyed"
+	WSDestroyRequested         = "destroy_requested"
+	WSDestroyPendingPlatform   = "destroy_pending_platform"
+	WSDestroying               = "destroying"
+	WSDestroyed                = "destroyed"
 	WSNodeLost     = "node_lost"
 	WSDegraded     = "fabric_degraded"
 	WSSuspended    = "suspended"
 
-	ResizePending = "pending"
+	ResizePending   = "pending"
+	ResizeUpgrade   = "upgrade"
+	ResizeDowngrade = "downgrade"
+
+	SSHAccessNone    = "none"
+	SSHAccessPending = "pending"
+	SSHAccessGranted = "granted"
+	SSHAccessRevoked = "revoked"
+
+	SSHModeReadWrite = "read_write"
+	SSHModeReadOnly  = "read_only"
 
 	NodeHealthy  = "healthy"
 	NodeDegraded = "degraded"
@@ -95,6 +107,8 @@ type Membership struct {
 	ProjectID uuid.UUID `json:"project_id"`
 	UserID    uuid.UUID `json:"user_id"`
 	Role      string    `json:"role"`
+	SSHAccess string    `json:"ssh_access,omitempty"`
+	SSHMode   string    `json:"ssh_mode,omitempty"`
 }
 
 type Node struct {
@@ -160,6 +174,7 @@ type Workspace struct {
 	PendingMemBytes  int64     `json:"pending_mem_bytes,omitempty"`
 	PendingDiskBytes int64     `json:"pending_disk_bytes,omitempty"`
 	ResizeStatus       string    `json:"resize_status,omitempty"`
+	ResizeKind         string    `json:"resize_kind,omitempty"`
 	LastActivityAt     time.Time `json:"last_activity_at,omitempty"`
 	IdleSuspendHours   int       `json:"idle_suspend_hours,omitempty"`
 	CreatedAt          time.Time `json:"created_at"`
@@ -288,8 +303,68 @@ func RoleRank(role string) int {
 	}
 }
 
-func CanSSH(role string) bool {
+// CanSSHRole is legacy role-only check; prefer authz.CanSSHSession with membership.SSHAccess.
+func CanSSHRole(role string) bool {
 	return RoleRank(role) >= RoleRank(RoleDeveloper)
+}
+
+func CanSSH(role string) bool {
+	return CanSSHRole(role)
+}
+
+func ValidSSHAccess(a string) bool {
+	switch a {
+	case SSHAccessNone, SSHAccessPending, SSHAccessGranted, SSHAccessRevoked, "":
+		return true
+	default:
+		return false
+	}
+}
+
+func ValidSSHMode(m string) bool {
+	switch m {
+	case SSHModeReadWrite, SSHModeReadOnly, "":
+		return true
+	default:
+		return false
+	}
+}
+
+func ValidWorkspaceStatus(s string) bool {
+	switch s {
+	case WSRequested, WSProvisioning, WSRunning, WSStopped, WSFailed, WSRejected,
+		WSDestroyRequested, WSDestroyPendingPlatform, WSDestroying, WSDestroyed,
+		WSNodeLost, WSDegraded, WSSuspended:
+		return true
+	default:
+		return false
+	}
+}
+
+func DefaultSSHAccessForRole(role string) string {
+	if RoleRank(role) >= RoleRank(RoleAdmin) {
+		return SSHAccessGranted
+	}
+	return SSHAccessNone
+}
+
+func DefaultSSHModeForRole(role string) string {
+	if RoleRank(role) >= RoleRank(RoleAdmin) {
+		return SSHModeReadWrite
+	}
+	return SSHModeReadWrite
+}
+
+func NormalizeMembershipSSH(m *Membership) {
+	if m.SSHAccess == "" {
+		m.SSHAccess = DefaultSSHAccessForRole(m.Role)
+	}
+	if m.SSHMode == "" {
+		m.SSHMode = DefaultSSHModeForRole(m.Role)
+	}
+	if m.SSHAccess != SSHAccessGranted {
+		m.SSHMode = SSHModeReadWrite
+	}
 }
 
 func CanMutateWorkspace(role string) bool {

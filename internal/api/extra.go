@@ -210,11 +210,11 @@ func (s *Server) internalSSHTarget(w http.ResponseWriter, r *http.Request) {
 		ResourceID: ws.ID.String(), IP: r.RemoteAddr,
 		Meta: map[string]any{"node": n.Name, "via": "bastion"},
 	})
-	role := models.RoleDeveloper
+	var mem *models.Membership
 	if m, err := s.App.Store.GetMembership(r.Context(), ws.ProjectID, u.ID); err == nil {
-		role = m.Role
+		mem = m
 	}
-	writeSSHTarget(w, ws, n, u, role)
+	writeSSHTarget(w, ws, n, u, mem)
 }
 
 func (s *Server) approveWorkspace(w http.ResponseWriter, r *http.Request) {

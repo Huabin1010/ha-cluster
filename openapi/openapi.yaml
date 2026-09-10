@@ -89,6 +89,63 @@ paths:
       responses:
         "200": { description: bastion ssh command }
         "403": { description: not approved or no ssh }
+        "404": { description: not a project member }
+  /projects/{id}/members/{uid}:
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Patch member role / ssh_access / ssh_mode
+      responses:
+        "200": { description: updated membership }
+        "403": { description: not project admin }
+        "404": { description: not found }
+  /projects/{id}/transfer-ownership:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: transferred }
+        "403": { description: not owner }
+  /projects/{id}/ssh-access-request:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: ssh_access pending }
+  /projects/{id}/members/{uid}/ssh-access/approve:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: ssh_access granted }
+  /workspaces/{id}/destroy-request:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: destroy_requested }
+        "409": { description: conflict }
+  /workspaces/{id}/destroy-request/approve:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: pending platform approval }
+  /admin/dangerous-approvals:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: pending dangerous ops }
+  /admin/dangerous-approvals/{id}/approve:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: destroyed }
+  /admin/join-tokens:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: join token }
+  /nodes/{id}:
+    patch:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: updated node meta }
+        "403": { description: platform staff only }
   securitySchemes:
     bearerAuth:
       type: http

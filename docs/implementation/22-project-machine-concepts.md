@@ -23,7 +23,8 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  平台（Platform）                                            │
-│  · 全局管理员（platform_admin）：节点接入、总容量、强制处置   │
+│  · 平台最高管理员（platform_admin）：统一纳管节点/Depot/入口   │
+│  · 可委派 platform_admin / platform_ops（见 29）             │
 │  · 资源池（Pool）：amd64 / arm64 等可售算力                  │
 └──────────────────────────────┬──────────────────────────────┘
                                │
@@ -104,12 +105,16 @@ Node（宿主机）                    Workspace（项目里的「机器」）
 
 | 角色 | 日常能力（摘要） |
 |------|------------------|
-| **owner** | 项目最高负责人：改设置、管成员、审批工作区与销毁、可转让 owner |
-| **admin** | 与 owner 几乎相同，**可多名**；不能单独转让 owner（需 owner 或平台管理员） |
-| **developer** | 使用工作区（SSH）、提交申请；**不能**直接审批或免审创建 |
+| **owner** | 项目创建者 / 最高负责人：改设置、管成员、**通过角色委派**审批权、可转让 owner |
+| **admin** | 由 owner 指定，**可多名**；可审批创建/升配/降配/SSH 等 **项目级** 操作；**不能**终审销毁 |
+| **developer** | 使用工作区（SSH）、提交申请；**不能**审批 |
 | **viewer** | 只读用量与列表，不能 SSH、不能申请 |
 
 **创建项目的用户** 自动成为该项目的 **owner**，拥有管理权。
+
+**非成员不可见：** 未加入某项目的用户 **看不到** 该项目（列表无、直链 404）。邀请接受后才成为成员。
+
+**成员 ≠ 能 SSH：** 进入项目后仍可能 `ssh_access=none`（须申请），或 `ssh_mode=read_only`（只能看文件不能改）。详见 [30-project-member-access.md](30-project-member-access.md)。
 
 ### 5.2 管理员可以多个
 
@@ -117,29 +122,48 @@ Node（宿主机）                    Workspace（项目里的「机器」）
 
 | 层级 | 角色 | 管什么 |
 |------|------|--------|
-| **平台** | `platform_admin` / `platform_ops` | 全局节点、总池、审计、跨项目强制操作 |
-| **项目** | `owner` + 任意多名 `admin` | 本项目成员、预算、工作区审批与销毁审批 |
+| **平台** | `platform_admin`（可多名，最高） / `platform_ops` | **统一**纳管 Node、Depot、入口、总池；`platform_admin` 可任命下级平台管理员 |
+| **项目** | `owner` + 任意多名 `admin` | 成员与预算、**项目级**审批（创建/升配/降配/SSH）；**不能**加宿主机 Node；**不能**终审销毁 |
 
-同一项目里可以同时有 **1 个 owner + N 个 admin**；审批创建/销毁/升配时，**任一** `admin` 或 `owner` 均可处理（与现有 `CanApproveWorkspace` 一致）。
+同一项目 **1 个 owner + N 个 admin**。owner 通过 **添加成员时下拉选角色** 或 **改角色** 把审批权分给同事（通常选 `admin`）。创建/升配/降配/SSH：**任一** `admin` 或 `owner` 可批；**销毁机器**须 **项目 admin 初审 + 平台超级管理员终审**（见 §6.4）。
 
-### 5.3 所有权转移（用户可能会转移）
+**边界：** 用户说「加一台机器」须区分 — **加设备（Node）** 仅平台管理员（`curl install.sh \| join`）；**加项目机器（Workspace）** 走 §6 申请审批。详见 [29-platform-admin-governance.md](29-platform-admin-governance.md)。
+
+### 5.3 所有权转移（移交管理权）
 
 指 **项目 owner** 的变更，不是单台工作区的「过户」：
 
 ```
 现 owner（或 platform_admin）
+  → 控制台「转让项目负责人」→ 选择项目中另一名成员
   → POST /projects/{id}/transfer-ownership { new_owner_user_id }
-  → 新 owner 原须已是项目成员（通常先升为 admin）
-  → 审计记录 + 通知
+  → 审计记录 + 通知双方
 ```
 
 规则：
 
 - 仅 **现 owner** 或 **platform_admin** 可发起转让。
-- 转让后原 owner 角色降为 **admin**（或按产品配置保留 viewer，默认 admin）。
-- 工作区、Allocation、成员关系 **不随 owner 转让而重置**；账本仍挂在同一 Project 下。
+- 受让人 **须已是项目成员**（下拉只列当前成员）。
+- 转让后 **新 owner** 获得全部项目负责人权限。
+- 转让后 **原 owner 降为普通成员 `developer`**（失去管理权，不再能审批、改设置、管成员）；若仍需协作审批，须新 owner 将其 **改回 `admin`**。
+- 工作区、Allocation、成员关系 **不重置**；账本仍挂在同一 Project 下。
 
-（工作区级 `OwnerUserID` 表示「谁申请的 / 私有机归属」，与项目 owner 不同；见 [04-collaboration.md](04-collaboration.md) 私有 Workspace。）
+（工作区级 `OwnerUserID` 表示「谁申请的 / 私有机归属」，与项目 owner 不同；见 [04-collaboration.md](04-collaboration.md)。）
+
+### 5.4 添加成员与角色委派（同事场景）
+
+团队内多为同事，添加成员 **不用复杂邮件流** 作为主路径：
+
+```
+owner / admin → 成员页「添加成员」
+  → 搜索/选择已有平台用户（同公司账号）
+  → 角色下拉：admin | developer | viewer
+  → 确认 → membership 立即生效
+```
+
+- **审批权委派**：把同事设为 **`admin`** 即可让其审批创建机器、升配、降配、SSH 连接权等 **项目级** 事项。
+- **不能** 通过项目角色授予「销毁终审权」或「纳管 Node」；后者属平台超级管理员（见 [29](29-platform-admin-governance.md)）。
+- 邮件邀请仍保留，用于 **尚未注册** 的外部协作者（次要路径）。
 
 ---
 
@@ -152,9 +176,10 @@ Node（宿主机）                    Workspace（项目里的「机器」）
 | **申请新机器** | `developer+` | **是**（owner/admin 直建可免审） | 否，仅校验预算 |
 | **升配（扩容）** | `developer+`（私有机须本人或 admin） | **是**（一律 pending） | 否，仅校验增量预算 |
 | **降配（缩容）** | `developer+`（私有机须本人或 admin） | **是**（一律 pending） | 否；通过后 **释放** 差额配额 |
-| **销毁机器** | `developer+` | **是**（见 §6.4） | 审批通过后才释放 |
+| **销毁机器** | `developer+` | **是**：项目 admin 初审 + **平台超级管理员终审**（§6.4） | 终审通过后才释放 |
 
-审批人：**项目 owner 或任意 admin** 均可处理；`platform_admin` 可跨项目强制操作（审计必记）。
+**项目级**审批人（创建/升配/降配/SSH）：**owner 或任意 admin**。  
+**危险操作**（销毁等）：项目 admin 通过后进入 **平台待审队列**，须 **超级管理员**（或已委派的平台审批角色）终审。
 
 ### 6.1 申请机器（创建工作区）
 
@@ -235,25 +260,34 @@ sequenceDiagram
 
 > **实现状态：** **升配** 审批已实现（`RequestResize` / `ApproveResize`）。当前代码对降配返回 `ErrNotExpansion` / `ErrDiskShrink`，**须按本节放开降配路径并叠加审批**；建议增加 `resize_kind` 与 `Ledger.Shrink`。
 
-### 6.3 删除 / 移除机器（销毁工作区）— 产品定稿
+### 6.4 删除 / 销毁机器（危险操作）— 双层审批
 
 **产品规则（本文拍板）：**
 
-> 任何项目成员（含 developer）都可以 **发起销毁申请**；  
-> 真正释放资源、删除实例，须经 **项目 admin 或 owner 审批** 后执行。  
-> **platform_admin** 可紧急强制销毁（审计必记）。
+> 销毁工作区属于 **危险操作**。成员可 **发起申请**；须 **项目 admin/owner 初审** 通过后，再经 **平台超级管理员（或已委派的平台审批角色）终审** 才真正删机释池。  
+> `platform_admin` 可紧急强制销毁（审计必记，绕过队列须留痕）。
 
 ```
 申请人（developer+）提交销毁
-  → Workspace 状态：destroy_requested（待实现）
-  → admin / owner 审批
-       ├─ 通过 → destroying → 调 agent Destroy → Ledger Release → destroyed
-       └─ 驳回 → 回到 running / stopped，保留占用
+  → destroy_requested
+  → 项目 owner / admin 初审
+       ├─ 驳回 → 回到 running / stopped
+       └─ 通过 → destroy_pending_platform（进入平台待审）
+
+平台超级管理员（或委派角色，见 29 §8）
+  → 终审通过 → destroying → agent Destroy → Ledger Release → destroyed
+  → 终审驳回 → destroy_rejected（通知项目；实例保留）
 ```
 
-与 **创建对称**：普通成员不能单方面删机占用的配额；防止误删与私自释放。
+| 阶段 | 审批人 | 控制台入口 |
+|------|--------|------------|
+| 发起 | `developer+` | 工作区「申请销毁」 |
+| 初审 | 项目 `owner` / `admin` | 项目「待审批」 |
+| **终审** | **`platform_admin`**（或平台委派角色） | 平台「危险操作待审」 |
 
-> **实现状态：** 创建侧审批已落地（`requested` → `ApproveWorkspace`）。销毁侧当前代码仍为 developer 可直接 `DestroyWorkspace`；需增加 `destroy_requested` 与 `ApproveDestroy` API。见 §9。
+与 **创建** 不同：创建/升配/降配 **项目 admin 一批即生效**；**销毁必须平台终审**，防止同事误删或越权释池。
+
+> **实现状态：** 创建侧审批已落地。销毁须新增 `destroy_requested` → `ApproveDestroyProject` → `ApproveDestroyPlatform`；当前代码直删行为 **以本文为准** 改造。
 
 ---
 
@@ -276,9 +310,12 @@ curl -fsSL https://rustfs.s.ggss.club:50000/typora/ha-cluster/install.sh \
 
 | 步骤 | 谁做 | 结果 |
 |------|------|------|
-| 平台管理员发 join token | `platform_admin` | 一次性令牌含 ET 网络与 Depot 地址 |
-| 目标机执行一行 curl | 设备主人 | EasyTier 入网 + k3s agent + Incus + ha-agent |
-| 控制台可见 Node Ready | 自动 | 进入算力池，可被选为 Workspace 宿主机 |
+| 生成 join token | **`platform_admin` 仅** | 一次性令牌含 ET 网络与 Depot 地址 |
+| 目标机执行一行 curl | **`platform_admin`（或授权运维代执行）** | EasyTier 入网 + k3s agent + Incus + ha-agent |
+| 设置类型/标签 | `platform_admin` / `platform_ops` | `machine_type`、`remark`、`tags` |
+| 控制台 Node Ready | 自动 | 进入全局算力池，供各项目 Workspace 调度 |
+
+项目成员 **不** 持有 join token，也 **不** 在宿主机上自行执行纳管脚本。
 
 ### 7.2 项目机器（工作区）— 审批后自动装好
 
@@ -317,8 +354,8 @@ ssh alice@bastion.example.com -p 8099 -t <workspace-uuid>
 5. Bob **申请升配**到 4c4g → `resize pending` → Carol **批准** → 规格生效。
 6. Bob **申请降配**回 2c2g → 同样 pending → Carol **批准** → 差额配额回池。
 7. Bob 再 **申请**第二台机器 → 同一项目下 **多台** Workspace 并存。
-8. Bob **申请删除**第一台机器 → Carol **审批**后配额回池。
-9. Alice **将 owner 转让给** Carol → 项目与机器不变。
+8. Bob **申请删除**第一台机器 → Carol **项目初审**通过 → **平台超级管理员终审**后配额回池。
+9. Alice **将 owner 转让给** Carol → Alice **降为 developer**；Carol 成为 owner，项目与机器不变。
 10. 若 Node 离线，工作区可能 `node_lost`；**不自动删机**，占用保留。
 
 ---
@@ -332,7 +369,7 @@ ssh alice@bastion.example.com -p 8099 -t <workspace-uuid>
 | 机器（用户） | `Workspace` | `POST /projects/{id}/workspaces` |
 | 申请创建 | `status=requested` | `ApproveWorkspace` / `RejectWorkspace` |
 | 升配 / 降配 | `resize_status=pending` | `POST …/resize` → `…/resize/approve`（升配已实现；**降配待实现**） |
-| 申请销毁 | `status=destroy_requested`（**待加**） | `ApproveDestroy` / `RejectDestroy`（**待加**） |
+| 申请销毁 | `destroy_requested` → `destroy_pending_platform`（**待加**） | 项目 `ApproveDestroy` + 平台 `ApproveDestroyPlatform`（**待加**） |
 | 节点一行安装 | `ha-setup join` / curl install.sh | 见 [10-fast-installer.md](10-fast-installer.md) |
 | 硬占用 | `Allocation` + `Ledger` | `reserved` → `active` → `released` |
 | 宿主机 | `Node` + `ha-agent` 心跳 | 不对项目成员直接暴露 SSH |
@@ -349,7 +386,7 @@ ssh alice@bastion.example.com -p 8099 -t <workspace-uuid>
 | 申请机器 = 独占整台物理机 | 按套餐切片；一 Node 可多 Workspace |
 | 删项目成员 = 自动删他的机器 | 移除成员 ≠ 销毁工作区；需单独走销毁审批 |
 | 只有一个管理员 | 项目可多名 `admin`；另有平台 `platform_admin` |
-| developer 能直接删机 | **产品定稿：不能**，须 admin 审批（代码待对齐） |
+| developer 能直接删机 | **产品定稿：不能**；须项目 admin 初审 + **平台超级管理员终审** |
 | developer 能直接升配/降配 | **不能**，须提交申请并由 admin `ApproveResize` |
 | 用户要自己装 Workspace | **不用**；审批后平台自动 Launch |
 
@@ -387,11 +424,13 @@ ssh alice@bastion.example.com -p 8099 -t <workspace-uuid>
 - [ ] 项目内可存在 ≥2 台运行中 Workspace，配额分别占用  
 - [ ] developer 申请机器 → `requested`，admin 审批后才 `running` 且自动 Launch  
 - [ ] developer 申请升配 / 降配 → `resize pending`，admin 审批后才生效（降配释放差额配额）  
-- [ ] developer 销毁 → `destroy_requested`，admin 审批后才 `destroyed` 且池回收  
+- [ ] developer 销毁 → 项目 admin 初审 → 平台超级管理员终审后才 `destroyed` 且池回收
+- [ ] owner 转让后原 owner 降为 `developer`，无管理菜单  
 - [ ] 新 Node 一行 `curl … join` 入网后可被调度承载 Workspace  
 - [ ] 工作区 running 后控制台提供一行 SSH 命令可复制  
 - [ ] 每台 Workspace SSH 后文件系统互不可见（抽检 `df` / 写标记文件）  
-- [ ] 项目至少 2 名 `admin` 均可审批创建与销毁  
+- [ ] 项目至少 2 名 `admin` 均可审批创建；销毁仅初审，终审在平台队列
+- [ ] 添加成员：搜索用户 + 角色下拉（admin/developer/viewer）立即生效  
 - [ ] owner 转让后新 owner 可管理成员与审批，审计有记录  
 - [ ] viewer 申请 SSH 连接权 → owner/admin 审批后可经 Bastion 立刻连接（见 [24](24-ssh-access-and-approval.md)）  
 - [ ] 运行时栈为 Incus（非 PVE 模板机）；PVE 仅作 Node 仿真测试可选  

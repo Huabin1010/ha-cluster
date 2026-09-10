@@ -5,19 +5,22 @@ alwaysApply: true
 
 # SSH 极速连接与权限
 
-- 用户在 **个人设置** 登记 SSH 公钥（`GET/POST/DELETE /me/ssh-keys`）；至少一把公钥才能过 Bastion。
-- 工作区 `running` 且有权时，控制台提供 **一键 SSH / ssh-config**；经 **Bastion 公网** → EasyTier → worker，用户不记 worker IP。
-- 公钥 **热同步** 到 Incus `authorized_keys`（Launch + `sync-keys`）；详见 `24-ssh-access-and-approval.md`。
+细则见 `docs/implementation/24-ssh-access-and-approval.md`、`30-project-member-access.md`。
 
-## 谁能连（两层都过）
+- 用户在 **个人设置** 登记 SSH 公钥；至少一把公钥才能过 Bastion。
+- **非项目成员看不见该项目**（列表无、直链 404）。
+- 工作区 `running` 且有权时，控制台提供 **一键 SSH**；经 Bastion → EasyTier → worker。
 
-1. **项目层** `membership.ssh_access`：`granted` | `none` | `pending` | `revoked`  
-   - `viewer` 默认 `none`，可申请；**owner / admin 审批**（或直授/撤销）。  
-   - owner/admin 默认可连；`platform_admin` 运维破窗须审计。
-2. **工作区层**：`shared` vs `private`（私有机仅创建者 + owner/admin）。
+## 谁能连（须全部满足）
+
+1. **成员身份**：`memberships` 存在；非成员无项目访问权。
+2. **项目层** `ssh_access`：`granted`（`none`/`pending`/`revoked` 不可连；`viewer` 默认 `none`，可申请）。
+3. **SSH 模式** `ssh_mode`：`read_write`（默认）或 `read_only`（可登录但不可改工作区文件）。
+4. **工作区层**：`shared` vs `private` ACL。
+5. owner/admin 默认可连；`platform_admin` 破窗须审计。
 
 ## 实现约束
 
-- `SSHTarget` / `internal/ssh-target` 须校验 `ssh_access == granted`（叠加现有角色与 visibility ACL）。
-- HTTP Ingress **不经** Relay 式 Nginx 走 SSH；Bastion 在入口机，Dial `fabric_ip`（见 `06-bastion-routing.md`）。
-- 改 `internal/bastion/`、`internal/service` 中 SSH 路径时保持 **端到端公钥鉴权 + 审计** `ssh.allow` / `ssh.deny`。
+- `SSHTarget` 校验成员 + `ssh_access` + ACL；只读模式用 ro 账号或 `ha-shell-ro` ForceCommand。
+- 公钥热同步到 Incus `authorized_keys`（Launch + `sync-keys`）。
+- 改 `internal/bastion/`、`internal/service` 时保持公钥鉴权 + 审计 `ssh.allow` / `ssh.deny`。

@@ -51,6 +51,7 @@ func TestFetchTargetInternalToken(t *testing.T) {
 		"owner_user_id":   ownerID,
 		"actor_user_id":   devID,
 		"membership_role": models.RoleDeveloper,
+		"ssh_access":      models.SSHAccessGranted,
 		"is_admin":        false,
 		"via":             "fabric",
 	}

@@ -22,10 +22,22 @@
 
 | 角色 | 能力 |
 |------|------|
-| `platform_admin` | 节点、池容量、全局套餐、所有项目、模拟登录、强制释放占用 |
-| `platform_ops` | 只读全局 + 节点维护（封锁/排空），不能改计费字段 |
+| `platform_admin` | **平台最高管理员**（可多名）：节点纳管、Depot/CDN、join token、入口/Relay、池容量、全局套餐、所有项目、任命 `platform_admin`/`platform_ops`、模拟登录、强制释放占用 |
+| `platform_ops` | 由 `platform_admin` 任命；只读全局 + 已纳管节点维护（封锁/排空），**不能**任命平台管理员、不能改计费字段 |
 | `platform_user` | 默认；仅能访问自己加入的项目 |
 | `platform_guest` | 只读被分享的资源（可选） |
+
+**治理定稿：** 所有平台基础设施资源统一由 `platform_admin` 添加与配置；加宿主机 = 管理员生成 token + 执行 `install.sh` join。详见 [29-platform-admin-governance.md](29-platform-admin-governance.md)。
+
+#### 2.1.1 任命与撤销（仅 platform_admin）
+
+| 操作 | 说明 |
+|------|------|
+| 提升为 `platform_admin` | 同级委派；至少保留一名活跃超管 |
+| 提升为 `platform_ops` | 运维岗，无基建配置权 |
+| 降为 `platform_user` | 撤销平台权限；审计必记 |
+
+种子用户：部署时 `admin` → `platform_admin`（见 `inventory.md`）。
 
 ### 2.2 项目角色（Project RBAC）
 
@@ -36,7 +48,14 @@
 | `developer` | ✗ | ✗ | ✓ | ✓ | ✓（限本项目） | ✓ |
 | `viewer` | ✗ | ✗ | ✗ | ✗（或只读容器，默认关） | ✗ | ✓ |
 
-转让 `owner`：仅现 owner 或 `platform_admin`。
+**项目可见性：** 用户仅能看见 **已加入** 的项目；非成员 `GET /projects/{id}` → 404。  
+**SSH 细粒度：** 成员可有 `ssh_access`（能否连）与 `ssh_mode`（只读/读写），见 [30-project-member-access.md](30-project-member-access.md)。
+
+转让 `owner`：仅现 owner 或 `platform_admin`；转让后 **原 owner 降为 `developer`**（失去管理权）。新 owner 可将原负责人再设为 `admin`。
+
+**添加成员（同事）**：`owner`/`admin` 搜索已有用户 + **角色下拉**（admin/developer/viewer）直接加入，见 [04-collaboration.md](04-collaboration.md) §4.1。
+
+**销毁机器**：项目 `admin` 仅初审；**平台超级管理员**（或已委派平台角色）终审，见 [29-platform-admin-governance.md](29-platform-admin-governance.md) §8。
 
 ---
 

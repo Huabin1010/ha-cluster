@@ -355,7 +355,7 @@ func TestWorkspaceApprovalHTTP(t *testing.T) {
 	var p models.Project
 	_ = json.Unmarshal(rr.Body.Bytes(), &p)
 	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", ownerTok, map[string]string{
-		"username": "devapp", "role": "developer",
+		"username": "devapp", "role": "developer", "ssh_access": "granted",
 	})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())

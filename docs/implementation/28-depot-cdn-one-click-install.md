@@ -10,6 +10,7 @@
 ## 1. 原则
 
 - 加节点 = **一条 curl 命令** + `join` token；不在目标机手工 `apt` / 拉 Docker Hub。
+- **仅 `platform_admin`** 生成 join token、发布 Depot 制品；由管理员在目标机执行安装（可 SSH 代执行）。项目成员不能自行纳管宿主机。见 [29-platform-admin-governance.md](29-platform-admin-governance.md)。
 - 体积大的组件放在 **离线 payload**（按 `amd64` / `arm64` 分包）。
 - 公网分发走 **S3 兼容 CDN/Depot**；overlay 内仍可用控制面 `10.129.129.1:9090`（LAN 加速）。
 - **账号密码不写进仓库**；见 `docs/credentials.local.md`。

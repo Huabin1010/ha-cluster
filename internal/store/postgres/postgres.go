@@ -34,6 +34,12 @@ var metricsSQL string
 //go:embed sql/006_node_type_remark_tags.sql
 var nodeMetaSQL string
 
+//go:embed sql/007_membership_ssh.sql
+var membershipSSHSQL string
+
+//go:embed sql/008_workspace_destroy_resize.sql
+var workspaceDestroySQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -69,6 +75,14 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, nodeMetaSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, membershipSSHSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, workspaceDestroySQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -200,7 +214,10 @@ func (s *Store) CreateProject(ctx context.Context, p *models.Project, ownerRole 
 	if err != nil {
 		return store.ErrConflict
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO memberships (project_id,user_id,role) VALUES ($1,$2,$3)`, p.ID, p.OwnerID, ownerRole)
+	ownerMem := models.Membership{ProjectID: p.ID, UserID: p.OwnerID, Role: ownerRole}
+	models.NormalizeMembershipSSH(&ownerMem)
+	_, err = tx.ExecContext(ctx, `INSERT INTO memberships (project_id,user_id,role,ssh_access,ssh_mode) VALUES ($1,$2,$3,$4,$5)`,
+		p.ID, p.OwnerID, ownerRole, ownerMem.SSHAccess, ownerMem.SSHMode)
 	if err != nil {
 		return err
 	}
@@ -275,9 +292,25 @@ func (s *Store) ListProjectsForUser(ctx context.Context, userID uuid.UUID) ([]mo
 }
 
 func (s *Store) AddMembership(ctx context.Context, m models.Membership) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO memberships (project_id,user_id,role) VALUES ($1,$2,$3)
-		ON CONFLICT (project_id,user_id) DO UPDATE SET role=EXCLUDED.role`, m.ProjectID, m.UserID, m.Role)
+	models.NormalizeMembershipSSH(&m)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO memberships (project_id,user_id,role,ssh_access,ssh_mode) VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (project_id,user_id) DO UPDATE SET role=EXCLUDED.role, ssh_access=EXCLUDED.ssh_access, ssh_mode=EXCLUDED.ssh_mode`,
+		m.ProjectID, m.UserID, m.Role, m.SSHAccess, m.SSHMode)
 	return err
+}
+
+func (s *Store) UpdateMembership(ctx context.Context, m models.Membership) error {
+	models.NormalizeMembershipSSH(&m)
+	res, err := s.db.ExecContext(ctx, `UPDATE memberships SET role=$3, ssh_access=$4, ssh_mode=$5 WHERE project_id=$1 AND user_id=$2`,
+		m.ProjectID, m.UserID, m.Role, m.SSHAccess, m.SSHMode)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) RemoveMembership(ctx context.Context, projectID, userID uuid.UUID) error {
@@ -294,8 +327,8 @@ func (s *Store) RemoveMembership(ctx context.Context, projectID, userID uuid.UUI
 
 func (s *Store) GetMembership(ctx context.Context, projectID, userID uuid.UUID) (*models.Membership, error) {
 	m := &models.Membership{}
-	err := s.db.QueryRowContext(ctx, `SELECT project_id,user_id,role FROM memberships WHERE project_id=$1 AND user_id=$2`, projectID, userID).
-		Scan(&m.ProjectID, &m.UserID, &m.Role)
+	err := s.db.QueryRowContext(ctx, `SELECT project_id,user_id,role,ssh_access,ssh_mode FROM memberships WHERE project_id=$1 AND user_id=$2`, projectID, userID).
+		Scan(&m.ProjectID, &m.UserID, &m.Role, &m.SSHAccess, &m.SSHMode)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -303,7 +336,7 @@ func (s *Store) GetMembership(ctx context.Context, projectID, userID uuid.UUID) 
 }
 
 func (s *Store) ListMemberships(ctx context.Context, projectID uuid.UUID) ([]models.Membership, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT project_id,user_id,role FROM memberships WHERE project_id=$1`, projectID)
+	rows, err := s.db.QueryContext(ctx, `SELECT project_id,user_id,role,ssh_access,ssh_mode FROM memberships WHERE project_id=$1`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +344,7 @@ func (s *Store) ListMemberships(ctx context.Context, projectID uuid.UUID) ([]mod
 	var out []models.Membership
 	for rows.Next() {
 		var m models.Membership
-		if err := rows.Scan(&m.ProjectID, &m.UserID, &m.Role); err != nil {
+		if err := rows.Scan(&m.ProjectID, &m.UserID, &m.Role, &m.SSHAccess, &m.SSHMode); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -614,13 +647,13 @@ func (s *Store) ExpandAllocation(ctx context.Context, id uuid.UUID, dCPU, dMem, 
 	return tx.Commit()
 }
 
-const wsCols = `id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at,cpu_milli,mem_bytes,disk_bytes,pending_cpu_milli,pending_mem_bytes,pending_disk_bytes,resize_status,last_activity_at,idle_suspend_hours`
+const wsCols = `id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at,cpu_milli,mem_bytes,disk_bytes,pending_cpu_milli,pending_mem_bytes,pending_disk_bytes,resize_status,resize_kind,last_activity_at,idle_suspend_hours`
 
 func (s *Store) CreateWorkspace(ctx context.Context, w *models.Workspace) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO workspaces (`+wsCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
 		w.ID, w.ProjectID, w.Name, w.Plan, w.Arch, w.Visibility, w.OwnerUserID, w.NodeID, w.AllocationID, w.Status, w.SSHPort, w.HostKeyFP, w.CreatedAt, w.UpdatedAt,
-		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, nullTime(w.LastActivityAt), w.IdleSuspendHours)
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, w.ResizeKind, nullTime(w.LastActivityAt), w.IdleSuspendHours)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -634,7 +667,7 @@ func scanWS(row interface{ Scan(dest ...any) error }) (*models.Workspace, error)
 	w := &models.Workspace{}
 	var lastAct sql.NullTime
 	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Plan, &w.Arch, &w.Visibility, &w.OwnerUserID, &w.NodeID, &w.AllocationID, &w.Status, &w.SSHPort, &w.HostKeyFP, &w.CreatedAt, &w.UpdatedAt,
-		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus, &lastAct, &w.IdleSuspendHours)
+		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus, &w.ResizeKind, &lastAct, &w.IdleSuspendHours)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -674,9 +707,9 @@ func (s *Store) ListWorkspaces(ctx context.Context, projectID *uuid.UUID) ([]mod
 
 func (s *Store) UpdateWorkspace(ctx context.Context, w *models.Workspace) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE workspaces SET name=$2,plan=$3,arch=$4,visibility=$5,status=$6,ssh_port=$7,host_key_fp=$8,updated_at=$9,node_id=$10,allocation_id=$11,
-		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18,last_activity_at=$19,idle_suspend_hours=$20 WHERE id=$1`,
+		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18,resize_kind=$19,last_activity_at=$20,idle_suspend_hours=$21 WHERE id=$1`,
 		w.ID, w.Name, w.Plan, w.Arch, w.Visibility, w.Status, w.SSHPort, w.HostKeyFP, w.UpdatedAt, w.NodeID, w.AllocationID,
-		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, nullTime(w.LastActivityAt), w.IdleSuspendHours)
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, w.ResizeKind, nullTime(w.LastActivityAt), w.IdleSuspendHours)
 	if err != nil {
 		return err
 	}

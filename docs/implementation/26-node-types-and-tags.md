@@ -16,6 +16,8 @@
 | `self` | 自建实验室 | 手机、PC、IDC、树莓派（**默认**） | EasyTier + ha-agent |
 | `customer` | 客户主机 | 私有化交付、客户内网边缘 | Agent 出站；合规隔离调度池 |
 
+**纳管前提：** 节点须先由 **`platform_admin`** 执行 [28](28-depot-cdn-one-click-install.md) 一键 join 进入集群，再在控制台标注类型与标签。项目 `admin` 不能自行加 Node。
+
 与 `class`（phone/desktop/server）、`power`（mains/battery）**正交**：`machine_type` 表业务归属，`class`/`power` 表调度画像。
 
 ---

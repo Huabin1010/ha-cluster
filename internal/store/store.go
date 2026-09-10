@@ -41,6 +41,7 @@ type Store interface {
 	DeleteProject(ctx context.Context, id uuid.UUID) error
 	ListProjectsForUser(ctx context.Context, userID uuid.UUID) ([]models.Project, error)
 	AddMembership(ctx context.Context, m models.Membership) error
+	UpdateMembership(ctx context.Context, m models.Membership) error
 	RemoveMembership(ctx context.Context, projectID, userID uuid.UUID) error
 	GetMembership(ctx context.Context, projectID, userID uuid.UUID) (*models.Membership, error)
 	ListMemberships(ctx context.Context, projectID uuid.UUID) ([]models.Membership, error)

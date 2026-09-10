@@ -8,28 +8,37 @@ import (
 	"ha-cluster/internal/models"
 )
 
+func mem(role, ssh string) *models.Membership {
+	m := &models.Membership{Role: role, SSHAccess: ssh}
+	models.NormalizeMembershipSSH(m)
+	return m
+}
+
 func TestResolvePrefersFabric(t *testing.T) {
 	ownerID := uuid.New()
+	actor := models.User{ID: ownerID}
 	w := models.Workspace{Status: models.WSRunning, SSHPort: 22001, Visibility: models.VisShared, OwnerUserID: ownerID}
-	n := models.Node{FabricIP: "10.88.0.10", LanIP: "192.168.1.10", BreakglassSSH: "vps:8092"}
-	tg, err := Resolve(w, n, models.RoleDeveloper, ownerID, false)
-	if err != nil || tg.Via != "fabric" || tg.Host != "10.88.0.10" {
+	n := models.Node{FabricIP: "10.129.129.10", LanIP: "192.168.1.10", BreakglassSSH: "vps:8092"}
+	tg, err := Resolve(w, n, actor, mem(models.RoleDeveloper, models.SSHAccessGranted))
+	if err != nil || tg.Via != "fabric" || tg.Host != "10.129.129.10" {
 		t.Fatalf("%+v %v", tg, err)
 	}
 }
 
 func TestResolveViewerDenied(t *testing.T) {
 	w := models.Workspace{Status: models.WSRunning, SSHPort: 22}
-	n := models.Node{FabricIP: "10.88.0.10"}
-	if _, err := Resolve(w, n, models.RoleViewer, uuid.New(), false); err != ErrDenied {
+	n := models.Node{FabricIP: "10.129.129.10"}
+	actor := models.User{ID: uuid.New()}
+	if _, err := Resolve(w, n, actor, mem(models.RoleViewer, models.SSHAccessNone)); err != ErrDenied {
 		t.Fatalf("%v", err)
 	}
 }
 
 func TestResolveStopped(t *testing.T) {
 	w := models.Workspace{Status: models.WSStopped, SSHPort: 22}
-	n := models.Node{FabricIP: "10.88.0.10"}
-	if _, err := Resolve(w, n, models.RoleDeveloper, uuid.New(), false); err != ErrOffline {
+	n := models.Node{FabricIP: "10.129.129.10"}
+	actor := models.User{ID: uuid.New()}
+	if _, err := Resolve(w, n, actor, mem(models.RoleDeveloper, models.SSHAccessGranted)); err != ErrOffline {
 		t.Fatalf("%v", err)
 	}
 }
@@ -43,28 +52,24 @@ func TestResolvePrivateWorkspace(t *testing.T) {
 		Visibility:  models.VisPrivate,
 		OwnerUserID: ownerID,
 	}
-	n := models.Node{FabricIP: "10.88.0.10"}
+	n := models.Node{FabricIP: "10.129.129.10"}
 
-	// 1. Other developer cannot access private workspace
-	if _, err := Resolve(w, n, models.RoleDeveloper, otherUser, false); err != ErrDenied {
+	if _, err := Resolve(w, n, models.User{ID: otherUser}, mem(models.RoleDeveloper, models.SSHAccessGranted)); err != ErrDenied {
 		t.Fatalf("expected ErrDenied, got %v", err)
 	}
 
-	// 2. Owner developer can access
-	tg, err := Resolve(w, n, models.RoleDeveloper, ownerID, false)
-	if err != nil || tg.Host != "10.88.0.10" {
+	tg, err := Resolve(w, n, models.User{ID: ownerID}, mem(models.RoleDeveloper, models.SSHAccessGranted))
+	if err != nil || tg.Host != "10.129.129.10" {
 		t.Fatalf("owner access failed: %v", err)
 	}
 
-	// 3. Admin can access private workspace
-	tg, err = Resolve(w, n, models.RoleAdmin, otherUser, false)
-	if err != nil || tg.Host != "10.88.0.10" {
+	tg, err = Resolve(w, n, models.User{ID: otherUser}, mem(models.RoleAdmin, ""))
+	if err != nil || tg.Host != "10.129.129.10" {
 		t.Fatalf("admin access failed: %v", err)
 	}
 
-	// 4. Platform admin can access
-	tg, err = Resolve(w, n, models.RoleViewer, otherUser, true)
-	if err != nil || tg.Host != "10.88.0.10" {
+	tg, err = Resolve(w, n, models.User{ID: otherUser, PlatformRole: models.RolePlatformAdmin}, nil)
+	if err != nil || tg.Host != "10.129.129.10" {
 		t.Fatalf("platform admin access failed: %v", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"ha-cluster/internal/authz"
 	"ha-cluster/internal/models"
 )
 
@@ -20,17 +21,13 @@ type Target struct {
 	Via  string // fabric | lan | breakglass
 }
 
-func Resolve(w models.Workspace, n models.Node, membershipRole string, actorUserID uuid.UUID, isAdmin bool) (Target, error) {
-	if !isAdmin && !models.CanSSH(membershipRole) {
-		return Target{}, ErrDenied
-	}
-	if w.Visibility == models.VisPrivate && !isAdmin {
-		if actorUserID != w.OwnerUserID && models.RoleRank(membershipRole) < models.RoleRank(models.RoleAdmin) {
-			return Target{}, ErrDenied
-		}
-	}
+// Resolve picks dial target after authz.CanSSHSession.
+func Resolve(w models.Workspace, n models.Node, actor models.User, m *models.Membership) (Target, error) {
 	if w.Status != models.WSRunning && w.Status != models.WSDegraded {
 		return Target{}, ErrOffline
+	}
+	if !authz.CanSSHSession(actor, m, w) {
+		return Target{}, ErrDenied
 	}
 	if n.FabricIP != "" {
 		return Target{Host: n.FabricIP, Port: w.SSHPort, Via: "fabric"}, nil
@@ -49,13 +46,11 @@ func CanEnterPrivate(w models.Workspace, actorUserID string, ownerUserID string,
 	if admin {
 		return true
 	}
-	if w.Visibility != models.VisPrivate {
-		return models.CanSSH(role)
-	}
 	if actorUserID == ownerUserID {
 		return true
 	}
-	return models.RoleRank(role) >= models.RoleRank(models.RoleAdmin)
+	aid, _ := uuid.Parse(actorUserID)
+	return authz.CanEnterPrivateWorkspace(w, aid, role, admin)
 }
 
 func parseHostPort(s string, def int) (string, int) {

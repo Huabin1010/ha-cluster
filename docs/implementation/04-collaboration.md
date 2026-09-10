@@ -30,6 +30,12 @@ Organization（可选二期）
 
 一期以 **Project** 为唯一协作边界；Organization 留表字段即可。
 
+### 2.1 项目可见性（硬规则）
+
+- **非成员看不见项目**：未加入的用户，`GET /projects` 列表不含该项目；直链 `GET /projects/{id}` 返回 **404**（不泄露存在）。
+- 接受邀请后 `membership` 生效，侧栏才出现该项目。
+- 成员进入项目后，仍可能 **无 SSH 权** 或 **只读 SSH**；见 [30-project-member-access.md](30-project-member-access.md)。
+
 ---
 
 ## 3. 协作模式
@@ -63,13 +69,31 @@ Organization（可选二期）
 
 ## 4. 成员与邀请流
 
+### 4.1 主路径：添加同事（下拉选角色）
+
+团队内同事已注册平台账号时，**直接添加**，无需邮件：
+
+```
+owner / admin → 成员页「添加成员」
+  → 搜索选择用户（用户名 / 邮箱）
+  → 角色下拉：admin | developer | viewer
+  → POST /projects/{id}/members { user_id, role }
+  → membership 立即生效 + audit_log
+```
+
+- **`admin`**：委派审批权（创建/升配/降配/SSH 初审；销毁仅初审，终审在平台）。
+- **`developer` / `viewer`**：普通成员。
+- owner 转让后 **原 owner 降为 `developer`**，见 [22](22-project-machine-concepts.md) §5.3。
+
+### 4.2 次要路径：邮件邀请（未注册用户）
+
 ```
 owner/admin → POST /projects/{id}/invitations { email, role }
   → 邮件或链接 token（单次、限时）
-invitee 登录/注册 → accept
-  → membership 生效
-  → audit_log
+invitee 注册/登录 → accept → membership 生效
 ```
+
+邀请表单同样使用 **角色下拉**，与 §4.1 选项一致。
 
 移除成员时：
 

@@ -70,7 +70,13 @@ func TestCreateWorkspaceOccupiesAndRelease(t *testing.T) {
 	if nodes[0].UsedMem == 0 {
 		t.Fatal("must occupy memory")
 	}
-	if err := app.DestroyWorkspace(ctx, *u, ws.ID); err != nil {
+	if err := app.RequestDestroyWorkspace(ctx, *u, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ApproveDestroyProject(ctx, *u, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ApproveDestroyPlatform(ctx, *u, ws.ID); err != nil {
 		t.Fatal(err)
 	}
 	nodes, _ = app.Store.ListNodes(ctx)
@@ -159,7 +165,9 @@ func TestDeveloperRequestNeedsApproval(t *testing.T) {
 	ctx := context.Background()
 	p, _ := app.CreateProject(ctx, owner.ID, "p", "p")
 	dev, _ := app.Register(ctx, "devreq", "devreq@example.com", "password1")
-	_ = app.Store.AddMembership(ctx, models.Membership{ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper})
+	_ = app.Store.AddMembership(ctx, models.Membership{
+		ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper, SSHAccess: models.SSHAccessGranted,
+	})
 
 	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
 		ProjectID: p.ID, Name: "need-ok", Plan: "nano", Arch: models.ArchAMD64, Actor: *dev,
@@ -227,7 +235,9 @@ func TestResizeRequestApproveAndNoDiskShrink(t *testing.T) {
 	ctx := context.Background()
 	p, _ := app.CreateProject(ctx, owner.ID, "p", "p")
 	dev, _ := app.Register(ctx, "devrs", "devrs@example.com", "password1")
-	_ = app.Store.AddMembership(ctx, models.Membership{ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper})
+	_ = app.Store.AddMembership(ctx, models.Membership{
+		ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper, SSHAccess: models.SSHAccessGranted,
+	})
 
 	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
 		ProjectID: p.ID, Name: "box", Plan: "nano", Arch: models.ArchAMD64, Actor: *owner,
@@ -239,9 +249,18 @@ func TestResizeRequestApproveAndNoDiskShrink(t *testing.T) {
 	const Mi = int64(1024 * 1024)
 	const Gi = 1024 * Mi
 	cur := ws.Spec()
-	if _, err := app.RequestResize(ctx, *dev, ws.ID, cur.CPUMilli, cur.MemBytes, Gi); !errors.Is(err, store.ErrDiskShrink) {
-		t.Fatalf("disk shrink want ErrDiskShrink, got %v", err)
+	down, err := app.RequestResize(ctx, *dev, ws.ID, cur.CPUMilli, cur.MemBytes, Gi)
+	if err != nil {
+		t.Fatalf("disk downgrade request: %v", err)
 	}
+	if down.ResizeKind != models.ResizeDowngrade {
+		t.Fatalf("want downgrade kind, got %s", down.ResizeKind)
+	}
+	if _, err := app.ApproveResize(ctx, *owner, ws.ID); err != nil {
+		t.Fatalf("approve downgrade: %v", err)
+	}
+	ws, _ = app.Store.GetWorkspace(ctx, ws.ID)
+	cur = ws.Spec()
 
 	got, err := app.RequestResize(ctx, *dev, ws.ID, 2000, 2*Gi, 5*Gi)
 	if err != nil {

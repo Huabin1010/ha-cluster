@@ -68,10 +68,12 @@ ssh alice@bastion.example.com -p 8099 -t <workspace-uuid>
 
 ## 3. 谁能连：权限模型
 
-SSH 权限分 **两层**，都通过才允许会话：
+SSH 权限分 **三层**，都通过才允许会话：
 
 ```
-允许 SSH  ⟺  项目层 SSH 连接权（管理员控制）
+允许 SSH  ⟺  用户是该项目成员（非成员连项目都看不到，见 30）
+           AND  项目层 SSH 连接权 ssh_access=granted
+           AND  ssh_mode 决定只读/读写 Shell
            AND  工作区层可见性 ACL
            AND  工作区已 running
 ```
@@ -86,6 +88,15 @@ SSH 权限分 **两层**，都通过才允许会话：
 | `none` | 未授予（默认，如 `viewer` 或新加入成员） | 不可以 |
 | `pending` | 已提交申请，待审批 | 不可以 |
 | `revoked` | 管理员撤销 | 不可以 |
+
+### 3.1.1 SSH 模式（`ssh_mode`，仅 `granted` 时）
+
+| 值 | 含义 |
+|----|------|
+| `read_write` | 默认；正常 shell，可修改工作区文件 |
+| `read_only` | 可 SSH 查看文件，**不可** 修改工作区文件、不可 `sudo` |
+
+管理员授予或审批时可指定 `ssh_mode`（例如观察员只读）。详见 [30-project-member-access.md](30-project-member-access.md) §5。
 
 **谁可以授予 / 撤销 / 审批：**
 
@@ -215,6 +226,7 @@ Incus 容器 /root/.ssh/authorized_keys 覆写
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `ssh_access` | enum | `none` \| `pending` \| `granted` \| `revoked` |
+| `ssh_mode` | enum | `read_write` \| `read_only`（默认 `read_write`） |
 | `ssh_access_requested_at` | timestamp | 申请时间 |
 | `ssh_access_reviewed_by` | uuid | 审批人 |
 | `ssh_access_reviewed_at` | timestamp | |
@@ -241,7 +253,7 @@ Incus 容器 /root/.ssh/authorized_keys 覆写
 | GET | `/projects/{id}/ssh-access-requests` | owner/admin | 待办列表 |
 | POST | `/projects/{id}/ssh-access-requests/{rid}/approve` | owner/admin | 通过 |
 | POST | `/projects/{id}/ssh-access-requests/{rid}/reject` | owner/admin | 驳回 |
-| PUT | `/projects/{id}/members/{uid}/ssh-access` | owner/admin | 直接 grant/revoke |
+| PUT | `/projects/{id}/members/{uid}/ssh-access` | owner/admin | 直接 grant/revoke + `ssh_mode` |
 | GET | `/workspaces/{id}/ssh-config` | granted + ACL | 已有 |
 | GET | `/workspaces/{id}/ssh-connection` | granted + ACL | 已有 |
 

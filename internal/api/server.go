@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/auth"
+	"ha-cluster/internal/authz"
 	"ha-cluster/internal/bastion"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/service"
@@ -118,13 +119,23 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/projects/{id}/members", s.listMembers)
 		r.Post("/projects/{id}/members", s.addMember)
 		r.Delete("/projects/{id}/members/{uid}", s.removeMember)
+		r.Put("/projects/{id}/members/{uid}", s.patchMember)
+		r.Post("/projects/{id}/ssh-access-request", s.requestSSHAccess)
+		r.Post("/projects/{id}/members/{uid}/ssh-access/approve", s.approveSSHAccess)
+		r.Post("/projects/{id}/transfer-ownership", s.transferOwnership)
 		r.Post("/projects/{id}/workspaces", s.createWorkspace)
 		r.Post("/projects/{id}/invitations", s.invite)
 		r.Patch("/projects/{id}", s.patchProject)
 		r.Delete("/projects/{id}", s.deleteProject)
 
 		r.Post("/invitations/accept", s.acceptInvite)
-		r.Post("/admin/reconcile", s.reconcile)
+		r.Route("/admin", func(ar chi.Router) {
+			ar.Post("/reconcile", s.reconcile)
+			ar.Get("/dangerous-approvals", s.listDangerousApprovals)
+			ar.Post("/dangerous-approvals/{id}/approve", s.approveDestroyPlatform)
+			ar.Post("/join-tokens", s.generateJoinToken)
+		})
+		r.Patch("/nodes/{id}", s.patchNode)
 		r.Post("/users/{id}/suspend", s.suspend)
 
 		r.Get("/workspaces", s.listWorkspaces)
@@ -137,6 +148,8 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Post("/workspaces/{id}/resize/approve", s.approveResize)
 		r.Post("/workspaces/{id}/resize/reject", s.rejectResize)
 		r.Delete("/workspaces/{id}", s.destroyWorkspace)
+		r.Post("/workspaces/{id}/destroy-request", s.requestDestroy)
+		r.Post("/workspaces/{id}/destroy-request/approve", s.approveDestroyProject)
 		r.Get("/workspaces/{id}/ssh-target", s.sshTarget)
 		r.Get("/workspaces/{id}/ssh-config", s.sshConfig)
 		r.Get("/workspaces/{id}/connection", s.sshConnection)
@@ -490,8 +503,10 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Username string `json:"username"`
-		Role     string `json:"role"`
+		Username  string `json:"username"`
+		Role      string `json:"role"`
+		SSHAccess string `json:"ssh_access"`
+		SSHMode   string `json:"ssh_mode"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
@@ -510,7 +525,8 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, err)
 		return
 	}
-	m := models.Membership{ProjectID: id, UserID: u.ID, Role: body.Role}
+	m := models.Membership{ProjectID: id, UserID: u.ID, Role: body.Role, SSHAccess: body.SSHAccess, SSHMode: body.SSHMode}
+	models.NormalizeMembershipSSH(&m)
 	if err := s.App.Store.AddMembership(r.Context(), m); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
@@ -700,13 +716,13 @@ func (s *Server) sshTarget(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, err)
 		return
 	}
-	role := models.RoleDeveloper
+	var mem *models.Membership
 	if actor != nil {
 		if m, err := s.App.Store.GetMembership(r.Context(), ws.ProjectID, actor.ID); err == nil {
-			role = m.Role
+			mem = m
 		}
 	}
-	writeSSHTarget(w, ws, n, actor, role)
+	writeSSHTarget(w, ws, n, actor, mem)
 }
 
 func (s *Server) sshConfig(w http.ResponseWriter, r *http.Request) {
@@ -746,17 +762,25 @@ func bastionSSHPort() int {
 	return 8099
 }
 
-func writeSSHTarget(w http.ResponseWriter, ws *models.Workspace, n *models.Node, actor *models.User, role string) {
+func writeSSHTarget(w http.ResponseWriter, ws *models.Workspace, n *models.Node, actor *models.User, mem *models.Membership) {
 	host := n.FabricIP
 	if host == "" {
 		host = n.LanIP
 	}
-	isAdmin := actor != nil && actor.PlatformRole == models.RolePlatformAdmin
 	actorID := uuid.Nil
+	role := ""
 	if actor != nil {
 		actorID = actor.ID
 	}
-	tg, _ := bastion.Resolve(*ws, *n, role, actorID, isAdmin)
+	if mem != nil {
+		role = mem.Role
+	}
+	isAdmin := actor != nil && actor.PlatformRole == models.RolePlatformAdmin
+	tg, _ := bastion.Resolve(*ws, *n, *actor, mem)
+	sshAccess := ""
+	if mem != nil {
+		sshAccess = mem.SSHAccess
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"workspace_id":    ws.ID,
 		"node":            n.Name,
@@ -770,12 +794,17 @@ func writeSSHTarget(w http.ResponseWriter, ws *models.Workspace, n *models.Node,
 		"owner_user_id":   ws.OwnerUserID,
 		"actor_user_id":   actorID,
 		"membership_role": role,
+		"ssh_access":      sshAccess,
 		"is_admin":        isAdmin,
 		"via":             tg.Via,
 	})
 }
 
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
+	if !authz.IsPlatformStaff(*userFrom(r)) {
+		writeErr(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
 	items, err := s.App.Store.ListNodes(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
@@ -788,6 +817,10 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) capacity(w http.ResponseWriter, r *http.Request) {
+	if !authz.IsPlatformStaff(*userFrom(r)) {
+		writeErr(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
 	items, _ := s.App.Store.ListNodes(r.Context())
 	type pool struct {
 		Arch string `json:"arch"`

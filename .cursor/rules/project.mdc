@@ -5,7 +5,7 @@ alwaysApply: true
 
 # ha-cluster
 
-- 产品说明以 `docs/prd.md` 为准；落地设计以 `docs/implementation/` 为准（**22** 项目/机器/审批、**23** 入口拓扑、**24** SSH）；设备以 `docs/inventory.md` 为准。细则见 `.cursor/rules/product-workspace.mdc`、`ingress-edge.mdc`、`ssh-access.mdc`。
+- 产品说明以 `docs/prd.md` 为准；落地设计以 `docs/implementation/` 为准（**22** 项目/机器/审批、**23** 入口、**24** SSH、**29** 平台治理）；设备以 `docs/inventory.md` 为准。细则见 `product-workspace.mdc`、`platform-governance.mdc`、`ingress-edge.mdc`、`ssh-access.mdc`。
 - 密码只写 `docs/credentials.local.md`，不要写进 README / PRD，不要提交公开远程。
 - 第一期：k3s 在市电控制面；worker 为 amd64 或 arm64；ha-setup 加节点；Workspace + 跳板；账本硬占用。**EasyTier 是默认 Fabric、可降级**（控制台走公网 443；网断不删 Workspace）。
 - 前端控制台：Refine + Vite + **shadcn/ui** + **sonner**。创建用「按钮 + Dialog」；列表用 PageFrame；Select / 确认框 / Tooltip 用 Radix；必须支持浅色/暗色。详见 `.cursor/rules/web-ui.mdc`。

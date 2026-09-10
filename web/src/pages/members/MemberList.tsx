@@ -4,6 +4,7 @@ import { Plus, Mail, Users } from "lucide-react";
 import { useGetIdentity } from "@refinedev/core";
 import { api, friendlyError, type AuthUser } from "../../providers";
 import { ASSIGNABLE_ROLES, ROLE_HELP, roleLabel } from "./roles";
+import { canManageMembers, sshAccessLabel } from "../../lib/permissions";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { SelectBox } from "../../components/ui/select";
@@ -38,7 +39,14 @@ import { Loading } from "../../ui";
 import { useClientPager } from "../../lib/use-client-pager";
 import { BatchCreateUsersDialog } from "./BatchCreateUsersDialog";
 
-export type Member = { project_id: string; user_id: string; role: string; username?: string };
+export type Member = {
+  project_id: string;
+  user_id: string;
+  role: string;
+  username?: string;
+  ssh_access?: string;
+  ssh_mode?: string;
+};
 
 type UserItem = { id: string; username: string; email?: string };
 
@@ -64,14 +72,14 @@ export function MemberList({ projectId, projectName }: Props) {
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<Member | null>(null);
   const [editRole, setEditRole] = useState<string>("developer");
-  const [editUsername, setEditUsername] = useState<string>("");
   const [batchOpen, setBatchOpen] = useState(false);
   const pager = useClientPager(rows, projectId);
 
   const { data: me } = useGetIdentity<AuthUser>();
   const myRole = rows.find((r) => r.user_id === me?.id)?.role;
   const isPlatformAdmin = me?.platform_role === "platform_admin";
-  const canBatchCreate = isPlatformAdmin || myRole === "admin" || myRole === "owner";
+  const canManage = canManageMembers(myRole, me?.platform_role);
+  const canBatchCreate = canManage;
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -133,17 +141,24 @@ export function MemberList({ projectId, projectName }: Props) {
     setErr("");
     setBusy(true);
     try {
-      const uname = editUsername.trim() || userMap[editTarget.user_id] || editTarget.username || "";
-      if (!uname) {
-        setErr("请输入该成员的用户名以更新角色");
-        setBusy(false);
-        return;
-      }
-      await api(`/projects/${projectId}/members`, {
-        method: "POST",
-        body: JSON.stringify({ username: uname, role: editRole }),
+      await api(`/projects/${projectId}/members/${editTarget.user_id}`, {
+        method: "PUT",
+        body: JSON.stringify({ role: editRole }),
       });
       setEditTarget(null);
+      await load();
+    } catch (e) {
+      setErr(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveSSH(userId: string) {
+    setErr("");
+    setBusy(true);
+    try {
+      await api(`/projects/${projectId}/members/${userId}/ssh-access/approve`, { method: "POST" });
       await load();
     } catch (e) {
       setErr(friendlyError(e));
@@ -155,7 +170,6 @@ export function MemberList({ projectId, projectName }: Props) {
   function onOpenEdit(m: Member) {
     setEditTarget(m);
     setEditRole(m.role === "owner" ? "admin" : m.role);
-    setEditUsername(m.username || userMap[m.user_id] || "");
   }
 
   async function remove(userId: string, role: string) {
@@ -404,6 +418,7 @@ export function MemberList({ projectId, projectName }: Props) {
                 <TableHead>成员</TableHead>
                 <TableHead>user_id</TableHead>
                 <TableHead>角色</TableHead>
+                <TableHead>SSH</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
@@ -421,10 +436,23 @@ export function MemberList({ projectId, projectName }: Props) {
                     </TableCell>
                     <TableCell className="mono font-mono text-xs">{m.user_id}</TableCell>
                     <TableCell>{roleLabel(m.role)}</TableCell>
+                    <TableCell>{sshAccessLabel(m.ssh_access)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        {m.role !== "owner" && (
+                        {m.role !== "owner" && canManage && (
                           <>
+                            {m.ssh_access === "pending" && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                data-testid="member-approve-ssh"
+                                disabled={busy}
+                                onClick={() => void approveSSH(m.user_id)}
+                              >
+                                批准 SSH
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               variant="outline"
@@ -466,15 +494,6 @@ export function MemberList({ projectId, projectName }: Props) {
         {editTarget && (
           <form className="flex min-h-0 flex-1 flex-col" onSubmit={saveRole} data-testid="member-edit-form">
             <DialogBody className="grid gap-4">
-              <Field label="用户名">
-                <Input
-                  data-testid="member-edit-username"
-                  value={editUsername}
-                  onChange={(e) => setEditUsername(e.target.value)}
-                  placeholder="请输入用户名"
-                  required
-                />
-              </Field>
               <Field label="新角色">
                 <SelectBox
                   testId="member-edit-role-select"

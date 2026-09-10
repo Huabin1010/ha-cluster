@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/auth"
+	"ha-cluster/internal/authz"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
 )
@@ -333,6 +334,183 @@ func (a *App) DeleteSSHKey(ctx context.Context, userID, keyID uuid.UUID) error {
 	}
 	go func() { _ = a.SyncUserKeys(context.Background(), userID) }()
 	return nil
+}
+
+// TransferOwnership moves project owner; former owner becomes developer.
+func (a *App) TransferOwnership(ctx context.Context, actor models.User, projectID, newOwnerUserID uuid.UUID) error {
+	mem, err := a.RequireMembership(ctx, actor, projectID, models.RoleOwner)
+	if err != nil {
+		return err
+	}
+	if mem.Role != models.RoleOwner && actor.PlatformRole != models.RolePlatformAdmin {
+		return store.ErrForbidden
+	}
+	newMem, err := a.Store.GetMembership(ctx, projectID, newOwnerUserID)
+	if err != nil {
+		return store.ErrNotFound
+	}
+	p, err := a.Store.GetProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	p.OwnerID = newOwnerUserID
+	if err := a.Store.UpdateProject(ctx, p); err != nil {
+		return err
+	}
+	newMem.Role = models.RoleOwner
+	models.NormalizeMembershipSSH(newMem)
+	if err := a.Store.UpdateMembership(ctx, *newMem); err != nil {
+		return err
+	}
+	if actor.ID != newOwnerUserID {
+		old := models.Membership{
+			ProjectID: projectID, UserID: actor.ID, Role: models.RoleDeveloper,
+			SSHAccess: models.SSHAccessNone,
+		}
+		models.NormalizeMembershipSSH(&old)
+		_ = a.Store.UpdateMembership(ctx, old)
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "project.transfer_ownership",
+		ResourceType: "project", ResourceID: projectID.String(),
+		Meta: map[string]any{"new_owner": newOwnerUserID.String()},
+	})
+	return nil
+}
+
+type PatchMemberInput struct {
+	Role      *string
+	SSHAccess *string
+	SSHMode   *string
+}
+
+func (a *App) PatchMember(ctx context.Context, actor models.User, projectID, userID uuid.UUID, in PatchMemberInput) (*models.Membership, error) {
+	if _, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin); err != nil {
+		return nil, err
+	}
+	m, err := a.Store.GetMembership(ctx, projectID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if in.Role != nil {
+		if models.RoleRank(*in.Role) == 0 {
+			return nil, store.ErrInvalidInput
+		}
+		m.Role = *in.Role
+	}
+	if in.SSHAccess != nil {
+		if !models.ValidSSHAccess(*in.SSHAccess) {
+			return nil, store.ErrInvalidInput
+		}
+		m.SSHAccess = *in.SSHAccess
+	}
+	if in.SSHMode != nil {
+		if !models.ValidSSHMode(*in.SSHMode) {
+			return nil, store.ErrInvalidInput
+		}
+		m.SSHMode = *in.SSHMode
+	}
+	models.NormalizeMembershipSSH(m)
+	if err := a.Store.UpdateMembership(ctx, *m); err != nil {
+		return nil, err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "membership.update",
+		ResourceType: "membership", ResourceID: userID.String(),
+		Meta: map[string]any{"project_id": projectID.String()},
+	})
+	if in.SSHAccess != nil && *in.SSHAccess == models.SSHAccessGranted {
+		go func() { _ = a.syncProjectWorkspaceKeys(context.Background(), projectID) }()
+	}
+	return m, nil
+}
+
+// RequestSSHAccess sets membership ssh_access to pending for the actor.
+func (a *App) RequestSSHAccess(ctx context.Context, actor models.User, projectID uuid.UUID) (*models.Membership, error) {
+	m, err := a.RequireMembership(ctx, actor, projectID, models.RoleViewer)
+	if err != nil {
+		return nil, err
+	}
+	if models.RoleRank(m.Role) >= models.RoleRank(models.RoleAdmin) {
+		return m, nil
+	}
+	if m.SSHAccess == models.SSHAccessGranted {
+		return m, nil
+	}
+	m.SSHAccess = models.SSHAccessPending
+	models.NormalizeMembershipSSH(m)
+	if err := a.Store.UpdateMembership(ctx, *m); err != nil {
+		return nil, err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "ssh_access.request",
+		ResourceType: "project", ResourceID: projectID.String(),
+	})
+	return m, nil
+}
+
+// ApproveSSHAccess grants SSH for a member (project admin).
+func (a *App) ApproveSSHAccess(ctx context.Context, actor models.User, projectID, userID uuid.UUID) (*models.Membership, error) {
+	if _, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin); err != nil {
+		return nil, err
+	}
+	m, err := a.Store.GetMembership(ctx, projectID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if m.SSHAccess != models.SSHAccessPending && m.SSHAccess != models.SSHAccessNone && m.SSHAccess != models.SSHAccessRevoked {
+		if m.SSHAccess == models.SSHAccessGranted {
+			return m, nil
+		}
+		return nil, store.ErrInvalidInput
+	}
+	m.SSHAccess = models.SSHAccessGranted
+	if m.SSHMode == "" {
+		m.SSHMode = models.SSHModeReadWrite
+	}
+	models.NormalizeMembershipSSH(m)
+	if err := a.Store.UpdateMembership(ctx, *m); err != nil {
+		return nil, err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "ssh_access.grant",
+		ResourceType: "membership", ResourceID: userID.String(),
+		Meta: map[string]any{"project_id": projectID.String()},
+	})
+	go func() { _ = a.syncProjectWorkspaceKeys(context.Background(), projectID) }()
+	return m, nil
+}
+
+func (a *App) syncProjectWorkspaceKeys(ctx context.Context, projectID uuid.UUID) error {
+	wss, err := a.Store.ListWorkspaces(ctx, &projectID)
+	if err != nil {
+		return err
+	}
+	for _, w := range wss {
+		if w.Status != models.WSRunning && w.Status != models.WSDegraded && w.Status != models.WSSuspended {
+			continue
+		}
+		pubs := a.collectWorkspacePubkeys(ctx, w)
+		_ = a.Runtime.SyncKeys(ctx, w.ID, pubs)
+	}
+	return nil
+}
+
+func (a *App) ListDangerousDestroyPending(ctx context.Context, actor models.User) ([]models.Workspace, error) {
+	if !authz.CanApproveDangerousOps(actor) {
+		return nil, store.ErrForbidden
+	}
+	wss, err := a.Store.ListWorkspaces(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []models.Workspace
+	for _, w := range wss {
+		if w.Status == models.WSDestroyPendingPlatform {
+			out = append(out, w)
+		}
+	}
+	return out, nil
 }
 
 func (a *App) SyncUserKeys(ctx context.Context, userID uuid.UUID) error {

@@ -258,9 +258,9 @@ func (s *Store) CreateProject(_ context.Context, p *models.Project, ownerRole st
 	}
 	cp := *p
 	s.projects[p.ID] = &cp
-	s.memberships[memKey(p.ID, p.OwnerID)] = models.Membership{
-		ProjectID: p.ID, UserID: p.OwnerID, Role: ownerRole,
-	}
+	ownerMem := models.Membership{ProjectID: p.ID, UserID: p.OwnerID, Role: ownerRole}
+	models.NormalizeMembershipSSH(&ownerMem)
+	s.memberships[memKey(p.ID, p.OwnerID)] = ownerMem
 	s.saveSnapshotLocked()
 	return nil
 }
@@ -349,7 +349,21 @@ func (s *Store) AddMembership(_ context.Context, m models.Membership) error {
 	if _, ok := s.projects[m.ProjectID]; !ok {
 		return store.ErrNotFound
 	}
+	models.NormalizeMembershipSSH(&m)
 	s.memberships[memKey(m.ProjectID, m.UserID)] = m
+	s.saveSnapshotLocked()
+	return nil
+}
+
+func (s *Store) UpdateMembership(_ context.Context, m models.Membership) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := memKey(m.ProjectID, m.UserID)
+	if _, ok := s.memberships[k]; !ok {
+		return store.ErrNotFound
+	}
+	models.NormalizeMembershipSSH(&m)
+	s.memberships[k] = m
 	s.saveSnapshotLocked()
 	return nil
 }

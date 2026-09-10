@@ -24,6 +24,7 @@ import { Hint } from "../components/ui/tooltip";
 import { ThemeToggle } from "../components/theme-toggle";
 import { cn } from "../lib/utils";
 import { writeCurrentProject } from "../lib/current-project";
+import { canManageNodes, canViewAudit } from "../lib/permissions";
 import { Combobox } from "../components/ui/combobox";
 
 const ENV_LABEL = import.meta.env.PROD ? "prod" : "dev";
@@ -70,7 +71,7 @@ function useIsMd() {
 
 export function Layout({ children }: PropsWithChildren) {
   const { mutate } = useLogout();
-  const { data: me } = useGetIdentity<{ username?: string }>();
+  const { data: me } = useGetIdentity<{ username?: string; platform_role?: string }>();
   const { menuItems } = useMenu();
   const { data: projectData } = useList<{ id: string; name: string; slug: string }>({
     resource: "projects",
@@ -185,7 +186,11 @@ export function Layout({ children }: PropsWithChildren) {
             )}
             onClick={() => setNavOpen(false)}
           >
-            {menuItems.map((item) => {
+            {menuItems.filter((item) => {
+              if (item.name === "nodes" || item.name === "capacity") return canManageNodes(me?.platform_role);
+              if (item.name === "audit-logs") return canViewAudit(me?.platform_role);
+              return true;
+            }).map((item) => {
               const Icon = NAV_ICONS[item.name] ?? Box;
               const testId = (item.meta as { testId?: string } | undefined)?.testId ?? NAV_TESTIDS[item.name];
               const label = String(item.label ?? "");

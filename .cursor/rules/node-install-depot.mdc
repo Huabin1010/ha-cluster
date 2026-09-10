@@ -5,7 +5,7 @@ alwaysApply: true
 
 # 节点一键安装与 Depot
 
-纳管 **宿主机 Node**（非 Workspace）= 一条 curl + join token；细则见 `docs/implementation/28-depot-cdn-one-click-install.md`。
+纳管 **宿主机 Node**（非 Workspace）= **仅 `platform_admin`** 生成 token 并执行一条 curl + join；细则见 `28-depot-cdn-one-click-install.md`、`29-platform-admin-governance.md`。
 
 ## 用户命令（定稿）
 

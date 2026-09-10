@@ -43,6 +43,8 @@
 
 ### 3.0 公网 CDN 一键加节点（推荐：新机器有公网）
 
+**执行人：`platform_admin`**（平台最高管理员）。先在控制台生成 join token，再在目标机执行（可 SSH 远程）。项目 `owner`/`admin` **不能**自行加宿主机。
+
 目标机只需 root，从 RustFS（bucket `typora`）拉瘦脚本 + 离线 payload：
 
 ```bash

@@ -12,7 +12,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"ha-cluster/internal/approval"
 	"ha-cluster/internal/auth"
+	"ha-cluster/internal/authz"
 	"ha-cluster/internal/ledger"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
@@ -114,17 +116,14 @@ func (a *App) CreateProject(ctx context.Context, actor uuid.UUID, name, slug str
 }
 
 func (a *App) RequireMembership(ctx context.Context, user models.User, projectID uuid.UUID, minRole string) (*models.Membership, error) {
-	if user.PlatformRole == models.RolePlatformAdmin {
-		return &models.Membership{ProjectID: projectID, UserID: user.ID, Role: models.RoleOwner}, nil
+	m, err := authz.RequireProjectMember(ctx, a.Store, user, projectID, minRole)
+	if err == authz.ErrNotFound {
+		return nil, store.ErrNotFound
 	}
-	m, err := a.Store.GetMembership(ctx, projectID, user.ID)
-	if err != nil {
+	if err == authz.ErrForbidden {
 		return nil, store.ErrForbidden
 	}
-	if models.RoleRank(m.Role) < models.RoleRank(minRole) {
-		return nil, store.ErrForbidden
-	}
-	return m, nil
+	return m, err
 }
 
 type CreateWorkspaceInput struct {
@@ -217,12 +216,30 @@ func (a *App) provisionNewWorkspace(ctx context.Context, in CreateWorkspaceInput
 	return a.finishProvision(ctx, w, res.Node, res.Allocation.ID, in.Actor.ID, "workspace.create")
 }
 
-func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node models.Node, allocID, actorID uuid.UUID, action string) (*models.Workspace, error) {
-	keys, _ := a.Store.ListSSHKeys(ctx, w.OwnerUserID)
-	pubs := make([]string, 0, len(keys))
-	for _, k := range keys {
-		pubs = append(pubs, k.PublicKey)
+func (a *App) collectWorkspacePubkeys(ctx context.Context, w models.Workspace) []string {
+	members, _ := a.Store.ListMemberships(ctx, w.ProjectID)
+	ids := authz.CollectWorkspaceSSHUserIDs(members, w.OwnerUserID, w.Visibility)
+	seen := map[string]struct{}{}
+	var pubs []string
+	for _, uid := range ids {
+		keys, _ := a.Store.ListSSHKeys(ctx, uid)
+		for _, k := range keys {
+			p := strings.TrimSpace(k.PublicKey)
+			if p == "" {
+				continue
+			}
+			if _, ok := seen[p]; ok {
+				continue
+			}
+			seen[p] = struct{}{}
+			pubs = append(pubs, p)
+		}
 	}
+	return pubs
+}
+
+func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node models.Node, allocID, actorID uuid.UUID, action string) (*models.Workspace, error) {
+	pubs := a.collectWorkspacePubkeys(ctx, *w)
 	inst, err := a.Runtime.Launch(ctx, *w, node, pubs)
 	if err != nil {
 		w.Status = models.WSFailed
@@ -335,27 +352,25 @@ func (a *App) RequestResize(ctx context.Context, actor models.User, id uuid.UUID
 	if err != nil {
 		return nil, store.ErrInvalidInput
 	}
-	if target.DiskBytes < cur.DiskBytes {
-		return nil, store.ErrDiskShrink
-	}
-	if target.CPUMilli < cur.CPUMilli || target.MemBytes < cur.MemBytes {
-		return nil, store.ErrNotExpansion
-	}
-	if target.CPUMilli == cur.CPUMilli && target.MemBytes == cur.MemBytes && target.DiskBytes == cur.DiskBytes {
-		return nil, store.ErrNotExpansion
-	}
-	delta := models.Plan{
-		CPUMilli:  target.CPUMilli - cur.CPUMilli,
-		MemBytes:  target.MemBytes - cur.MemBytes,
-		DiskBytes: target.DiskBytes - cur.DiskBytes,
-	}
-	if err := a.checkProjectBudget(ctx, w.ProjectID, delta); err != nil {
+	kind, err := classifyResize(cur, target)
+	if err != nil {
 		return nil, err
+	}
+	if kind == models.ResizeUpgrade {
+		delta := models.Plan{
+			CPUMilli:  target.CPUMilli - cur.CPUMilli,
+			MemBytes:  target.MemBytes - cur.MemBytes,
+			DiskBytes: target.DiskBytes - cur.DiskBytes,
+		}
+		if err := a.checkProjectBudget(ctx, w.ProjectID, delta); err != nil {
+			return nil, err
+		}
 	}
 	w.PendingCPUMilli = target.CPUMilli
 	w.PendingMemBytes = target.MemBytes
 	w.PendingDiskBytes = target.DiskBytes
 	w.ResizeStatus = models.ResizePending
+	w.ResizeKind = kind
 	w.UpdatedAt = time.Now()
 	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
 		return nil, err
@@ -381,32 +396,46 @@ func (a *App) ApproveResize(ctx context.Context, actor models.User, id uuid.UUID
 	}
 	cur := w.Spec()
 	target := models.Plan{Name: w.Plan, CPUMilli: w.PendingCPUMilli, MemBytes: w.PendingMemBytes, DiskBytes: w.PendingDiskBytes}
-	if target.DiskBytes < cur.DiskBytes {
-		return nil, store.ErrDiskShrink
-	}
-	if target.CPUMilli < cur.CPUMilli || target.MemBytes < cur.MemBytes {
-		return nil, store.ErrNotExpansion
+	kind := w.ResizeKind
+	if kind == "" {
+		kind, _ = classifyResize(cur, target)
 	}
 	deltaCPU := target.CPUMilli - cur.CPUMilli
 	deltaMem := target.MemBytes - cur.MemBytes
 	deltaDisk := target.DiskBytes - cur.DiskBytes
-	if err := a.checkProjectBudget(ctx, w.ProjectID, models.Plan{CPUMilli: deltaCPU, MemBytes: deltaMem, DiskBytes: deltaDisk}); err != nil {
-		return nil, err
+	if kind == models.ResizeUpgrade {
+		if err := a.checkProjectBudget(ctx, w.ProjectID, models.Plan{CPUMilli: deltaCPU, MemBytes: deltaMem, DiskBytes: deltaDisk}); err != nil {
+			return nil, err
+		}
 	}
 	if w.AllocationID == uuid.Nil {
 		return nil, store.ErrInvalidInput
 	}
-	if err := a.Ledger.Expand(ctx, w.AllocationID, deltaCPU, deltaMem, deltaDisk); err != nil {
-		return nil, err
+	if kind == models.ResizeDowngrade {
+		if deltaCPU > 0 || deltaMem > 0 || deltaDisk > 0 {
+			return nil, store.ErrInvalidInput
+		}
+		if err := a.Ledger.Shrink(ctx, w.AllocationID, -deltaCPU, -deltaMem, -deltaDisk); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := a.Ledger.Expand(ctx, w.AllocationID, deltaCPU, deltaMem, deltaDisk); err != nil {
+			return nil, err
+		}
 	}
 	resized := w.ApplySpec(target)
 	resized.PendingCPUMilli = 0
 	resized.PendingMemBytes = 0
 	resized.PendingDiskBytes = 0
 	resized.ResizeStatus = ""
+	resized.ResizeKind = ""
 	resized.UpdatedAt = time.Now()
 	if err := a.Runtime.Resize(ctx, resized); err != nil {
-		_ = a.Ledger.Expand(ctx, w.AllocationID, -deltaCPU, -deltaMem, -deltaDisk)
+		if kind == models.ResizeDowngrade {
+			_ = a.Ledger.Expand(ctx, w.AllocationID, deltaCPU, deltaMem, deltaDisk)
+		} else {
+			_ = a.Ledger.Expand(ctx, w.AllocationID, -deltaCPU, -deltaMem, -deltaDisk)
+		}
 		return nil, fmt.Errorf("resize: %w", err)
 	}
 	if err := a.Store.UpdateWorkspace(ctx, &resized); err != nil {
@@ -447,7 +476,8 @@ func (a *App) RejectResize(ctx context.Context, actor models.User, id uuid.UUID,
 	return nil
 }
 
-func (a *App) DestroyWorkspace(ctx context.Context, actor models.User, id uuid.UUID) error {
+// RequestDestroyWorkspace submits destroy for approval (developer+).
+func (a *App) RequestDestroyWorkspace(ctx context.Context, actor models.User, id uuid.UUID) error {
 	w, err := a.Store.GetWorkspace(ctx, id)
 	if err != nil {
 		return err
@@ -461,6 +491,64 @@ func (a *App) DestroyWorkspace(ctx context.Context, actor models.User, id uuid.U
 			return store.ErrForbidden
 		}
 	}
+	switch w.Status {
+	case models.WSDestroyRequested, models.WSDestroyPendingPlatform, models.WSDestroying, models.WSDestroyed:
+		return store.ErrConflict
+	}
+	w.Status = models.WSDestroyRequested
+	w.UpdatedAt = time.Now()
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		return err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "workspace.destroy.request", ResourceType: "workspace", ResourceID: id.String()})
+	return nil
+}
+
+// ApproveDestroyProject project admin first pass; dangerous ops go to platform queue.
+func (a *App) ApproveDestroyProject(ctx context.Context, actor models.User, id uuid.UUID) error {
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
+		return err
+	}
+	if w.Status != models.WSDestroyRequested {
+		return store.ErrInvalidInput
+	}
+	next, err := approval.NextAfterProjectApprove(approval.KindWorkspaceDestroy)
+	if err != nil {
+		return err
+	}
+	if next == approval.PhasePendingPlatform {
+		w.Status = models.WSDestroyPendingPlatform
+	} else {
+		return a.executeDestroy(ctx, actor, w)
+	}
+	w.UpdatedAt = time.Now()
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		return err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "workspace.destroy.approve_project", ResourceType: "workspace", ResourceID: id.String()})
+	return nil
+}
+
+// ApproveDestroyPlatform finalizes destroy after project approval.
+func (a *App) ApproveDestroyPlatform(ctx context.Context, actor models.User, id uuid.UUID) error {
+	if !authz.CanApproveDangerousOps(actor) {
+		return store.ErrForbidden
+	}
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return err
+	}
+	if w.Status != models.WSDestroyPendingPlatform {
+		return store.ErrInvalidInput
+	}
+	return a.executeDestroy(ctx, actor, w)
+}
+
+func (a *App) executeDestroy(ctx context.Context, actor models.User, w *models.Workspace) error {
 	w.Status = models.WSDestroying
 	_ = a.Store.UpdateWorkspace(ctx, w)
 	a.dropWorkspaceIngress(ctx, w.ID)
@@ -473,8 +561,20 @@ func (a *App) DestroyWorkspace(ctx context.Context, actor models.User, id uuid.U
 	w.Status = models.WSDestroyed
 	w.UpdatedAt = time.Now()
 	_ = a.Store.UpdateWorkspace(ctx, w)
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "workspace.destroy", ResourceType: "workspace", ResourceID: id.String()})
+	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "workspace.destroy", ResourceType: "workspace", ResourceID: w.ID.String()})
 	return nil
+}
+
+// DestroyWorkspace is deprecated; use RequestDestroyWorkspace + approvals. Platform admin may force.
+func (a *App) DestroyWorkspace(ctx context.Context, actor models.User, id uuid.UUID) error {
+	if actor.PlatformRole == models.RolePlatformAdmin {
+		w, err := a.Store.GetWorkspace(ctx, id)
+		if err != nil {
+			return err
+		}
+		return a.executeDestroy(ctx, actor, w)
+	}
+	return a.RequestDestroyWorkspace(ctx, actor, id)
 }
 
 func (a *App) StopWorkspace(ctx context.Context, actor models.User, id uuid.UUID) error {
@@ -531,10 +631,7 @@ func (a *App) SSHTarget(ctx context.Context, actor models.User, workspaceID uuid
 	if err != nil {
 		return nil, nil, err
 	}
-	if !models.CanSSH(m.Role) && actor.PlatformRole != models.RolePlatformAdmin {
-		return nil, nil, store.ErrForbidden
-	}
-	if w.Visibility == models.VisPrivate && w.OwnerUserID != actor.ID && models.RoleRank(m.Role) < models.RoleRank(models.RoleAdmin) {
+	if !authz.CanSSHSession(actor, m, *w) {
 		return nil, nil, store.ErrForbidden
 	}
 	if w.Status != models.WSRunning && w.Status != models.WSDegraded && w.Status != models.WSSuspended {
@@ -581,4 +678,22 @@ func (a *App) Heartbeat(ctx context.Context, n models.Node) (*models.Node, error
 	}
 	out, err := a.Store.GetNodeByName(ctx, n.Name)
 	return out, err
+}
+
+func classifyResize(cur, target models.Plan) (string, error) {
+	if target.CPUMilli == cur.CPUMilli && target.MemBytes == cur.MemBytes && target.DiskBytes == cur.DiskBytes {
+		return "", store.ErrNotExpansion
+	}
+	upgrade := target.CPUMilli > cur.CPUMilli || target.MemBytes > cur.MemBytes || target.DiskBytes > cur.DiskBytes
+	downgrade := target.CPUMilli < cur.CPUMilli || target.MemBytes < cur.MemBytes || target.DiskBytes < cur.DiskBytes
+	if upgrade && downgrade {
+		return "", store.ErrInvalidInput
+	}
+	if upgrade {
+		return models.ResizeUpgrade, nil
+	}
+	if downgrade {
+		return models.ResizeDowngrade, nil
+	}
+	return "", store.ErrInvalidInput
 }

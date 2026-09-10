@@ -1,0 +1,32 @@
+---
+description: 平台最高管理员统一治理基础设施，可委派下级管理员
+alwaysApply: true
+---
+
+# 平台治理
+
+细则见 `docs/implementation/29-platform-admin-governance.md`。
+
+## 资源归属
+
+**平台基础设施**（宿主机 Node、Depot/CDN、join token、入口/Relay、全局池/套餐）**仅** `platform_admin` 添加与配置；`platform_ops` 可维护已纳管节点，不能任命管理员或改计费。
+
+**项目内** Workspace、成员、审批由项目 `owner` / `admin` 负责；**项目 admin 不能纳管 Node**。
+
+## 加一台设备（宿主机）
+
+1. `platform_admin` 在控制台生成 join token  
+2. 管理员在目标机执行：`curl install.sh | sudo bash -s join --token …`（见 `node-install-depot.mdc`）  
+3. Nodes 页确认 Ready，可设 `machine_type` / tags  
+
+不要把 join token 给普通项目成员。
+
+## 委派
+
+- `platform_admin` 可将用户提升为 `platform_admin` 或 `platform_ops`  
+- 可将 **危险操作终审权** 委派给平台角色（如 `platform_ops`），见 `29` §8；**不能** 委派给项目 `admin`
+- 项目 `owner` 通过 **角色下拉** 任命项目 `admin`（审批创建等）；转让 owner 后自己降为 `developer`
+
+## 危险操作
+
+销毁工作区须 **项目 admin 初审 + 平台终审**；平台「危险操作待审」队列。

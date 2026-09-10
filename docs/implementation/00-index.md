@@ -136,6 +136,17 @@ PRD 仍有效；冲突时以本目录的「产品拍板」小节为准，并回�
 | [26-node-types-and-tags.md](26-node-types-and-tags.md) | **算力节点类型（cloud/self/customer）、备注与标签** |
 | [27-project-monitoring-and-runtimes.md](27-project-monitoring-and-runtimes.md) | **项目机器监控与曲线、Docker+SSH / K8s 双运行时、创建时环境自动注入** |
 | [28-depot-cdn-one-click-install.md](28-depot-cdn-one-click-install.md) | **离线 Depot、RustFS CDN（typora）、一键 install.sh 加节点** |
+| [29-platform-admin-governance.md](29-platform-admin-governance.md) | **平台最高管理员统一治理基建、委派下级管理员、加设备流程** |
+| [30-project-member-access.md](30-project-member-access.md) | **项目可见性（非成员不可见）、SSH 连接权与只读/读写模式** |
+| [31-framework-layers.md](31-framework-layers.md) | **代码框架五层、ADR、审批分级、API 错误码契约** |
+
+### ADR 索引（不可违背基线）
+
+| ID | 决策 |
+|----|------|
+| ADR-001 | 用户可见单元 = Workspace（Incus），非 k8s Namespace |
+| ADR-002 | 权限 = 平台角色 × 项目角色 × ssh_access × visibility |
+| ADR-003 | 危险操作 = 项目 admin 初审 + 平台超级管理员终审 |
 
 上游需求与库存：
 

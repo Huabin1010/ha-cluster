@@ -6,6 +6,8 @@
 > 相关台账：[inventory.md](inventory.md)  
 > 落地设计：[implementation/00-index.md](implementation/00-index.md)（含用户系统、协作、隔离 SSH、跳板、硬占用、HA、一包安装、异构节点、**EasyTier 公共中枢**；冲突时以实施文档「产品拍板」为准）
 
+**勘误（P1 运行时）：** 用户申请的「机器」= **Incus Workspace**（见 [implementation/22-project-machine-concepts.md](implementation/22-project-machine-concepts.md)）。k8s Namespace 为可选运行时（见 [27-project-monitoring-and-runtimes.md](implementation/27-project-monitoring-and-runtimes.md)），非默认路径。框架分层见 [31-framework-layers.md](implementation/31-framework-layers.md)。
+
 ---
 
 ## 1. 背景与问题

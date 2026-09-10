@@ -156,6 +156,14 @@ func (s *Service) Expand(ctx context.Context, id uuid.UUID, dCPU, dMem, dDisk in
 	return s.Store.ExpandAllocation(ctx, id, dCPU, dMem, dDisk)
 }
 
+// Shrink releases capacity back to the node (negative delta via ExpandAllocation).
+func (s *Service) Shrink(ctx context.Context, id uuid.UUID, dCPU, dMem, dDisk int64) error {
+	if dCPU < 0 || dMem < 0 || dDisk < 0 {
+		return store.ErrInvalidInput
+	}
+	return s.Store.ExpandAllocation(ctx, id, -dCPU, -dMem, -dDisk)
+}
+
 func RemainingError(node models.Node, plan models.Plan) error {
 	return fmt.Errorf("%w: remaining cpu=%d mem=%d disk=%d requested cpu=%d mem=%d disk=%d",
 		store.ErrNoCapacity,

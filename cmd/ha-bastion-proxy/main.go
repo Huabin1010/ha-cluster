@@ -197,6 +197,7 @@ func fetchTarget(api, uname, wsID string) (host string, port int, via string, er
 		OwnerUserID    uuid.UUID `json:"owner_user_id"`
 		ActorUserID    uuid.UUID `json:"actor_user_id"`
 		MembershipRole string    `json:"membership_role"`
+		SSHAccess      string    `json:"ssh_access"`
 		IsAdmin        bool      `json:"is_admin"`
 		Via            string    `json:"via"`
 	}
@@ -223,7 +224,13 @@ func fetchTarget(api, uname, wsID string) (host string, port int, via string, er
 	if role == "" {
 		role = models.RoleDeveloper
 	}
-	tg, err := bastion.Resolve(w, n, role, out.ActorUserID, out.IsAdmin)
+	actor := models.User{ID: out.ActorUserID}
+	if out.IsAdmin {
+		actor.PlatformRole = models.RolePlatformAdmin
+	}
+	mem := &models.Membership{Role: role, SSHAccess: out.SSHAccess}
+	models.NormalizeMembershipSSH(mem)
+	tg, err := bastion.Resolve(w, n, actor, mem)
 	if err != nil {
 		return "", 0, "", err
 	}

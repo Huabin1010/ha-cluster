@@ -140,6 +140,7 @@ allow ssh to workspace W iff
   AND membership(project(W)).ssh_access == granted
       OR role in {owner, admin}
       OR platform_admin
+  AND membership.ssh_mode in {read_write, read_only}   # 会话按模式限制命令/写盘
   AND (W.visibility == shared OR W.owner == user OR role in {owner, admin})
   AND W.status in {running, ...}   # 见 SSHTarget 实现
 ```
