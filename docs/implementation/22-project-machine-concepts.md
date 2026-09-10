@@ -368,13 +368,13 @@ ssh alice@bastion.example.com -p 8099 -t <workspace-uuid>
 | 成员 | `Membership` | `role`: owner / admin / developer / viewer |
 | 机器（用户） | `Workspace` | `POST /projects/{id}/workspaces` |
 | 申请创建 | `status=requested` | `ApproveWorkspace` / `RejectWorkspace` |
-| 升配 / 降配 | `resize_status=pending` | `POST …/resize` → `…/resize/approve`（升配已实现；**降配待实现**） |
-| 申请销毁 | `destroy_requested` → `destroy_pending_platform`（**待加**） | 项目 `ApproveDestroy` + 平台 `ApproveDestroyPlatform`（**待加**） |
+| 升配 / 降配 | `resize_status=pending` + `resize_kind` | `POST …/resize` → `…/resize/approve`（升配与降配均已实现） |
+| 申请销毁 | `destroy_requested` → `destroy_pending_platform` | `POST …/destroy-request` → `…/destroy-request/approve` → `POST /admin/dangerous-approvals/{id}/approve` |
 | 节点一行安装 | `ha-setup join` / curl install.sh | 见 [10-fast-installer.md](10-fast-installer.md) |
 | 硬占用 | `Allocation` + `Ledger` | `reserved` → `active` → `released` |
 | 宿主机 | `Node` + `ha-agent` 心跳 | 不对项目成员直接暴露 SSH |
 | 独立磁盘 | Incus volume + `disk_bytes` | agent `Launch` / `resize` |
-| 转让 owner | `POST .../transfer-ownership`（**待加或已有则对齐**） | 见 [03-user-management.md](03-user-management.md) |
+| 转让 owner | `POST .../transfer-ownership` | 见 [03-user-management.md](03-user-management.md) |
 
 ---
 

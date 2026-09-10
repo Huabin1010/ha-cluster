@@ -4,7 +4,7 @@ import { Plus, Mail, Users } from "lucide-react";
 import { useGetIdentity } from "@refinedev/core";
 import { api, friendlyError, type AuthUser } from "../../providers";
 import { ASSIGNABLE_ROLES, ROLE_HELP, roleLabel } from "./roles";
-import { canManageMembers, sshAccessLabel } from "../../lib/permissions";
+import { canManageMembers, canSSH, sshAccessLabel } from "../../lib/permissions";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { SelectBox } from "../../components/ui/select";
@@ -76,7 +76,9 @@ export function MemberList({ projectId, projectName }: Props) {
   const pager = useClientPager(rows, projectId);
 
   const { data: me } = useGetIdentity<AuthUser>();
-  const myRole = rows.find((r) => r.user_id === me?.id)?.role;
+  const myMember = rows.find((r) => r.user_id === me?.id);
+  const myRole = myMember?.role;
+  const mySshAccess = myMember?.ssh_access;
   const isPlatformAdmin = me?.platform_role === "platform_admin";
   const canManage = canManageMembers(myRole, me?.platform_role);
   const canBatchCreate = canManage;
@@ -146,6 +148,19 @@ export function MemberList({ projectId, projectName }: Props) {
         body: JSON.stringify({ role: editRole }),
       });
       setEditTarget(null);
+      await load();
+    } catch (e) {
+      setErr(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function requestSSH() {
+    setErr("");
+    setBusy(true);
+    try {
+      await api(`/projects/${projectId}/ssh-access-request`, { method: "POST", body: "{}" });
       await load();
     } catch (e) {
       setErr(friendlyError(e));
@@ -272,6 +287,17 @@ export function MemberList({ projectId, projectName }: Props) {
               <p className="mt-1 mb-0 text-sm text-muted-foreground">owner 不可通过此表单转让；添加已存在账号为成员需 admin 权限。</p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {myRole === "developer" && !canSSH(myRole, mySshAccess, me?.platform_role) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="member-request-ssh"
+                  disabled={busy || mySshAccess === "pending"}
+                  onClick={() => void requestSSH()}
+                >
+                  {mySshAccess === "pending" ? "SSH 待审批" : "申请 SSH 连接权"}
+                </Button>
+              )}
               {canBatchCreate && (
                 <Button
                   type="button"

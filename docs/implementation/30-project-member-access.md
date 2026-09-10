@@ -183,8 +183,8 @@ Bastion `ssh-target` 响应增加 `ssh_mode`；代理层将只读用户路由到
 | 项 | 状态 |
 |----|------|
 | 非成员只见自己的项目列表 | ✓ `ListProjectsForUser` |
-| 非成员 GET 项目 404 | 待统一校验 |
-| `ssh_access` 审批流 | 文档定稿，代码待实现 |
+| 非成员 GET 项目 404 | ✓ `authz.RequireProjectMember` → 404 |
+| `ssh_access` 审批流 | ✓ API + 成员页申请/批准 + Workspace SSH 门禁 |
 | `ssh_mode` 只读 Shell | 文档定稿，agent + Bastion 待实现 |
 
 ---

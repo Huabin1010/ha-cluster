@@ -24,7 +24,7 @@ import { Hint } from "../components/ui/tooltip";
 import { ThemeToggle } from "../components/theme-toggle";
 import { cn } from "../lib/utils";
 import { writeCurrentProject } from "../lib/current-project";
-import { canManageNodes, canViewAudit } from "../lib/permissions";
+import { canApproveDangerousOps, canManageNodes, canViewAudit } from "../lib/permissions";
 import { Combobox } from "../components/ui/combobox";
 
 const ENV_LABEL = import.meta.env.PROD ? "prod" : "dev";
@@ -38,6 +38,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   capacity: Gauge,
   "ssh-keys": KeyRound,
   "audit-logs": ScrollText,
+  "dangerous-approvals": ScrollText,
 };
 
 const NAV_TESTIDS: Record<string, string> = {
@@ -48,6 +49,7 @@ const NAV_TESTIDS: Record<string, string> = {
   capacity: "nav-capacity",
   "ssh-keys": "nav-keys",
   "audit-logs": "nav-audit",
+  "dangerous-approvals": "nav-dangerous",
 };
 
 function readSidebarCollapsed() {
@@ -189,6 +191,7 @@ export function Layout({ children }: PropsWithChildren) {
             {menuItems.filter((item) => {
               if (item.name === "nodes" || item.name === "capacity") return canManageNodes(me?.platform_role);
               if (item.name === "audit-logs") return canViewAudit(me?.platform_role);
+              if (item.name === "dangerous-approvals") return canApproveDangerousOps(me?.platform_role);
               return true;
             }).map((item) => {
               const Icon = NAV_ICONS[item.name] ?? Box;

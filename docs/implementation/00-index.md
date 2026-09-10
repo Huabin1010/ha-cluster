@@ -139,6 +139,7 @@ PRD 仍有效；冲突时以本目录的「产品拍板」小节为准，并回�
 | [29-platform-admin-governance.md](29-platform-admin-governance.md) | **平台最高管理员统一治理基建、委派下级管理员、加设备流程** |
 | [30-project-member-access.md](30-project-member-access.md) | **项目可见性（非成员不可见）、SSH 连接权与只读/读写模式** |
 | [31-framework-layers.md](31-framework-layers.md) | **代码框架五层、ADR、审批分级、API 错误码契约** |
+| [32-runtime-rollout-checklist.md](32-runtime-rollout-checklist.md) | **真机闭环检查清单**（T2–T5 EasyTier / Depot / Worker / Bastion） |
 
 ### ADR 索引（不可违背基线）
 

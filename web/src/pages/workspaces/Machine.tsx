@@ -1,8 +1,9 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useOne } from "@refinedev/core";
-import { api, friendlyError, isApiError } from "../../providers";
-import { formatPlanSpec, Workspace, workspaceSpec } from "./types";
+import { useGetIdentity, useOne } from "@refinedev/core";
+import { api, friendlyError, isApiError, type AuthUser } from "../../providers";
+import { canSSH, sshAccessLabel } from "../../lib/permissions";
+import { formatPlanSpec, ProjectOption, Workspace, workspaceSpec } from "./types";
 import { ImportKeyDialog } from "./ImportKeyDialog";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -57,9 +58,11 @@ type IngressMeta = {
 export function MachinePage() {
   const { id = "" } = useParams();
   const toast = useToast();
+  const { data: me } = useGetIdentity<AuthUser>();
   const { data, isLoading, isError, error } = useOne<Workspace>({ resource: "workspaces", id });
   const ws = data?.data;
 
+  const [projectCtx, setProjectCtx] = useState<ProjectOption | null>(null);
   const [conn, setConn] = useState<ConnInfo | null>(null);
   const [connErr, setConnErr] = useState("");
   const [routes, setRoutes] = useState<IngressRoute[]>([]);
@@ -94,6 +97,13 @@ export function MachinePage() {
       setRoutes([]);
     }
   }, [id]);
+
+  useEffect(() => {
+    if (!ws?.project_id) return;
+    api<ProjectOption>(`/projects/${ws.project_id}`)
+      .then(setProjectCtx)
+      .catch(() => setProjectCtx(null));
+  }, [ws?.project_id]);
 
   useEffect(() => {
     void loadConn();
@@ -202,7 +212,10 @@ export function MachinePage() {
   }
 
   const spec = workspaceSpec(ws);
-  const canConnect = ws.status === "running" || ws.status === "fabric_degraded";
+  const wsRunning = ws.status === "running" || ws.status === "fabric_degraded";
+  const sshGranted = canSSH(projectCtx?.my_role, projectCtx?.my_ssh_access, me?.platform_role);
+  const canConnect = wsRunning && sshGranted;
+  const showSSHRequest = wsRunning && !sshGranted && projectCtx?.my_role === "developer";
 
   return (
     <PageFrame
@@ -233,13 +246,28 @@ export function MachinePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
-            {!canConnect && <p className="m-0 text-sm text-muted-foreground">机器尚未运行，开通后才会给出连接信息。</p>}
+            {!wsRunning && <p className="m-0 text-sm text-muted-foreground">机器尚未运行，开通后才会给出连接信息。</p>}
+            {wsRunning && !sshGranted && (
+              <Alert variant="info">
+                <AlertDescription>
+                  当前 SSH 状态：{sshAccessLabel(projectCtx?.my_ssh_access)}。
+                  {showSSHRequest && ws.project_id ? (
+                    <>
+                      {" "}
+                      <Link className="underline" to={`/projects/${ws.project_id}/members`}>前往成员页申请 SSH 连接权</Link>
+                    </>
+                  ) : (
+                    " 请联系项目管理员授权。"
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
             {connErr && (
               <Alert variant="destructive">
                 <AlertDescription>{connErr}</AlertDescription>
               </Alert>
             )}
-            {conn && (
+            {conn && canConnect && (
               <>
                 <Field label="SSH">
                   <div className="flex flex-wrap gap-2">

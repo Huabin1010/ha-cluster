@@ -9,7 +9,7 @@
 | 项 | 值 |
 |----|-----|
 | 验收路径 | **A** |
-| Path A 验证机 | `dev-pc`（amd64 / mains / desktop / `10.88.0.30`） |
+| Path A 验证机 | `dev-pc` 或 PVE `ha-test-01`（amd64 / `10.129.129.205`） |
 | 规划下一台 phone | `ginkgo`（开机后 scp arm64 包） |
 
 ---
@@ -53,8 +53,8 @@ ssh root@… 'mkdir -p /var/cache && cd /var/cache && tar -I zstd -xf /tmp/ha-wo
 ```bash
 cd /var/cache/worker-bundle-linux-arm64
 ./install.sh \
-  --token 'ha://join/prod/<secret>?et_net=ha-c1&et_peer=tcp://server.mnnumath.vip:11010&api=http://10.88.0.1:8080&k3s=https://10.88.0.1:6443&depot=http://10.88.0.1:9090' \
-  --fabric-ip 10.88.0.11 \
+  --token 'ha://join/prod/<secret>?et_net=ha-cluster-easytier&et_peer=tcp://110.40.229.62:15010&api=https://ha.mnnumath.vip/api&depot_public=https://rustfs.s.ggss.club:50000/typora/ha-cluster' \
+  --fabric-ip 10.129.129.10 \
   --power battery \
   --class phone \
   --name ginkgo
@@ -69,7 +69,7 @@ cd /var/cache/worker-bundle-linux-arm64
 ```text
 sudo bash dist/worker-bundle-linux-amd64/install.sh \
   --token 'ha://join/c1/local?et_net=ha-c1&…&api=http://127.0.0.1:8080' \
-  --fabric-ip 10.88.0.30 --name dev-pc --power mains --class desktop \
+  --fabric-ip 10.129.129.205 --name ha-test-01 --power mains --class desktop \
   --skip-easytier --skip-k3s --api-override http://127.0.0.1:8080
 # → ha-agent active；incus alias ha-ubuntu-24.04；心跳 ready=true
 ```
@@ -86,7 +86,7 @@ bash deploy/t4/path-a-devpc.sh all
 
 ---
 
-## VPS k3s server（属 T4，需 T2 `10.88.0.1`）
+## VPS k3s server（属 T4，需 T2 `10.129.129.1`）
 
 ```bash
 sudo bash deploy/t4/install-k3s-server.sh /var/cache/ha-payload-amd64   # 或 worker-bundle 内 k3s/
@@ -100,5 +100,5 @@ sudo bash deploy/t4/install-k3s-server.sh /var/cache/ha-payload-amd64   # 或 wo
 | 依赖 | 状态 |
 |------|------|
 | worker-bundle | **已打出** amd64 + arm64（`dist/`） |
-| T2 EasyTier / `10.88.0.1` | k3s 正式联调需要；LAN Path A 可跳过 |
+| T2 EasyTier / `10.129.129.1` | k3s 正式联调需要；LAN Path A 可跳过 |
 | ginkgo 在线 | 上电后 scp arm64 包即可 |

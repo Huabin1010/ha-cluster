@@ -9,4 +9,5 @@ export const resources: ResourceProps[] = [
   { name: "capacity", list: "/capacity", meta: { label: "容量", testId: "nav-capacity" } },
   { name: "ssh-keys", list: "/settings/keys", meta: { label: "SSH 公钥", testId: "nav-keys" } },
   { name: "audit-logs", list: "/audit", meta: { label: "审计", testId: "nav-audit" } },
+  { name: "dangerous-approvals", list: "/dangerous-approvals", meta: { label: "危险待审", testId: "nav-dangerous" } },
 ];

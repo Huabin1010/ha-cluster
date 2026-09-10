@@ -1,6 +1,6 @@
 import type { AccessControlProvider } from "@refinedev/core";
 import { authProvider, type AuthUser } from "../providers";
-import { canManageNodes, canViewAudit, isPlatformAdmin } from "../lib/permissions";
+import { canApproveDangerousOps, canManageNodes, canViewAudit, isPlatformAdmin } from "../lib/permissions";
 
 export const accessControlProvider: AccessControlProvider = {
   can: async ({ resource, action }) => {
@@ -18,6 +18,13 @@ export const accessControlProvider: AccessControlProvider = {
       return {
         can: canManageNodes(role),
         reason: "仅平台运维可访问节点与容量。",
+      };
+    }
+
+    if (resource === "dangerous-approvals") {
+      return {
+        can: canApproveDangerousOps(role),
+        reason: "仅平台超级管理员可终审危险操作。",
       };
     }
 

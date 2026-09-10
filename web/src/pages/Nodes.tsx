@@ -1,6 +1,21 @@
+import { FormEvent, useState } from "react";
 import { useCustomMutation, useGetIdentity, useList } from "@refinedev/core";
+import { api, friendlyError } from "../providers";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Field } from "../components/ui/field";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "../components/ui/dialog";
+import { Alert, AlertDescription } from "../components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Hint } from "../components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
@@ -66,6 +81,40 @@ export function NodesPage() {
   const pager = useClientPager(rows);
   const { mutate: reconcile, isLoading: reconciling } = useCustomMutation<ReconcileResult>();
   const isAdmin = me?.platform_role === "platform_admin";
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinErr, setJoinErr] = useState("");
+  const [cluster, setCluster] = useState("ha-cluster");
+  const [secret, setSecret] = useState("");
+  const [joinCmd, setJoinCmd] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  async function generateJoinToken(e: FormEvent) {
+    e.preventDefault();
+    setJoinErr("");
+    setJoinBusy(true);
+    setJoinCmd("");
+    try {
+      const out = await api<{ token: string }>("/admin/join-tokens", {
+        method: "POST",
+        body: JSON.stringify({
+          cluster: cluster.trim(),
+          secret: secret.trim(),
+          api: "https://ha.mnnumath.vip/api",
+          depot_public: "https://rustfs.s.ggss.club:50000/typora/ha-cluster",
+        }),
+      });
+      const install =
+        "curl -fsSL https://rustfs.s.ggss.club:50000/typora/ha-cluster/install.sh | sudo bash -s join --token '" +
+        out.token +
+        "'";
+      setJoinCmd(install);
+    } catch (err) {
+      setJoinErr(friendlyError(err));
+    } finally {
+      setJoinBusy(false);
+    }
+  }
 
   const readyCount = rows.filter((n) => n.ready).length;
   const degradedCount = rows.filter((n) => n.health_status === "degraded").length;
@@ -83,6 +132,67 @@ export function NodesPage() {
               <Button type="button" variant="outline" onClick={() => void refetch()} data-testid="nodes-refresh">
                 刷新
               </Button>
+              {isAdmin && (
+                <Dialog open={joinOpen} onOpenChange={setJoinOpen}>
+                  <DialogTrigger asChild>
+                    <Button type="button" variant="outline" data-testid="nodes-join-token-open">
+                      生成 join token
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>纳管新节点</DialogTitle>
+                      <DialogDescription>在目标宿主机以 root 执行下方一行命令（仅 platform_admin）。</DialogDescription>
+                    </DialogHeader>
+                    <form className="flex min-h-0 flex-1 flex-col" onSubmit={generateJoinToken}>
+                      <DialogBody className="grid gap-4">
+                        <Field label="cluster">
+                          <Input value={cluster} onChange={(e) => setCluster(e.target.value)} required />
+                        </Field>
+                        <Field label="secret（一次性随机串）">
+                          <Input
+                            data-testid="join-secret"
+                            value={secret}
+                            onChange={(e) => setSecret(e.target.value)}
+                            placeholder="随机 secret"
+                            required
+                          />
+                        </Field>
+                        {joinErr && (
+                          <Alert variant="destructive">
+                            <AlertDescription>{joinErr}</AlertDescription>
+                          </Alert>
+                        )}
+                        {joinCmd && (
+                          <Alert variant="info" data-testid="join-command">
+                            <AlertDescription>
+                              <code className="block break-all font-mono text-xs">{joinCmd}</code>
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      </DialogBody>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setJoinOpen(false)}>关闭</Button>
+                        <Button type="submit" data-testid="join-generate" disabled={joinBusy}>
+                          {joinBusy ? "生成中…" : "生成命令"}
+                        </Button>
+                        {joinCmd && (
+                          <Button
+                            type="button"
+                            data-testid="join-copy"
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(joinCmd);
+                              setCopied(true);
+                            }}
+                          >
+                            {copied ? "已复制" : "复制命令"}
+                          </Button>
+                        )}
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              )}
               {isAdmin && (
                 <Button
                   data-testid="nodes-reconcile"

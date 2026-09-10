@@ -101,6 +101,7 @@ type Project struct {
 	BudgetDiskBytes int64     `json:"budget_disk_bytes,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	MyRole          string    `json:"my_role,omitempty"`
+	MySSHAccess     string    `json:"my_ssh_access,omitempty"`
 }
 
 type Membership struct {

@@ -25,6 +25,8 @@ describe("workspace statusLabel", () => {
     expect(statusLabel("rejected")).toBe("已拒绝");
     expect(statusLabel("stopped")).toBe("已停止（仍占配额）");
     expect(statusLabel("fabric_degraded")).toBe("网络降级");
+    expect(statusLabel("destroy_requested")).toBe("待销毁审批");
+    expect(statusLabel("destroy_pending_platform")).toBe("待平台终审");
     expect(statusLabel("failed")).toBe("失败");
   });
 

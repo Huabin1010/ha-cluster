@@ -48,6 +48,7 @@ export function WorkspacesPage() {
   const rows = (data?.data ?? []).filter((w) => w.status !== "destroyed");
   const pending = rows.filter((w) => w.status === "requested").length;
   const pendingResize = rows.filter((w) => w.resize_status === "pending").length;
+  const pendingDestroy = rows.filter((w) => w.status === "destroy_requested").length;
   const pager = useClientPager(rows, projectFilter);
 
   function setProjectFilter(id: string) {
@@ -69,7 +70,7 @@ export function WorkspacesPage() {
         <div className="grid gap-3">
           <PageHeader
             title="服务器"
-            description="按项目申请隔离机器（例如 2 核 / 2GiB / 5GiB 盘）。开通后可再提交扩容，均需管理员批准；不提供硬盘缩容。"
+            description="按项目申请隔离机器（例如 2 核 / 2GiB / 5GiB 盘）。开通与扩/降配需管理员批准；销毁须项目初审 + 平台终审。"
             actions={
               <CreateForm
                 projects={projects}
@@ -93,7 +94,12 @@ export function WorkspacesPage() {
           )}
           {pendingResize > 0 && canApprove && (
             <Banner kind="info">
-              <span data-testid="ws-resize-banner">有 {pendingResize} 条扩容申请待审批</span>
+              <span data-testid="ws-resize-banner">有 {pendingResize} 条扩/降配申请待审批</span>
+            </Banner>
+          )}
+          {pendingDestroy > 0 && canApprove && (
+            <Banner kind="info">
+              <span data-testid="ws-destroy-banner">有 {pendingDestroy} 条销毁申请待项目初审</span>
             </Banner>
           )}
           {err && (
@@ -164,6 +170,10 @@ export function WorkspacesPage() {
                   ws={w}
                   busyId={busyId}
                   canApprove={wsCanApprove}
+                  platformRole={me?.platform_role}
+                  myRole={wsProject?.my_role}
+                  mySshAccess={wsProject?.my_ssh_access}
+                  projectId={w.project_id}
                   onBusy={setBusyId}
                   onRefresh={afterMutation}
                   onToast={(msg) => toast.show(msg, "info")}

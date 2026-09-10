@@ -22,6 +22,7 @@ export type ProjectOption = {
   name: string;
   slug: string;
   my_role?: string;
+  my_ssh_access?: string;
 };
 
 export type ProjectUsage = {
@@ -71,6 +72,18 @@ export function hasPendingResize(ws: Workspace): boolean {
   return ws.resize_status === "pending";
 }
 
+export function isDestroyPending(ws: Workspace): boolean {
+  return ws.status === "destroy_requested" || ws.status === "destroy_pending_platform";
+}
+
+export function isDestroyRequested(ws: Workspace): boolean {
+  return ws.status === "destroy_requested";
+}
+
+export function isDestroyPendingPlatform(ws: Workspace): boolean {
+  return ws.status === "destroy_pending_platform";
+}
+
 export const GiB = 1024 * 1024 * 1024;
 
 /** 状态中文映射（U4 验收） */
@@ -81,6 +94,8 @@ export const STATUS_LABEL: Record<string, string> = {
   stopped: "已停止（仍占配额）",
   failed: "失败",
   rejected: "已拒绝",
+  destroy_requested: "待销毁审批",
+  destroy_pending_platform: "待平台终审",
   destroying: "销毁中",
   destroyed: "已销毁",
   node_lost: "节点丢失",

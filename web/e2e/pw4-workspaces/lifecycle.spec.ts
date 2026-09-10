@@ -83,16 +83,24 @@ test.describe("PW-4 Workspace 生命周期", () => {
 
   test("PW4-07 @pw4 @smoke 销毁", async ({ pageAs }) => {
     const { page, tokens } = await pageAs("owner");
+    const admin = await pageAs("admin");
     const p = await seedProject(tokens.token, "ws-dest");
-    await seedWorkspace(tokens.token, p.id, { name: "ws-to-dest" });
+    const ws = await seedWorkspace(tokens.token, p.id, { name: "ws-to-dest" });
 
     await page.goto(`/workspaces?project_id=${p.id}`);
     const row = page.locator('[data-testid="ws-row"]', { hasText: "ws-to-dest" });
     await row.getByTestId("ws-destroy").click();
     await confirmAlert(page, true);
+    await expectToast(page, "销毁申请");
 
+    await expect(row).toHaveAttribute("data-status", "destroy_requested");
+    await row.getByTestId("ws-destroy-approve-project").click();
+    await expectToast(page, "平台终审");
+    await expect(row).toHaveAttribute("data-status", "destroy_pending_platform");
+
+    await api.approveDestroyPlatform(admin.tokens.token, ws.id);
+    await page.reload();
     await expect(row).not.toBeVisible();
-    await expectToast(page, "配额已归还");
   });
 
   test("PW4-08 @pw4 销毁取消", async ({ pageAs }) => {
@@ -106,6 +114,7 @@ test.describe("PW-4 Workspace 生命周期", () => {
     await confirmAlert(page, false);
 
     await expect(row).toBeVisible();
+    await expect(row).toHaveAttribute("data-status", "running");
   });
 
   test("PW4-11 @pw4 visibility private", async ({ pageAs }) => {

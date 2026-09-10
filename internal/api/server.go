@@ -278,6 +278,7 @@ func (s *Server) attachMyRole(ctx context.Context, u *models.User, p *models.Pro
 	}
 	if m, err := s.App.RequireMembership(ctx, *u, p.ID, models.RoleViewer); err == nil {
 		p.MyRole = m.Role
+		p.MySSHAccess = m.SSHAccess
 	}
 }
 

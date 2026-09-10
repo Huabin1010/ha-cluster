@@ -21,6 +21,9 @@ const NodesPage = lazy(() => import("./pages/Nodes").then((m) => ({ default: m.N
 const CapacityPage = lazy(() => import("./pages/ops/Capacity").then((m) => ({ default: m.CapacityPage })));
 const SSHKeysPage = lazy(() => import("./pages/ops/SSHKeys").then((m) => ({ default: m.SSHKeysPage })));
 const AuditPage = lazy(() => import("./pages/ops/Audit").then((m) => ({ default: m.AuditPage })));
+const DangerousApprovalsPage = lazy(() =>
+  import("./pages/ops/DangerousApprovals").then((m) => ({ default: m.DangerousApprovalsPage })),
+);
 
 const queryClient = new QueryClient();
 
@@ -92,6 +95,7 @@ function RefineApp() {
           <Route path="/capacity" element={<CapacityPage />} />
           <Route path="/settings/keys" element={<SSHKeysPage />} />
           <Route path="/audit" element={<AuditPage />} />
+          <Route path="/dangerous-approvals" element={<DangerousApprovalsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

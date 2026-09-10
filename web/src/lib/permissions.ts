@@ -9,6 +9,10 @@ export function isPlatformAdmin(platformRole?: string) {
   return platformRole === "platform_admin";
 }
 
+export function canApproveDangerousOps(platformRole?: string) {
+  return platformRole === "platform_admin" || platformRole === "platform_ops";
+}
+
 export function canManageNodes(platformRole?: string) {
   return isPlatformStaff(platformRole);
 }

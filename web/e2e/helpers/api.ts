@@ -230,6 +230,8 @@ export const api = {
     }, token);
     return res.data;
   },
+
+  async startWorkspace(token: string, id: string) {
     return request("/workspaces/" + id + "/start", { method: "POST" }, token);
   },
 
@@ -237,8 +239,31 @@ export const api = {
     return request("/workspaces/" + id + "/stop", { method: "POST" }, token);
   },
 
-  async destroyWorkspace(token: string, id: string) {
-    return request("/workspaces/" + id, { method: "DELETE" }, token);
+  async requestDestroyWorkspace(token: string, id: string) {
+    return request("/workspaces/" + id + "/destroy-request", { method: "POST", body: "{}" }, token);
+  },
+
+  async approveDestroyProject(token: string, id: string) {
+    return request("/workspaces/" + id + "/destroy-request/approve", { method: "POST", body: "{}" }, token);
+  },
+
+  async approveDestroyPlatform(token: string, id: string) {
+    return request("/admin/dangerous-approvals/" + id + "/approve", { method: "POST", body: "{}" }, token);
+  },
+
+  /** Full destroy approval chain (project owner + platform admin tokens). */
+  async destroyWorkspace(ownerToken: string, id: string, platformAdminToken?: string) {
+    await request("/workspaces/" + id + "/destroy-request", { method: "POST", body: "{}" }, ownerToken);
+    await request("/workspaces/" + id + "/destroy-request/approve", { method: "POST", body: "{}" }, ownerToken);
+    let adminTok = platformAdminToken;
+    if (!adminTok) {
+      const creds = await request<AuthTokens>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username: "admin", password: process.env.HA_ADMIN_PASSWORD ?? "adminadmin" }),
+      });
+      adminTok = (creds.data as AuthTokens).token;
+    }
+    await request("/admin/dangerous-approvals/" + id + "/approve", { method: "POST", body: "{}" }, adminTok);
   },
 
   async getSSHConfig(token: string, id: string) {

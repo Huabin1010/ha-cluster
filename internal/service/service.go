@@ -166,7 +166,7 @@ func (a *App) CreateWorkspace(ctx context.Context, in CreateWorkspaceInput) (*mo
 	in.CPUMilli = spec.CPUMilli
 	in.MemBytes = spec.MemBytes
 	in.DiskBytes = spec.DiskBytes
-	if !models.CanApproveWorkspace(mem.Role) {
+	if approval.NeedsProjectApproval(mem.Role, approval.KindWorkspaceCreate) {
 		return a.requestWorkspace(ctx, in, spec)
 	}
 	return a.provisionNewWorkspace(ctx, in, spec)
