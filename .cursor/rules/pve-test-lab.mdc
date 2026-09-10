@@ -1,0 +1,64 @@
+---
+description: PVE 局域网测试机与 tmp/pve-server 联调脚本，用于 E2E 与 T4 验收
+alwaysApply: true
+---
+
+# PVE 测试实验室（局域网）
+
+本地联调资产在 **`tmp/pve-server/`**（不进 Git）。详情以该目录下 `note.md`、`server-info/note.md` 为准；**密码只写** `docs/credentials.local.md` 或上述 note，禁止进规则/README/提交。
+
+## 拓扑
+
+| 层 | 说明 |
+|----|------|
+| PVE 宿主机 | `192.168.1.8`（节点 `shuangyuan001`） |
+| 测试 VM | `ha-test-01` `.84`、`-02` `.85`、`-03` `.87`（4c/4G/32G） |
+| 开发机 API | 默认 `http://192.168.1.100:8080`（`HA_API_ADDR=:8080`） |
+| EasyTier 虚 IP | `.205` / `.206` / `.207`（对齐 `easytier-fabric.mdc` 本地段） |
+
+PVE VM **模拟 Node**，不是用户 Workspace；正式纳管仍走 **join token + install.sh**（`node-install-depot.mdc`）。
+
+## 扩容测试机（更大规格）
+
+默认三台 `ha-test-01/02/03` 为 4c/4G/32G。需要更大机器时，**可直接 SSH 到 PVE 宿主机**开 VM（开发机 `root@192.168.1.8` 公钥信任已配置）：
+
+- **前提**：不影响宿主机上既有业务/VM 正常运行；勿改宿主机 hostname（见下）。
+- **做法**：在 PVE 上 `qm clone` 模板 VM 100（Ubuntu，见 `note.md`），按需调 `cores` / `memory` / 磁盘；分配空闲 LAN IP，EasyTier 用本地段下一个虚 IP（`.205` 起递增，见 `easytier-fabric.mdc`）。
+- **收尾**：把 VMID / 主机名 / IP / fabric IP 记入 `tmp/pve-server/note.md`；用 `setup-test-vms.py` / `deploy-agents.py` 或走 join token 纳管。
+
+## 一键准备（推荐）
+
+```bash
+# 控制面（Docker 全栈）
+powershell -File docker/dev/up.ps1
+
+# PVE 三台 Worker：EasyTier + Incus + ha-agent
+cp deploy/pve-lab/lab.env.example deploy/pve-lab/lab.env   # 填 HA_ET_SECRET
+powershell -File deploy/pve-lab/bootstrap.ps1
+```
+
+详见 [`deploy/pve-lab/README.md`](deploy/pve-lab/README.md)。`bootstrap.py` 经 PVE `qm guest exec` 安装，自动探测 LAN IP。
+
+## 常用脚本（在仓库根目录执行）
+
+```bash
+HA_API_BASE=http://192.168.1.100:8080 python docker/dev/integration-test.py
+HA_API_BASE=http://192.168.1.100:8080 python docker/dev/workflow-test.py
+```
+
+环境变量：`HA_API_BASE`、`HA_NODE_TOKEN`、`HA_ADMIN_USER` / `HA_ADMIN_PASS`（见各脚本头部）。
+
+## Agent 调试约束
+
+- 改 `internal/agent/`、`internal/workspace/` 后：重编 `ha-agent` → `deploy-agents.py` 或目标机替换二进制。
+- **不要**把 PVE 宿主机 hostname 改成 `ha-test-01`（会破坏 `qm` 配置，见 `note.md`）。
+- 联调清单同步勾选 [`docs/implementation/32-runtime-rollout-checklist.md`](docs/implementation/32-runtime-rollout-checklist.md)。
+
+## 与生产路径关系
+
+| 局域网快速路径 | 生产路径 |
+|----------------|----------|
+| `deploy-agents.py` + 心跳 token | 控制台 join token + `curl install.sh \| join` |
+| 直连 LAN IP SSH | Bastion → EasyTier → Workspace（`ssh-access.mdc`） |
+
+优先用 PVE 实验室验证 **API / 审批 / Ledger / agent 编排**；EasyTier + Depot + Bastion 按 T2–T5 在真机验收。

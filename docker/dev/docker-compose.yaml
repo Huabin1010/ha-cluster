@@ -1,0 +1,130 @@
+name: ha-cluster-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ha
+      POSTGRES_PASSWORD: ha
+      POSTGRES_DB: ha
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ha-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ha -d ha"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    image: golang:1.24-bookworm
+    restart: unless-stopped
+    working_dir: /src
+    volumes:
+      - ../..:/src
+      - go-mod-cache:/go/pkg/mod
+    command: ["go", "run", "./cmd/ha-api"]
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      HA_API_ADDR: ":8080"
+      DATABASE_URL: postgres://ha:ha@postgres:5432/ha?sslmode=disable
+      HA_JWT_SECRET: ${HA_JWT_SECRET:-dev-insecure-change-me-please-32b}
+      HA_ADMIN_PASSWORD: ${HA_ADMIN_PASSWORD:-adminadmin}
+      HA_NODE_TOKEN: ${HA_NODE_TOKEN:-ha-test-node-token-2026}
+      HA_INTERNAL_TOKEN: ${HA_INTERNAL_TOKEN:-internal-dev}
+      HA_RUNTIME: ${HA_RUNTIME:-memory}
+      HA_SEED: ${HA_SEED:-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
+  mock-agents:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    working_dir: /src/docker/dev
+    volumes:
+      - ../..:/src
+    environment:
+      HA_API_BASE: http://api:8080
+      HA_NODE_TOKEN: ${HA_NODE_TOKEN:-ha-test-node-token-2026}
+      HA_MOCK_AGENT_INTERVAL: "15"
+    command: ["python", "mock-agents.py"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    image: node:20-bookworm
+    restart: unless-stopped
+    working_dir: /src/web
+    volumes:
+      - ../../web:/src/web
+      - web-node-modules:/src/web/node_modules
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    environment:
+      VITE_API_TARGET: http://api:8080
+    command: ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  adminer:
+    image: adminer:4
+    restart: unless-stopped
+    ports:
+      - "${ADMINER_PORT:-8081}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  test-integration:
+    profiles: ["test"]
+    image: python:3.12-alpine
+    working_dir: /src/docker/dev
+    volumes:
+      - ../..:/src
+    environment:
+      HA_API_BASE: http://api:8080
+      HA_ADMIN_USER: admin
+      HA_ADMIN_PASS: ${HA_ADMIN_PASSWORD:-adminadmin}
+      HA_NODE_TOKEN: ${HA_NODE_TOKEN:-ha-test-node-token-2026}
+      HA_EXPECT_NODES: ha-test-01,ha-test-02,ha-test-03
+    command: ["python", "integration-test.py"]
+    depends_on:
+      api:
+        condition: service_healthy
+      mock-agents:
+        condition: service_started
+
+  test-workflow:
+    profiles: ["test"]
+    image: python:3.12-alpine
+    working_dir: /src/docker/dev
+    volumes:
+      - ../..:/src
+    environment:
+      HA_API_BASE: http://api:8080
+      HA_ADMIN_PASS: ${HA_ADMIN_PASSWORD:-adminadmin}
+    command: ["python", "workflow-test.py"]
+    depends_on:
+      api:
+        condition: service_healthy
+      mock-agents:
+        condition: service_started
+
+volumes:
+  ha-pg-data:
+  go-mod-cache:
+  web-node-modules:

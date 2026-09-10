@@ -9,6 +9,7 @@ docs/credentials.local.md
 .env
 .env.*
 !.env.example
+deploy/pve-lab/lab.env
 !.deploy/easytier.env.example
 
 # 系统与开发工具

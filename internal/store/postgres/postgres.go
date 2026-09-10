@@ -528,6 +528,9 @@ func (s *Store) ReserveBestNode(ctx context.Context, arch string, cpu, mem, disk
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
 	if pickedID == uuid.Nil {
 		return store.ErrNoCapacity
 	}

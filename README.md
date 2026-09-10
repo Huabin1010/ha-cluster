@@ -90,10 +90,32 @@ npm run dev
 
 浏览器访问 `http://localhost:5173` 即可进入控制台。初始管理账号通过接口自动初始化。
 
-### 2. 使用 Docker Compose 运行（PostgreSQL 持久化）
+### 2. 使用 Docker Compose 本地全栈（推荐）
+
+Postgres + ha-api + Vite 控制台 + 模拟三台 worker 心跳：
 
 ```bash
-docker compose up --build -d
+# Windows
+powershell -File docker/dev/up.ps1
+
+# macOS / Linux
+bash docker/dev/up.sh
+
+# 或仓库根目录
+docker compose up -d
+```
+
+- 控制台：<http://localhost:5173>
+- API：<http://localhost:8080>
+- 管理员：`admin` / `adminadmin`
+- 数据库管理（Adminer）：<http://localhost:8081>
+
+集成测试：
+
+```bash
+cd docker/dev
+docker compose --profile test run --rm test-integration
+docker compose --profile test run --rm test-workflow
 ```
 
 ### 3. 构建全部二进制组件
