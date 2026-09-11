@@ -1,10 +1,29 @@
 import { FormEvent, useState } from "react";
 import { useCustomMutation, useGetIdentity, useList } from "@refinedev/core";
-import { api, friendlyError } from "../providers";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Field } from "../components/ui/field";
+import {
+  Activity,
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Copy,
+  Cpu,
+  Gauge,
+  Globe,
+  HardDrive,
+  HeartPulse,
+  KeyRound,
+  MemoryStick,
+  Plus,
+  RefreshCw,
+  Server,
+  WifiOff,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { api, friendlyError } from "@/providers";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import {
   Dialog,
   DialogBody,
@@ -14,17 +33,18 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../components/ui/dialog";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Hint } from "../components/ui/tooltip";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
-import { PageFrame } from "../components/ui/page-frame";
-import { Paginator } from "../components/ui/pagination";
-import { friendlyError } from "../providers";
-import { Empty, PageBody, PageHeader } from "../ui";
-import { fmtBytes } from "./ops/format";
-import { useClientPager } from "../lib/use-client-pager";
+} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Hint } from "@/components/ui/tooltip";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageFrame } from "@/components/ui/page-frame";
+import { Paginator } from "@/components/ui/pagination";
+import { Elevated } from "@/lib/elevated";
+import { Empty, PageBody, PageHeader } from "@/ui";
+import { fmtBytes } from "@/pages/ops/format";
+import { hostDiskMeter, hostMemMeter, isHostPressure } from "./node-resources";
+import { useClientPager } from "@/lib/use-client-pager";
+import { cn } from "@/lib/utils";
 
 type Node = {
   id: string;
@@ -39,8 +59,12 @@ type Node = {
   cpu_usage_pct?: number;
   mem_available_bytes?: number;
   disk_free_bytes?: number;
+  mem_total_bytes?: number;
+  disk_total_bytes?: number;
   used_mem_bytes: number;
   allocatable_mem_bytes: number;
+  used_disk_bytes: number;
+  allocatable_disk_bytes: number;
   used_cpu_milli: number;
   allocatable_cpu_milli: number;
 };
@@ -56,24 +80,72 @@ function healthVariant(n: Node): "ok" | "warn" | "danger" {
 }
 
 function healthLabel(n: Node): string {
-  if (n.health_status) return n.health_status;
-  return n.ready ? "healthy" : "offline";
+  if (n.health_status === "degraded") return "降级 (Relay)";
+  if (n.health_status === "offline" || (!n.ready && n.health_status !== "degraded")) return "离线";
+  return n.ready ? "健康在线" : "离线";
 }
 
-function memUsagePct(n: Node): number {
-  if (!n.allocatable_mem_bytes) return 0;
-  return Math.min(100, Math.round((n.used_mem_bytes / n.allocatable_mem_bytes) * 100));
+function nodeStatusDot(n: Node) {
+  if (n.health_status === "offline" || !n.ready) {
+    return "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]";
+  }
+  if (n.health_status === "degraded") {
+    return "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.45)]";
+  }
+  return "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
 }
 
-function isLowMem(n: Node): boolean {
-  if (!n.mem_available_bytes || !n.allocatable_mem_bytes) return false;
-  return n.mem_available_bytes < n.allocatable_mem_bytes * 0.1;
+function usagePct(used: number, total: number): number {
+  if (!total || total <= 0) return 0;
+  return Math.min(100, Math.round((used / total) * 100));
+}
+
+function ResourceMeter({
+  icon: Icon,
+  meter,
+  warn,
+  testId,
+}: {
+  icon: LucideIcon;
+  meter: ReturnType<typeof hostMemMeter>;
+  warn?: boolean;
+  testId?: string;
+}) {
+  const pct = usagePct(meter.used, meter.total);
+  const hint =
+    meter.source === "host"
+      ? `宿主机已用 ${fmtBytes(meter.used)} / 共 ${fmtBytes(meter.total)}（剩余 ${fmtBytes(meter.free)}）· 账本占用 ${fmtBytes(meter.ledgerUsed)} / 可分配 ${fmtBytes(meter.ledgerTotal)}`
+      : `账本占用 ${fmtBytes(meter.ledgerUsed)} / 可分配 ${fmtBytes(meter.ledgerTotal)}`;
+
+  return (
+    <Hint label={hint}>
+      <div className="flex min-w-[8.5rem] flex-col gap-0.5" data-testid={testId}>
+        <span className="inline-flex items-center gap-1 whitespace-nowrap font-mono text-[11px] leading-none">
+          <Icon className="size-3 shrink-0 opacity-70" />
+          <span className="text-foreground">
+            {fmtBytes(meter.used)} / {fmtBytes(meter.total)}
+          </span>
+        </span>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all duration-300",
+              warn || pct > 85 ? "bg-rose-500" : "bg-primary",
+            )}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    </Hint>
+  );
 }
 
 export function NodesPage() {
+  const [showOffline, setShowOffline] = useState(false);
   const { data, isLoading, refetch } = useList<Node>({
     resource: "nodes",
     pagination: { mode: "off" },
+    filters: showOffline ? [{ field: "all", operator: "eq", value: "1" }] : [],
     queryOptions: { refetchInterval: 15_000 },
   });
   const { data: me } = useGetIdentity<Identity>();
@@ -119,33 +191,68 @@ export function NodesPage() {
   const readyCount = rows.filter((n) => n.ready).length;
   const degradedCount = rows.filter((n) => n.health_status === "degraded").length;
   const offlineCount = rows.filter((n) => n.health_status === "offline" || (!n.ready && n.health_status !== "degraded")).length;
-  const oomRisk = rows.filter(isLowMem).length;
+  const oomRisk = rows.filter((n) => isHostPressure(hostMemMeter(n))).length;
 
   return (
     <PageFrame
       header={
-        <PageHeader
-          title="节点 / Fabric"
-          description="worker 心跳、实时负载与健康状态。degraded/offline 仅影响调度，不会销毁边缘工作区。"
-          actions={
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={() => void refetch()} data-testid="nodes-refresh">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
+                <Cpu className="size-4.5" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">节点 / Fabric</h2>
+                  <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
+                    {rows.length} 台在线
+                  </Badge>
+                </div>
+                <p className="mt-1 mb-0 text-sm text-muted-foreground">
+                  默认仅显示在线 worker；离线记录保留在库中，可切换查看。
+                </p>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant={showOffline ? "secondary" : "outline"}
+                size="compact"
+                data-testid="nodes-show-offline"
+                className="h-8 px-3 text-xs gap-1.5 shrink-0"
+                onClick={() => setShowOffline((v) => !v)}
+              >
+                <WifiOff className="size-3.5 opacity-70 shrink-0" />
+                {showOffline ? "仅在线" : "含离线"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="compact"
+                onClick={() => void refetch()}
+                data-testid="nodes-refresh"
+                className="h-8 px-3 text-xs gap-1.5 shrink-0"
+              >
+                <RefreshCw className="size-3.5 opacity-70 shrink-0" />
                 刷新
               </Button>
               {isAdmin && (
                 <Dialog open={joinOpen} onOpenChange={setJoinOpen}>
                   <DialogTrigger asChild>
-                    <Button type="button" variant="outline" data-testid="nodes-join-token-open">
+                    <Button type="button" size="compact" data-testid="nodes-join-token-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
+                      <KeyRound className="size-3.5 shrink-0" />
                       生成 join token
                     </Button>
                   </DialogTrigger>
-                  <DialogContent>
+                  <DialogContent size="lg" className="sm:max-w-xl">
                     <DialogHeader>
                       <DialogTitle>纳管新节点</DialogTitle>
                       <DialogDescription>在目标宿主机以 root 执行下方一行命令（仅 platform_admin）。</DialogDescription>
                     </DialogHeader>
                     <form className="flex min-h-0 flex-1 flex-col" onSubmit={generateJoinToken}>
-                      <DialogBody className="grid gap-4">
+                      <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
                         <Field label="cluster">
                           <Input value={cluster} onChange={(e) => setCluster(e.target.value)} required />
                         </Field>
@@ -166,12 +273,14 @@ export function NodesPage() {
                         {joinCmd && (
                           <Alert variant="info" data-testid="join-command">
                             <AlertDescription>
-                              <code className="block break-all font-mono text-xs">{joinCmd}</code>
+                              <code className="block break-all font-mono text-xs select-all bg-background/50 p-2 rounded border border-border/60">
+                                {joinCmd}
+                              </code>
                             </AlertDescription>
                           </Alert>
                         )}
                       </DialogBody>
-                      <DialogFooter>
+                      <DialogFooter className="gap-2">
                         <Button type="button" variant="outline" onClick={() => setJoinOpen(false)}>关闭</Button>
                         <Button type="submit" data-testid="join-generate" disabled={joinBusy}>
                           {joinBusy ? "生成中…" : "生成命令"}
@@ -180,12 +289,24 @@ export function NodesPage() {
                           <Button
                             type="button"
                             data-testid="join-copy"
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
                             onClick={async () => {
                               await navigator.clipboard.writeText(joinCmd);
                               setCopied(true);
+                              setTimeout(() => setCopied(false), 2500);
                             }}
                           >
-                            {copied ? "已复制" : "复制命令"}
+                            {copied ? (
+                              <>
+                                <Check className="size-3.5 text-emerald-500" />
+                                已复制命令
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="size-3.5 opacity-70" />
+                                复制命令
+                              </>
+                            )}
                           </Button>
                         )}
                       </DialogFooter>
@@ -195,9 +316,12 @@ export function NodesPage() {
               )}
               {isAdmin && (
                 <Button
+                  type="button"
+                  variant="outline"
+                  size="compact"
                   data-testid="nodes-reconcile"
                   disabled={reconciling}
-                  type="button"
+                  className="h-8 px-3 text-xs gap-1.5 shrink-0"
                   onClick={() =>
                     reconcile(
                       {
@@ -220,12 +344,78 @@ export function NodesPage() {
                     )
                   }
                 >
+                  <RefreshCw className={cn("size-3.5 shrink-0", reconciling && "animate-spin")} />
                   {reconciling ? "对账中…" : "对账"}
                 </Button>
               )}
             </div>
-          }
-        />
+          </div>
+
+          {/* 指标卡片条 */}
+          {rows.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="nodes-metrics-cards">
+              <Elevated
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-xs font-medium flex items-center gap-1.5">
+                    <CheckCircle2 className="size-3.5 text-emerald-500" /> 在线 Ready
+                  </span>
+                </div>
+                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
+                  {readyCount} <span className="text-xs font-normal text-muted-foreground">台</span>
+                </div>
+              </Elevated>
+
+              <Elevated
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-xs font-medium flex items-center gap-1.5">
+                    <AlertTriangle className="size-3.5 text-amber-500" /> 网络降级
+                  </span>
+                </div>
+                <div className="text-xl font-bold tracking-tight text-amber-500 font-mono mt-1">
+                  {degradedCount} <span className="text-xs font-normal text-muted-foreground">台</span>
+                </div>
+              </Elevated>
+
+              <Elevated
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-xs font-medium flex items-center gap-1.5">
+                    <WifiOff className="size-3.5 text-rose-500" /> 离线节点
+                  </span>
+                </div>
+                <div className="text-xl font-bold tracking-tight text-rose-500 font-mono mt-1">
+                  {offlineCount} <span className="text-xs font-normal text-muted-foreground">台</span>
+                </div>
+              </Elevated>
+
+              <Elevated
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-xs font-medium flex items-center gap-1.5">
+                    <Activity className="size-3.5 text-primary" /> 内存预警
+                  </span>
+                </div>
+                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
+                  {oomRisk} <span className="text-xs font-normal text-muted-foreground">台</span>
+                </div>
+              </Elevated>
+            </div>
+          )}
+        </div>
       }
       footer={
         <Paginator
@@ -239,91 +429,126 @@ export function NodesPage() {
       }
     >
       <PageBody loading={isLoading}>
-        {rows.length > 0 && (
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="nodes-metrics-cards">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Ready 节点</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold">{readyCount}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Degraded</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-[var(--badge-warn-fg)]">{degradedCount}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Offline</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-[var(--badge-danger-fg)]">{offlineCount}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">内存预警</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold">{oomRisk}</CardContent>
-            </Card>
-          </div>
-        )}
         {rows.length === 0 ? (
-          <Empty text="还没有节点心跳。先跑 ha-agent。" />
+          <div className="py-8 flex flex-col items-center justify-center">
+            <Elevated
+              offset={1}
+              shadowLevel={2}
+              className="rounded-2xl border border-border/80 bg-surface-1 p-8 shadow-surface-2 text-center max-w-md w-full flex flex-col items-center gap-3"
+            >
+              <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20 shadow-xs">
+                <Cpu className="size-6" />
+              </div>
+              <div>
+                <h3 className="m-0 text-base font-semibold text-foreground">暂无节点心跳</h3>
+                <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed">
+                  请先在物理机或目标虚拟机上运行 ha-agent，或点击右上角「生成 join token」一键纳管节点。
+                </p>
+              </div>
+            </Elevated>
+          </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>名称</TableHead>
-                <TableHead>arch</TableHead>
-                <TableHead>健康</TableHead>
-                <TableHead>虚 IP</TableHead>
-                <TableHead>CPU</TableHead>
-                <TableHead>内存</TableHead>
-                <TableHead>rtt</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pager.slice.map((n) => (
-                <TableRow
-                  key={n.id}
-                  data-testid="node-row"
-                  className={healthVariant(n) !== "ok" ? "bg-[var(--badge-warn-bg)]" : undefined}
-                >
-                  <TableCell>{n.name}</TableCell>
-                  <TableCell className="mono font-mono">{n.arch}</TableCell>
-                  <TableCell>
-                    <Hint label={`path: ${n.fabric_path || "—"}`}>
-                      <Badge variant={healthVariant(n)} data-testid="node-ready">
-                        {healthLabel(n)}
-                      </Badge>
-                    </Hint>
-                  </TableCell>
-                  <TableCell className="mono font-mono">{n.fabric_ip || "—"}</TableCell>
-                  <TableCell>
-                    {n.cpu_usage_pct != null ? `${n.cpu_usage_pct.toFixed(1)}%` : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex min-w-[8rem] flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">
-                        {fmtBytes(n.used_mem_bytes)} / {fmtBytes(n.allocatable_mem_bytes)}
-                        {n.mem_available_bytes != null && ` · 可用 ${fmtBytes(n.mem_available_bytes)}`}
-                      </span>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-primary transition-all"
-                          style={{ width: `${memUsagePct(n)}%` }}
-                        />
-                      </div>
-                      {isLowMem(n) && (
-                        <Badge variant="danger" className="w-fit text-xs">OOM 风险</Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>{n.fabric_rtt_ms != null ? `${n.fabric_rtt_ms} ms` : "—"}</TableCell>
+          <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
+            <Table className="min-w-[960px]">
+              <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
+                <TableRow className="border-b border-border/60 hover:bg-transparent">
+                  <TableHead className="py-2.5">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <Server className="size-3.5 opacity-60 shrink-0" />
+                      节点主机名
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-[110px] py-2.5">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <Cpu className="size-3.5 opacity-60 shrink-0" />
+                      架构
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-[130px] py-2.5">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <HeartPulse className="size-3.5 opacity-60 shrink-0" />
+                      健康状态
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-[150px] py-2.5">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <Globe className="size-3.5 opacity-60 shrink-0" />
+                      Fabric 虚 IP
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-[110px] py-2.5">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <Gauge className="size-3.5 opacity-60 shrink-0" />
+                      CPU 使用率
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-[240px] py-2.5">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <MemoryStick className="size-3.5 opacity-60 shrink-0" />
+                      内存 / 硬盘
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-[110px] py-2.5 pr-4 text-right">
+                    <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
+                      <Activity className="size-3.5 opacity-60 shrink-0" />
+                      延迟 (RTT)
+                    </span>
+                  </TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {pager.slice.map((n) => (
+                  <TableRow
+                    key={n.id}
+                    data-testid="node-row"
+                    className={healthVariant(n) === "danger" ? "bg-rose-500/5 hover:bg-rose-500/10" : undefined}
+                  >
+                    <TableCell className="py-2.5">
+                      <span className="font-medium text-foreground whitespace-nowrap inline-flex items-center gap-2">
+                        <span className={cn("size-2 rounded-full shrink-0 transition-all", nodeStatusDot(n))} />
+                        <Server className="size-3.5 opacity-50 shrink-0" />
+                        {n.name}
+                      </span>
+                    </TableCell>
+                    <TableCell className="mono font-mono py-2.5 whitespace-nowrap text-xs">{n.arch}</TableCell>
+                    <TableCell className="py-2.5 whitespace-nowrap">
+                      <Hint label={`path: ${n.fabric_path || "direct"}`}>
+                        <Badge variant={healthVariant(n)} data-testid="node-ready">
+                          {healthLabel(n)}
+                        </Badge>
+                      </Hint>
+                    </TableCell>
+                    <TableCell className="mono font-mono py-2.5 whitespace-nowrap text-xs text-muted-foreground">{n.fabric_ip || "—"}</TableCell>
+                    <TableCell className="py-2.5 whitespace-nowrap font-mono text-xs">
+                      {n.cpu_usage_pct != null ? `${n.cpu_usage_pct.toFixed(1)}%` : "—"}
+                    </TableCell>
+                    <TableCell className="py-2.5">
+                      <div className="flex flex-col gap-1.5">
+                        <ResourceMeter
+                          icon={MemoryStick}
+                          meter={hostMemMeter(n)}
+                          warn={isHostPressure(hostMemMeter(n))}
+                          testId="node-mem"
+                        />
+                        <ResourceMeter
+                          icon={HardDrive}
+                          meter={hostDiskMeter(n)}
+                          warn={isHostPressure(hostDiskMeter(n))}
+                          testId="node-disk"
+                        />
+                        {isHostPressure(hostMemMeter(n)) && (
+                          <Badge variant="danger" className="w-fit text-[10px] px-1.5 py-0">OOM 风险</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-2.5 whitespace-nowrap text-right pr-4 font-mono text-xs text-muted-foreground">
+                      {n.fabric_rtt_ms != null ? `${n.fabric_rtt_ms} ms` : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </PageBody>
     </PageFrame>

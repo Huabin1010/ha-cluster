@@ -1,0 +1,61 @@
+---
+description: Depot S3 对象键与公网 URL 整洁性约定
+alwaysApply: true
+---
+
+# Depot S3 链接整洁性
+
+**单一来源**：`packaging/depot_layout.py`。新增/改名制品必须先改此文件，再改 `upload-depot-s3.py` 与安装脚本。
+
+## 根 URL（同 bucket/键，仅 endpoint 不同）
+
+| 场景 | 根 URL |
+|------|--------|
+| 公网 / 生产 join | `https://rustfs.s.ggss.club:50000/typora/ha-cluster` |
+| 局域网 / PVE lab | `http://192.168.1.9:10000/typora/ha-cluster` |
+
+常量见 `packaging/depot_layout.py`（`DEPOT_PUBLIC_URL` / `DEPOT_LAN_URL`）。完整索引：`…/INDEX.md`
+
+## 键布局（禁止扁平堆在根目录）
+
+| 前缀 | 内容 | 命名 |
+|------|------|------|
+| `/install.sh` | 生产 join 引导 | 固定根入口 |
+| `/INDEX.md` | 全量 URL 索引表 | 上传时自动生成 |
+| `/VERSIONS.md` | 冻结版本 | 可选 |
+| `/bundles/<arch>/` | 大压缩包 | `payload.tar.zst` `worker.tar.zst` `incus-offline.tar.zst` |
+| `/bin/<arch>/` | 静态二进制 | `ha-agent` `ha-setup` `ha-bastion` `easytier-core`（无 `-linux-amd64` 后缀） |
+| `/lab/` | PVE 脚本与小配置 | 仅 `.sh` / `.env` / `.service`，**禁止** `.tar.zst` |
+| `/edge/` | 入口/Relay/Bastion 配置 | `easytier/` `bastion/` `ingress/` `agent/` |
+
+`<arch>` 仅 `amd64` | `arm64`。
+
+## 禁止
+
+- ❌ 根目录散落 `ha-payload-linux-amd64.tar.zst`、`pve-lab/incus-*.tar.zst` 等旧路径（可保留 **install.sh 内 fallback** 只读兼容，不再上传）
+- ❌ 脚本目录与大文件混放
+- ❌ 键名带多余前缀（`ha-cluster-ha-cluster-…`）
+- ❌ 凭证进键名或 INDEX
+
+## 安装脚本拉取
+
+```bash
+# 生产 join
+${DEPOT}/bin/${arch}/ha-setup
+${DEPOT}/bundles/${arch}/payload.tar.zst
+
+# PVE lab
+${DEPOT}/lab/install.sh
+${DEPOT}/bundles/${arch}/incus-offline.tar.zst
+${DEPOT}/bin/${arch}/ha-agent
+```
+
+本地 `dist/depot-mirror/` 仅维护者打包自检用，**不在 PVE 上起 HTTP 服务**；实验室 VM 直接 curl 局域网 RustFS。
+
+## 发布
+
+```bash
+python packaging/prepare-depot.py   # 或分步 fetch-deps / pack / upload
+```
+
+上传后检查：`curl -fsSL …/INDEX.md`

@@ -1,20 +1,23 @@
 [
   {
     "vmid": 110,
-    "name": "ha-test-01",
+    "name": "ha-test-jammy",
     "fabric_ip": "10.129.129.205",
-    "lan_ip": "192.168.1.82"
+    "ubuntu": "22.04",
+    "codename": "jammy"
   },
   {
     "vmid": 111,
-    "name": "ha-test-02",
+    "name": "ha-test-noble",
     "fabric_ip": "10.129.129.206",
-    "lan_ip": "192.168.1.80"
+    "ubuntu": "24.04",
+    "codename": "noble"
   },
   {
     "vmid": 112,
-    "name": "ha-test-03",
+    "name": "ha-test-resolute",
     "fabric_ip": "10.129.129.207",
-    "lan_ip": "192.168.1.83"
+    "ubuntu": "26.04",
+    "codename": "resolute"
   }
 ]

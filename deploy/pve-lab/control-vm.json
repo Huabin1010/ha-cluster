@@ -1,0 +1,12 @@
+{
+  "vmid": 113,
+  "name": "ha-control-lab",
+  "series": "24.04",
+  "codename": "noble",
+  "fabric_ip": "10.129.129.1",
+  "image": "ubuntu-24.04-server-cloudimg-amd64.img",
+  "download_url": "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img",
+  "memory_mb": 8192,
+  "cores": 4,
+  "disk_gb": 48
+}

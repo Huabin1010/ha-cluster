@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 
 BASE = os.environ.get("HA_API_BASE", "http://127.0.0.1:8080").rstrip("/")
-ADMIN_PASS = os.environ.get("HA_ADMIN_PASS", "adminadmin")
+ADMIN_PASS = os.environ.get("HA_ADMIN_PASS", "123456qq")
 UA = {"User-Agent": "ha-workflow-test/1.0"}
 PUBKEY = os.environ.get(
     "HA_TEST_SSH_PUBKEY",

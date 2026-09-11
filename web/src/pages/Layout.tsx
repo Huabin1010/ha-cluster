@@ -1,7 +1,8 @@
-import { PropsWithChildren, useEffect, useState } from "react";
+import { PropsWithChildren, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useGetIdentity, useList, useLogout, useMenu } from "@refinedev/core";
 import { useIsFetching } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Box,
   FolderKanban,
@@ -14,18 +15,24 @@ import {
   ScrollText,
   Server,
   Users,
+  Container,
   type LucideIcon,
 } from "lucide-react";
-import { Button } from "../components/ui/button";
-import { Separator } from "../components/ui/separator";
-import { Badge } from "../components/ui/badge";
-import { Spinner } from "../components/ui/spinner";
-import { Hint } from "../components/ui/tooltip";
-import { ThemeToggle } from "../components/theme-toggle";
-import { cn } from "../lib/utils";
-import { writeCurrentProject } from "../lib/current-project";
-import { canApproveDangerousOps, canManageNodes, canViewAudit } from "../lib/permissions";
-import { Combobox } from "../components/ui/combobox";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import { Hint } from "@/components/ui/tooltip";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import { spring } from "@/lib/springs";
+import { writeCurrentProject } from "@/lib/current-project";
+import { canApproveDangerousOps, canManageNodes, canViewAudit, isPlatformAdmin } from "@/lib/permissions";
+import { Combobox } from "@/components/ui/combobox";
+import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hover";
+import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
+import { ProjectSubSidebar } from "@/pages/projects/ProjectSubSidebar";
 
 const ENV_LABEL = import.meta.env.PROD ? "prod" : "dev";
 const SIDEBAR_COLLAPSED_KEY = "ha_sidebar_collapsed";
@@ -39,6 +46,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "ssh-keys": KeyRound,
   "audit-logs": ScrollText,
   "dangerous-approvals": ScrollText,
+  "docker-registries": Container,
 };
 
 const NAV_TESTIDS: Record<string, string> = {
@@ -50,6 +58,7 @@ const NAV_TESTIDS: Record<string, string> = {
   "ssh-keys": "nav-keys",
   "audit-logs": "nav-audit",
   "dangerous-approvals": "nav-dangerous",
+  "docker-registries": "nav-docker-registries",
 };
 
 function readSidebarCollapsed() {
@@ -71,6 +80,62 @@ function useIsMd() {
   return isMd;
 }
 
+interface NavItemProps {
+  item: {
+    key?: string;
+    name: string;
+    route?: string;
+    label?: ReactNode;
+    meta?: Record<string, unknown>;
+  };
+  index: number;
+  registerItem: (index: number, element: HTMLElement | null) => void;
+  rail: boolean;
+  onNavigate?: () => void;
+}
+
+function NavItem({ item, index, registerItem, rail, onNavigate }: NavItemProps) {
+  const ref = useRef<HTMLAnchorElement>(null);
+  useRegisterFluidHoverItem(registerItem, index, ref);
+
+  const Icon = NAV_ICONS[item.name] ?? Box;
+  const testId = (item.meta as { testId?: string } | undefined)?.testId ?? NAV_TESTIDS[item.name];
+  const label = String(item.label ?? "");
+
+  const navLink = (
+    <NavLink
+      ref={ref}
+      data-testid={testId}
+      to={item.route || "/"}
+      onClick={onNavigate}
+      className={({ isActive }) =>
+        cn(
+          "relative z-10 flex items-center rounded-lg text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring select-none",
+          rail
+            ? "size-9 justify-center p-0"
+            : "w-full gap-2.5 px-3 py-2",
+          isActive
+            ? "bg-primary/10 text-primary dark:bg-primary/15 font-semibold"
+            : "text-muted-foreground hover:text-foreground",
+        )
+      }
+    >
+      <Icon className="size-4 shrink-0" aria-hidden />
+      <span className={cn(rail ? "sr-only" : "truncate")}>{label}</span>
+    </NavLink>
+  );
+
+  if (rail) {
+    return (
+      <Hint label={label} side="right">
+        {navLink}
+      </Hint>
+    );
+  }
+
+  return navLink;
+}
+
 export function Layout({ children }: PropsWithChildren) {
   const { mutate } = useLogout();
   const { data: me } = useGetIdentity<{ username?: string; platform_role?: string }>();
@@ -85,12 +150,44 @@ export function Layout({ children }: PropsWithChildren) {
   const isMd = useIsMd();
   const [navOpen, setNavOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readSidebarCollapsed);
-  const rail = collapsed && isMd;
   const showFetchHint = fetching > 0;
   const projects = projectData?.data ?? [];
-  const projectFromPath = location.pathname.match(/^\/projects\/([^/]+)/)?.[1] || "";
+
+  const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
+  const isInProjectContext = !!(
+    projectMatch &&
+    projectMatch[1] &&
+    projectMatch[1] !== "undefined"
+  );
+  const activeProjectId = isInProjectContext ? projectMatch[1] : "";
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeProjectId),
+    [projects, activeProjectId]
+  );
+
   const projectFromQuery = new URLSearchParams(location.search).get("project_id") || "";
-  const currentProject = projectFromPath && projectFromPath !== "undefined" ? projectFromPath : projectFromQuery;
+  const currentProject = activeProjectId || projectFromQuery;
+
+  // 当进入项目二级上下文时，主侧栏在桌面端自动切换为极简 Icon Rail，为二级菜单留出空间
+  const effectiveRail = isMd && (collapsed || isInProjectContext);
+  const rail = effectiveRail;
+
+  const navRef = useRef<HTMLElement>(null);
+  const hover = useFluidHover(navRef, { axis: "y" });
+
+  const filteredMenuItems = useMemo(() => {
+    return menuItems.filter((item) => {
+      if (item.name === "nodes" || item.name === "capacity") return canManageNodes(me?.platform_role);
+      if (item.name === "audit-logs") return canViewAudit(me?.platform_role);
+      if (item.name === "dangerous-approvals") return canApproveDangerousOps(me?.platform_role);
+      if (item.name === "docker-registries") return isPlatformAdmin(me?.platform_role);
+      return true;
+    });
+  }, [menuItems, me?.platform_role]);
+
+  useEffect(() => {
+    hover.remeasure();
+  }, [rail, filteredMenuItems.length]);
 
   function onSwitchProject(id: string) {
     writeCurrentProject(id);
@@ -128,48 +225,63 @@ export function Layout({ children }: PropsWithChildren) {
 
   return (
     <div className={cn("shell flex h-svh overflow-hidden", navOpen && "nav-open")}>
+      <AnimatePresence>
         {navOpen && (
-          <Button
+          <motion.button
+            key="nav-backdrop"
             type="button"
-            variant="ghost"
-            className="nav-backdrop fixed inset-0 z-30 h-auto w-auto rounded-none bg-black/45 hover:bg-black/45 md:hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: spring.fast.exit }}
+            transition={spring.fast}
+            className="nav-backdrop fixed inset-0 z-30 h-auto w-auto rounded-none border-0 bg-black/45 hover:bg-black/45 md:hidden"
             aria-label="关闭菜单"
             onClick={() => setNavOpen(false)}
           />
         )}
+      </AnimatePresence>
 
-        <aside
-          id="app-sidebar"
-          data-collapsed={rail ? "true" : undefined}
-          className={cn(
-            "fixed inset-y-0 left-0 z-40 flex h-svh w-[min(280px,86vw)] flex-col border-r border-border bg-card p-4 transition-[width] duration-200 md:static md:translate-x-0",
-            rail ? "gap-4 md:w-16 md:items-center md:px-0 md:py-3" : "gap-3 md:w-60",
-          )}
-        >
-          <div className={cn("flex w-full items-center gap-2", rail ? "justify-center" : "justify-between")}>
-            <div className={cn("min-w-0 font-bold tracking-wide", rail && "hidden")}>ha-cluster</div>
-            <div className="flex shrink-0 items-center gap-1">
-              <Badge variant="outline" className={cn("hidden uppercase", !rail && "md:inline-flex")} data-testid="env-badge">
-                {ENV_LABEL}
-              </Badge>
-              <Hint label={collapsed ? "展开侧栏" : "收起侧栏"} side="right">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="hidden h-8 w-8 p-0 md:inline-flex"
-                  data-testid="sidebar-collapse"
-                  aria-expanded={!collapsed}
-                  aria-controls="app-sidebar"
-                  aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
-                  onClick={toggleCollapsed}
-                >
-                  {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-                </Button>
-              </Hint>
-            </div>
+      <motion.aside
+        id="app-sidebar"
+        data-collapsed={rail ? "true" : undefined}
+        animate={{
+          width: isMd ? (rail ? 64 : 240) : undefined,
+        }}
+        transition={spring.moderate}
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex h-svh w-[min(280px,86vw)] flex-col border-r border-border bg-surface-1 p-3 md:static md:translate-x-0 select-none",
+          rail ? "gap-4 md:items-center md:px-0 md:py-3" : "gap-3 md:w-60",
+        )}
+      >
+        <div className={cn("flex w-full items-center gap-2", rail ? "justify-center" : "justify-between px-1")}>
+          <div className={cn("min-w-0 font-bold tracking-tight text-foreground flex items-center gap-2", rail && "hidden")}>
+            <span className="inline-block size-2 rounded-full bg-primary" />
+            <span>ha-cluster</span>
           </div>
-          {!rail && projects.length > 0 && (
+          <div className="flex shrink-0 items-center gap-1">
+            <Badge variant="outline" className={cn("hidden uppercase text-[10px] tracking-wider py-0 px-1.5 font-mono", !rail && "md:inline-flex")} data-testid="env-badge">
+              {ENV_LABEL}
+            </Badge>
+            <Hint label={collapsed ? "展开侧栏" : "收起侧栏"} side="right">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="hidden h-7 w-7 p-0 md:inline-flex text-muted-foreground hover:text-foreground"
+                data-testid="sidebar-collapse"
+                aria-expanded={!collapsed}
+                aria-controls="app-sidebar"
+                aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
+                onClick={toggleCollapsed}
+              >
+                {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              </Button>
+            </Hint>
+          </div>
+        </div>
+
+        {!rail && projects.length > 0 && (
+          <div className="px-1">
             <Combobox
               testId="nav-project-switch"
               value={currentProject}
@@ -180,110 +292,116 @@ export function Layout({ children }: PropsWithChildren) {
               aria-label="当前项目"
               options={projects.map((p) => ({ value: p.id, label: p.name }))}
             />
-          )}
+          </div>
+        )}
+
+        <ScrollArea
+          className="flex-1 w-full min-h-0"
+          viewportClassName={cn("px-1", rail && "flex flex-col items-center")}
+        >
           <nav
+            ref={navRef}
             className={cn(
-              "flex min-h-0 w-full flex-1 flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-              rail ? "items-center gap-2.5" : "gap-1.5",
+              "relative flex min-h-0 w-full flex-col gap-1 py-1",
+              rail ? "items-center" : "",
             )}
-            onClick={() => setNavOpen(false)}
+            {...hover.handlers}
           >
-            {menuItems.filter((item) => {
-              if (item.name === "nodes" || item.name === "capacity") return canManageNodes(me?.platform_role);
-              if (item.name === "audit-logs") return canViewAudit(me?.platform_role);
-              if (item.name === "dangerous-approvals") return canApproveDangerousOps(me?.platform_role);
-              return true;
-            }).map((item) => {
-              const Icon = NAV_ICONS[item.name] ?? Box;
-              const testId = (item.meta as { testId?: string } | undefined)?.testId ?? NAV_TESTIDS[item.name];
-              const label = String(item.label ?? "");
-              return (
-                <Hint key={item.key} label={rail ? label : undefined} side="right">
-                  <NavLink
-                    data-testid={testId}
-                    to={item.route || "/"}
-                    className={({ isActive }) =>
-                      cn(
-                        "flex items-center rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
-                        rail
-                          ? "size-9 justify-center p-0"
-                          : "w-full gap-2 px-2 py-2",
-                        isActive && "bg-primary/15 font-medium text-primary",
-                      )
-                    }
-                  >
-                    <Icon className="size-4 shrink-0" aria-hidden />
-                    <span className={cn(rail ? "sr-only" : "truncate")}>{label}</span>
-                  </NavLink>
-                </Hint>
-              );
-            })}
+            <FluidHoverHighlight hover={hover} className="rounded-lg bg-hover" />
+            {filteredMenuItems.map((item, index) => (
+              <NavItem
+                key={item.key}
+                item={item}
+                index={index}
+                registerItem={hover.registerItem}
+                rail={rail}
+                onNavigate={() => setNavOpen(false)}
+              />
+            ))}
           </nav>
-          <Separator className="w-full" />
-          <div className={cn("flex w-full items-center gap-2", rail ? "flex-col justify-center" : "justify-between")}>
-            <span className={cn("truncate text-sm text-muted-foreground", rail && "hidden")} data-testid="current-user">
+        </ScrollArea>
+
+        <Separator className="w-full opacity-60" />
+
+        <div className={cn("flex w-full items-center gap-2 px-1", rail ? "flex-col justify-center" : "justify-between")}>
+          <div className={cn("flex items-center gap-2 min-w-0", rail && "hidden")}>
+            <span className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
+              {(me?.username?.[0] || "U").toUpperCase()}
+            </span>
+            <span className="truncate text-xs font-medium text-muted-foreground" data-testid="current-user">
               {me?.username || "—"}
             </span>
-            <div className={cn("flex items-center", rail ? "flex-col gap-2" : "gap-1")}>
-              <Hint label={rail ? "切换主题" : undefined} side="right">
-                <span className="inline-flex size-8 items-center justify-center">
-                  <ThemeToggle />
-                </span>
-              </Hint>
-              <Hint label={rail ? "退出" : undefined} side="right">
-                <Button
-                  data-testid="logout-button"
-                  type="button"
-                  variant="ghost"
-                  size={rail ? "icon" : "sm"}
-                  className={rail ? "h-8 w-8 p-0" : undefined}
-                  aria-label="退出"
-                  onClick={() => mutate()}
-                >
-                  {rail ? <LogOut className="size-4" /> : "退出"}
-                </Button>
-              </Hint>
-            </div>
           </div>
-        </aside>
-
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="topbar flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2 md:hidden">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              data-testid="nav-toggle"
-              aria-expanded={navOpen}
-              aria-controls="app-sidebar"
-              onClick={() => setNavOpen((v) => !v)}
-            >
-              <Menu className="h-4 w-4" />
-              菜单
-            </Button>
-            <span className="flex-1 font-semibold">ha-cluster</span>
-            <ThemeToggle />
-            <Hint label="运行环境">
-              <span className="inline-flex">
-                <Badge variant="outline" className="uppercase" data-testid="env-badge">
-                  {ENV_LABEL}
-                </Badge>
+          <div className={cn("flex items-center", rail ? "flex-col gap-2" : "gap-1")}>
+            <Hint label={rail ? "切换主题" : undefined} side="right">
+              <span className="inline-flex size-7 items-center justify-center">
+                <ThemeToggle />
               </span>
             </Hint>
-          </header>
-
-          <main className="main-pane relative flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
-            {showFetchHint && (
-              <div className="fetch-hint mb-2 flex shrink-0 justify-end" aria-live="polite">
-                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <Spinner />
-                  加载中…
-                </span>
-              </div>
-            )}
-            {children}
-          </main>
+            <Hint label={rail ? "退出" : undefined} side="right">
+              <Button
+                data-testid="logout-button"
+                type="button"
+                variant="ghost"
+                size={rail ? "icon" : "sm"}
+                className={rail ? "h-7 w-7 p-0 text-muted-foreground hover:text-foreground" : "h-7 px-2 text-xs text-muted-foreground hover:text-foreground"}
+                aria-label="退出"
+                onClick={() => mutate()}
+              >
+                {rail ? <LogOut className="size-3.5" /> : "退出"}
+              </Button>
+            </Hint>
+          </div>
         </div>
+      </motion.aside>
+
+      {/* 桌面端项目二级菜单栏 */}
+      {isMd && isInProjectContext && (
+        <ProjectSubSidebar
+          key={activeProjectId}
+          projectId={activeProjectId}
+          projectName={activeProject?.name}
+          projectSlug={activeProject?.slug}
+        />
+      )}
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="topbar flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2 md:hidden">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-testid="nav-toggle"
+            aria-expanded={navOpen}
+            aria-controls="app-sidebar"
+            onClick={() => setNavOpen((v) => !v)}
+          >
+            <Menu className="h-4 w-4" />
+            菜单
+          </Button>
+          <span className="flex-1 font-semibold">ha-cluster</span>
+          <ThemeToggle />
+          <Hint label="运行环境">
+            <span className="inline-flex">
+              <Badge variant="outline" className="uppercase" data-testid="env-badge">
+                {ENV_LABEL}
+              </Badge>
+            </span>
+          </Hint>
+        </header>
+
+        <main className="main-pane relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-4 md:p-6">
+          {showFetchHint && (
+            <div className="fetch-hint mb-2 flex shrink-0 justify-end" aria-live="polite">
+              <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <Spinner />
+                加载中…
+              </span>
+            </div>
+          )}
+          {children}
+        </main>
       </div>
+    </div>
   );
 }

@@ -1,0 +1,50 @@
+---
+description: UI 可读性：对比度、危险操作辨识、浮层不被遮罩压住；浅色/暗色都要能看清
+globs: web/**
+alwaysApply: true
+---
+
+# UI 可读性
+
+设计或改界面时，先问：用户在暗色和浅色下，能否一眼看清文字、选项和主操作？看不清就不算做完。
+
+## 文字与选项必须够对比
+
+- 下拉、菜单、列表选项的**正文**用 `text-foreground`，不要用 `text-muted-foreground` 当主文案。muted 只给占位符、辅助说明、未选中的次要图标。
+- 选中态不能只靠一层几乎看不见的 `bg-active`（暗色下约 10% 白）。用 `bg-selected`，或明确的前景色 + 勾选标记。
+- 禁止把选项做成「深灰底 + 浅灰字」。若觉得层次不够，加背景差，不要把字再调暗。
+
+```tsx
+// ❌ 选项正文发灰，弹窗里几乎看不清
+className={isChecked ? "text-foreground" : "text-muted-foreground"}
+
+// ✅ 选项正文始终可读
+className="text-foreground"
+```
+
+## 危险操作必须红底白字
+
+删除、销毁、移除、终审销毁等确认按钮用 `variant="destructive"`（红底白字）。不要做成和「取消」差不多的描边/幽灵按钮。
+
+```tsx
+// ❌ 确认删除看起来像普通文字按钮
+<AlertDialogAction>删除</AlertDialogAction>
+
+// ✅
+<AlertDialogAction variant="destructive">删除</AlertDialogAction>
+```
+
+`Button` 的 destructive 走 `--danger` + `text-white`。不要只加 `text-destructive` 而不铺底色。
+
+## 浮层必须压过弹窗遮罩
+
+Dialog / AlertDialog 遮罩是 `z-50` 且暗色下 `bg-black/80`。Select、Combobox、Dropdown、Popover 若同级或更低，选项会被罩住，看起来像「灰掉、看不清」。
+
+- 弹出层用 `@/lib/popup` 的 `popupLayerClass` / `popupLayerZ`（200），并写在 **Radix 定位节点**上（必要时 `style={{ zIndex: popupLayerZ }}`），因为 wrapper 的 `z-index: auto` 会被 overlay 压住。
+- 改完后在 **Dialog 里打开 Select**，确认选项清晰、可点。
+
+## 验收
+
+- 浅色、暗色各看一遍：正文、下拉项、主按钮、危险按钮。
+- 弹窗内的下拉不被半透明黑罩挡住。
+- 截图里如果要圈出「看不清」，说明对比度或层级还没过。

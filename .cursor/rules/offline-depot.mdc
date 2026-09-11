@@ -1,0 +1,71 @@
+---
+description: 系统组件须离线打包并发布到 RustFS Depot（S3）
+alwaysApply: true
+---
+
+# 离线包与 Depot 发布
+
+**目标机 / PVE 测试 VM 安装时禁止直拉外网**（GitHub、`apt`、`images:` 等）。维护者在开发机一次性下载、打包、压缩，上传到 Depot；安装脚本只从 Depot（或 LAN 镜像）拉取。
+
+## Depot（RustFS S3）
+
+| 项 | 值 |
+|----|-----|
+| Bucket | `typora` |
+| 前缀 | `ha-cluster/`（脚本 `lab/`、索引 `INDEX.md`） |
+| 公网 Endpoint | `https://rustfs.s.ggss.club:50000` |
+| 局域网 Endpoint | `http://192.168.1.9:10000`（与公网同 bucket/键） |
+| 公网根 URL | `https://rustfs.s.ggss.club:50000/typora/ha-cluster` |
+| 局域网根 URL（lab） | `http://192.168.1.9:10000/typora/ha-cluster` |
+
+**PVE 宿主机（`192.168.1.8`）只跑 VM**，禁止在其上部署 Depot 镜像、`python -m http.server` 等临时 staging。
+
+账号密码 **只写** `docs/credentials.local.md`；禁止进 Git / README / 规则正文。
+
+## S3 键布局（整洁，单一来源 `packaging/depot_layout.py`，细则 `depot-s3-layout.mdc`）
+
+```
+ha-cluster/
+  install.sh
+  VERSIONS.md
+  bundles/amd64/payload.tar.zst | worker.tar.zst | incus-offline.tar.zst
+  bundles/arm64/…
+  bin/amd64/ha-agent | ha-setup | easytier-core
+  bin/arm64/…
+  lab/install.sh | worker-install.sh | incus-offline.sh | …   # 仅脚本，不含大文件
+```
+
+示例：`…/lab/install.sh`、`…/bundles/amd64/incus-offline.tar.zst`、`…/bin/amd64/ha-agent`
+
+## 须进离线包的系统组件
+
+| 组件 | 缓存 / 打包 | S3 路径 |
+|------|-------------|---------|
+| EasyTier | `packaging/cache/{arch}/easytier/` | `bin/<arch>/easytier-core` |
+| k3s airgap | `packaging/cache/` | `bundles/<arch>/payload.tar.zst` |
+| Incus（22.04） | `fetch-incus.sh` + rootfs | `bundles/<arch>/incus-offline.tar.zst` |
+| Worker 全量 | `build-worker-bundle.sh` | `bundles/<arch>/worker.tar.zst` |
+| ha-agent / ha-setup | `go build` + `pack.sh` | `bin/<arch>/ha-agent`、`ha-setup` |
+| PVE 实验室脚本 | `deploy/pve-lab/pack.py` | `lab/*` |
+
+新增依赖：**先** `packaging/fetch-deps.sh` 或等价脚本落 `packaging/cache/`，**再**写入 manifest + `SHA256SUMS`，**禁止**只在目标机 `apt install` / `curl` 公网。
+
+## 维护者发布
+
+```bash
+bash packaging/fetch-deps.sh all
+bash packaging/pack.sh amd64 && bash packaging/pack.sh arm64
+# 凭据见 docs/credentials.local.md
+python packaging/upload-depot-s3.py
+
+# PVE 实验室分包
+python deploy/pve-lab/pack.py && python deploy/pve-lab/upload.py
+```
+
+环境变量：`HA_DEPOT_S3_ENDPOINT`、`HA_DEPOT_S3_BUCKET`、`HA_DEPOT_S3_ACCESS_KEY`、`HA_DEPOT_S3_SECRET_KEY`；前缀默认 `ha-cluster`。
+
+## 安装侧约束
+
+- `install.sh` / `worker-install.sh` / `install-incus.sh` 等：**默认 `curl` Depot**；实验室在 `lab.env` 设 `DEPOT_PUBLIC` 为局域网 RustFS（`192.168.1.9:10000`），生产 join 用公网 URL。
+- Ubuntu 22.04 无原生 `incus` 时，bundle 内须含 Zabbly `.deb` 或预导镜像，**不要**在 VM 上临时加外网 apt 源。
+- 改打包或安装脚本时保持：**瘦引导脚本 + 大 payload 分离**（见 `node-install-depot.mdc`）。

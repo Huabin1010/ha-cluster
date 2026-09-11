@@ -12,16 +12,16 @@
 | Ubuntu cloud rootfs | 24.04 (noble) `ubuntu-24.04-server-cloudimg-<arch>-root.tar.xz` |
 | Incus alias hint | `ubuntu/24.04` / `images:ubuntu/24.04/cloud` |
 | host debs | uidmap for suites: jammy resolute (`jammy`=22.04, `resolute`=26.04) |
-| ha-agent / ha-setup | git commit `uncommitted` |
+| ha-agent / ha-setup | git commit `3a2dfcead8f42c8d411246601f652062a37d0816` |
 
 ## Where the packages live
 
 | Item | Path |
 |------|------|
-| Host | `huanghuabin-MS-7E61` (dev-pc) |
-| Payload trees | `/home/huanghuabin/Projects/ha-cluster/dist/payload-linux-{amd64,arm64}/` |
-| zstd archives | `/home/huanghuabin/Projects/ha-cluster/dist/ha-payload-linux-{amd64,arm64}.tar.zst` |
-| Upstream cache | `/home/huanghuabin/Projects/ha-cluster/packaging/cache/{amd64,arm64}/` |
+| Host | `DESKTOP-RFHF2JD` (dev-pc) |
+| Payload trees | `/mnt/d/Projects/ha-cluster/dist/payload-linux-{amd64,arm64}/` |
+| zstd archives | `/mnt/d/Projects/ha-cluster/dist/ha-payload-linux-{amd64,arm64}.tar.zst` |
+| Upstream cache | `/mnt/d/Projects/ha-cluster/packaging/cache/{amd64,arm64}/` |
 | Depot | `http://127.0.0.1:9090/` via `bash packaging/depot.sh` |
 
 `dist/` is gitignored — copy from this machine or rebuild with the commands below.
@@ -30,8 +30,8 @@
 
 | Arch | `dist/payload-linux-*` | `ha-payload-linux-*.tar.zst` |
 |------|---------------------------|--------------------------------|
-| amd64 | 503M | 490M |
-| arm64 | 465M | 452M |
+| amd64 | 507M | 491M |
+| arm64 | 468M | (not built) |
 
 Arm64 target: **≤ 800 MiB** for the `.tar.zst` archive. If exceeded, primary cause is k3s airgap + Ubuntu cloud rootfs (already xz/zst compressed; re-packing barely shrinks them).
 

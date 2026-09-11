@@ -1,0 +1,29 @@
+{
+  "jammy": {
+    "series": "22.04",
+    "codename": "jammy",
+    "vmid": 110,
+    "name": "ha-test-jammy",
+    "fabric_ip": "10.129.129.205",
+    "image": "ubuntu-22.04-server-cloudimg-amd64.img",
+    "download_url": "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+  },
+  "noble": {
+    "series": "24.04",
+    "codename": "noble",
+    "vmid": 111,
+    "name": "ha-test-noble",
+    "fabric_ip": "10.129.129.206",
+    "image": "ubuntu-24.04-server-cloudimg-amd64.img",
+    "download_url": "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+  },
+  "resolute": {
+    "series": "26.04",
+    "codename": "resolute",
+    "vmid": 112,
+    "name": "ha-test-resolute",
+    "fabric_ip": "10.129.129.207",
+    "image": "ubuntu-26.04-server-cloudimg-amd64.img",
+    "download_url": "https://cloud-images.ubuntu.com/releases/26.04/release/ubuntu-26.04-server-cloudimg-amd64.img"
+  }
+}

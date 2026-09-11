@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Field } from "../../components/ui/field";
-import { Alert, AlertDescription } from "../../components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -11,7 +11,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
+} from "@/components/ui/dialog";
 import { isValidSlug, suggestSlugFromName } from "./types";
 
 type Props = {
@@ -72,7 +72,7 @@ export function ProjectFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent size="lg" className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{create ? "创建项目" : "编辑项目"}</DialogTitle>
           <DialogDescription>

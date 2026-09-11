@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatPlanSpec, statusLabel, canApproveRole } from "./types";
+import {
+  formatPlanSpec,
+  statusLabel,
+  canApproveRole,
+  workspaceStatusVariant,
+  workspaceStatusDotClass,
+} from "./types";
 import { formatUsageHint } from "./format";
 
 describe("formatPlanSpec", () => {
@@ -32,6 +38,23 @@ describe("workspace statusLabel", () => {
 
   it("falls back to raw status", () => {
     expect(statusLabel("custom")).toBe("custom");
+  });
+
+  it("maps status to semantic badge variant correctly", () => {
+    expect(workspaceStatusVariant("running")).toBe("ok");
+    expect(workspaceStatusVariant("requested")).toBe("warn");
+    expect(workspaceStatusVariant("fabric_degraded")).toBe("warn");
+    expect(workspaceStatusVariant("failed")).toBe("danger");
+    expect(workspaceStatusVariant("rejected")).toBe("danger");
+    expect(workspaceStatusVariant("stopped")).toBe("outline");
+  });
+
+  it("maps status to status dot class correctly and prevents green on failure", () => {
+    expect(workspaceStatusDotClass("running")).toContain("bg-emerald-500");
+    expect(workspaceStatusDotClass("failed")).toContain("bg-rose-500");
+    expect(workspaceStatusDotClass("failed")).not.toContain("bg-emerald-500");
+    expect(workspaceStatusDotClass("requested")).toContain("bg-amber-500");
+    expect(workspaceStatusDotClass("stopped")).toContain("bg-muted-foreground");
   });
 });
 

@@ -9,7 +9,7 @@ import urllib.request
 
 BASE = os.environ.get("HA_API_BASE", "http://127.0.0.1:8080").rstrip("/")
 ADMIN_USER = os.environ.get("HA_ADMIN_USER", "admin")
-ADMIN_PASS = os.environ.get("HA_ADMIN_PASS", "adminadmin")
+ADMIN_PASS = os.environ.get("HA_ADMIN_PASS", "123456qq")
 NODE_TOKEN = os.environ.get("HA_NODE_TOKEN", "ha-test-node-token-2026")
 EXPECT_NODES = [n.strip() for n in os.environ.get("HA_EXPECT_NODES", "ha-test-01,ha-test-02,ha-test-03").split(",") if n.strip()]
 
@@ -123,12 +123,20 @@ def main() -> int:
         "POST",
         f"/projects/{pid}/workspaces",
         token=token,
-        body={"name": "ws1", "plan": "nano", "arch": "amd64"},
+        body={"name": "ws1", "plan": "small", "arch": "amd64"},
     )
     check("create workspace", code == 201, str(ws)[:200])
     ws_id = ws.get("id", "")
 
     if ws_id:
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            code, cur = api("GET", f"/workspaces/{ws_id}", token=token)
+            if code == 200 and cur.get("status") in ("running", "failed"):
+                ws = cur
+                break
+            time.sleep(3)
+        check("workspace provisioned", ws.get("status") == "running", str(ws.get("status")))
         code, _ = api("GET", f"/workspaces/{ws_id}", token=token)
         check("get workspace", code == 200)
         code, _ = api("POST", f"/workspaces/{ws_id}/stop", token=token)

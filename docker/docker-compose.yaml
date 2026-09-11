@@ -10,11 +10,12 @@ services:
     environment:
       - HA_API_ADDR=:8080
       - HA_JWT_SECRET=${HA_JWT_SECRET}
-      - HA_ADMIN_PASSWORD=${HA_ADMIN_PASSWORD:-adminadmin}
+      - HA_ADMIN_PASSWORD=${HA_ADMIN_PASSWORD:-123456qq}
       - HA_SEED=${HA_SEED:-1}
       - DATABASE_URL=${DATABASE_URL:-}
       - HA_NODE_TOKEN=${HA_NODE_TOKEN:-}
       - HA_INTERNAL_TOKEN=${HA_INTERNAL_TOKEN:-}
+      - HA_BASTION_HOST=${HA_BASTION_HOST:-bastion.mnnumath.vip}
       - HA_BASTION_PORT=${HA_BASTION_PORT:-2222}
       - HA_RUNTIME=${HA_RUNTIME:-memory}
     ports:

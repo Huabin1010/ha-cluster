@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "./button";
 import { SelectBox } from "./select";
-import { cn } from "../../lib/utils";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZES = [10, 20, 50];
 

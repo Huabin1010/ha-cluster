@@ -1,10 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api, friendlyError } from "../../providers";
+import { api, friendlyError } from "@/providers";
 import { formatPlanSpec, GiB, hasPendingResize, Workspace, workspaceSpec } from "./types";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Field } from "../../components/ui/field";
-import { Alert, AlertDescription } from "../../components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../components/ui/dialog";
+} from "@/components/ui/dialog";
 
 type Props = {
   ws: Workspace;
@@ -76,19 +76,19 @@ export function ResizeDialog({ ws, disabled, onSubmitted, onError }: Props) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" data-testid="ws-resize" disabled={disabled}>
+        <Button type="button" variant="ghost" size="compact" data-testid="ws-resize" disabled={disabled} className="h-7 text-xs px-2">
           申请扩容
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent size="lg" className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>申请扩容</DialogTitle>
+          <DialogTitle>申请服务器扩容</DialogTitle>
           <DialogDescription>
-            当前规格 {formatPlanSpec(spec)}。只支持上调；不提供硬盘缩容，磁盘不能小于当前值。提交后由管理员审批。
+            当前规格: {formatPlanSpec(spec)}。只支持上调；不提供磁盘缩容，磁盘不能小于当前值。提交后需管理员审批。
           </DialogDescription>
         </DialogHeader>
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
-          <DialogBody className="grid gap-4">
+          <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
             <Field label="CPU（核）">
               <Input data-testid="ws-resize-cpu" inputMode="decimal" value={cpuCores} onChange={(e) => setCpuCores(e.target.value)} />
             </Field>

@@ -83,7 +83,7 @@ Vite dev server (:5173)  ──proxy /api/* → /*──►  ha-api (:8080, memo
 
 | 组件 | 命令 | 端口 | 说明 |
 |------|------|------|------|
-| API | `HA_RUNTIME=memory go run ./cmd/ha-api` | 8080 | 默认种子：`admin` / `adminadmin`（`platform_admin`）+ 节点 `dev-pc`、`phone1` |
+| API | `HA_RUNTIME=memory go run ./cmd/ha-api` | 8080 | 默认种子：`admin` / `123456qq`（`platform_admin`）+ 节点 `dev-pc`、`phone1` |
 | Web | `cd web && npm run dev` | 5173 | `/api` 反代见 `web/vite.config.ts`（rewrite 去掉 `/api`） |
 | E2E | `cd web && npm run test:e2e` | — | `webServer` 自动拉起上述两者（已在跑则复用） |
 
@@ -111,7 +111,7 @@ Vite dev server (:5173)  ──proxy /api/* → /*──►  ha-api (:8080, memo
 
 | 用户名 | 密码 | 角色 | 谁创建 |
 |--------|------|------|--------|
-| `admin` | `adminadmin` | platform_admin | API 默认种子 |
+| `admin` | `123456qq` | platform_admin | API 默认种子 |
 | `qa_owner` | `password1` | 普通用户 → 各测试项目 owner | `e2e/global-setup.ts`（409 视为已存在） |
 | `qa_dev` | `password1` | developer 成员 | 同上 |
 | `qa_viewer` | `password1` | viewer 成员 | 同上 |
@@ -385,7 +385,7 @@ page.once("dialog", (d) => d.accept());
 
 > **独占目录：** `e2e/pw1-auth-shell/`  
 > **对应：** U1、[Q1-auth.md](../qa/Q1-auth.md) Q1-11 及会话相关  
-> **注意：** DEV 构建登录表单**预填** `admin/adminadmin`，错密用例先清空。
+> **注意：** DEV 构建登录表单**预填** `admin/123456qq`，错密用例先清空。
 
 ## PW-1 用例清单
 

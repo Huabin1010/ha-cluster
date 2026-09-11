@@ -1,8 +1,12 @@
 package workspace
 
 import (
+	"archive/tar"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -26,16 +30,6 @@ func allocateHostPort(minPort, maxPort int) (int, error) {
 	}
 	return 0, fmt.Errorf("no free host port in range %d-%d", minPort, maxPort)
 }
-
-const dockerCloudInit = `#cloud-config
-package_update: true
-packages:
-  - docker.io
-  - rsync
-runcmd:
-  - [ bash, -lc, "systemctl enable --now docker || true" ]
-  - [ bash, -lc, "usermod -aG docker root || true" ]
-`
 
 // IncusRuntime shells out to the incus CLI on this machine.
 type IncusRuntime struct {
@@ -75,6 +69,7 @@ func (r *IncusRuntime) cmd(ctx context.Context, args ...string) *exec.Cmd {
 }
 
 func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node models.Node, sshKeys []string) (Instance, error) {
+	lc := LaunchContextFrom(ctx, sshKeys)
 	spec := w.Spec()
 	name := instName(w.ID)
 	mem := fmt.Sprintf("%dMiB", spec.MemBytes/(1024*1024))
@@ -85,19 +80,35 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 	args := []string{"launch", r.Image, name,
 		"--config", "limits.memory=" + mem,
 		"--config", "limits.cpu=" + cpu,
+		"--config", "limits.processes=512",
 		"--config", "security.nesting=true",
-		"--config", "cloud-init.user-data=" + dockerCloudInit,
+	}
+	out, err := r.cmd(ctx, args...).CombinedOutput()
+	if err != nil {
+		return Instance{}, fmt.Errorf("incus launch: %w: %s", err, out)
+	}
+	if err := r.waitContainerExecReady(ctx, name); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, err
+	}
+	if err := r.ensureContainerNetwork(ctx, name); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, err
+	}
+	if err := r.waitContainerIPv4(ctx, name); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, fmt.Errorf("container network: %w", err)
 	}
 	if spec.DiskBytes > 0 {
 		gi := spec.DiskBytes / (1024 * 1024 * 1024)
 		if gi < 1 {
 			gi = 1
 		}
-		args = append(args, "-d", fmt.Sprintf("root,size=%dGiB", gi))
-	}
-	out, err := r.cmd(ctx, args...).CombinedOutput()
-	if err != nil {
-		return Instance{}, fmt.Errorf("incus launch: %w: %s", err, out)
+		size := fmt.Sprintf("%dGiB", gi)
+		if out, err := r.cmd(ctx, "config", "device", "override", name, "root", "size="+size).CombinedOutput(); err != nil {
+			_ = r.Destroy(context.Background(), w.ID)
+			return Instance{}, fmt.Errorf("incus root resize: %w: %s", err, out)
+		}
 	}
 
 	hostPort, err := allocateHostPort(22001, 23999)
@@ -114,7 +125,12 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 		return Instance{}, fmt.Errorf("incus proxy device add: %w: %s", err, out)
 	}
 
-	if len(sshKeys) > 0 {
+	if out, err := r.cmd(ctx, "exec", name, "--", "mkdir", "-p", "/var/lib/ha-workspace").CombinedOutput(); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, fmt.Errorf("workspace dir: %w: %s", err, out)
+	}
+
+	if len(lc.SSHKeys) > 0 {
 		var injectErr error
 		for attempt := 0; attempt < 3; attempt++ {
 			if attempt > 0 {
@@ -125,7 +141,7 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 				case <-time.After(500 * time.Millisecond):
 				}
 			}
-			injectErr = r.injectKeys(ctx, name, sshKeys)
+			injectErr = r.injectKeys(ctx, name, lc.SSHKeys)
 			if injectErr == nil {
 				break
 			}
@@ -133,6 +149,20 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 		if injectErr != nil {
 			_ = r.Destroy(context.Background(), w.ID)
 			return Instance{}, fmt.Errorf("inject keys failed: %w", injectErr)
+		}
+	}
+	if err := r.ensureSSH(ctx, name); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, fmt.Errorf("workspace ssh: %w", err)
+	}
+	if err := r.installWorkspaceDocker(ctx, name); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, fmt.Errorf("install workspace docker: %w", err)
+	}
+	if len(lc.DockerRegistries) > 0 {
+		if err := r.injectDockerRegistries(ctx, name, lc.DockerRegistries); err != nil {
+			_ = r.Destroy(context.Background(), w.ID)
+			return Instance{}, fmt.Errorf("inject docker registries failed: %w", err)
 		}
 	}
 	return Instance{
@@ -167,6 +197,220 @@ func (r *IncusRuntime) injectKeys(ctx context.Context, name string, keys []strin
 	return nil
 }
 
+func dockerConfigJSON(regs []models.DockerRegistryCred) ([]byte, error) {
+	auths := map[string]map[string]string{}
+	for _, reg := range regs {
+		if reg.Server == "" {
+			continue
+		}
+		auth := base64.StdEncoding.EncodeToString([]byte(reg.Username + ":" + reg.Password))
+		auths["https://"+reg.Server] = map[string]string{"auth": auth}
+		auths[reg.Server] = map[string]string{"auth": auth}
+	}
+	return json.Marshal(map[string]any{"auths": auths})
+}
+
+func packWorkspaceDebsTar(debsDir string, debs []string) (string, error) {
+	f, err := os.CreateTemp("", "ha-docker-debs-*.tar")
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	tw := tar.NewWriter(f)
+	for _, deb := range debs {
+		src := filepath.Join(debsDir, deb)
+		info, err := os.Stat(src)
+		if err != nil {
+			_ = tw.Close()
+			_ = f.Close()
+			_ = os.Remove(path)
+			return "", err
+		}
+		hdr, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			_ = tw.Close()
+			_ = f.Close()
+			_ = os.Remove(path)
+			return "", err
+		}
+		hdr.Name = deb
+		if err := tw.WriteHeader(hdr); err != nil {
+			_ = tw.Close()
+			_ = f.Close()
+			_ = os.Remove(path)
+			return "", err
+		}
+		r, err := os.Open(src)
+		if err != nil {
+			_ = tw.Close()
+			_ = f.Close()
+			_ = os.Remove(path)
+			return "", err
+		}
+		if _, err := io.Copy(tw, r); err != nil {
+			_ = r.Close()
+			_ = tw.Close()
+			_ = f.Close()
+			_ = os.Remove(path)
+			return "", err
+		}
+		_ = r.Close()
+	}
+	if err := tw.Close(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	return path, nil
+}
+
+func (r *IncusRuntime) waitContainerExecReady(ctx context.Context, name string) error {
+	for attempt := 0; attempt < 60; attempt++ {
+		if _, err := r.cmd(ctx, "exec", name, "--", "true").CombinedOutput(); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return fmt.Errorf("container %s not exec-ready", name)
+}
+
+// ensureContainerNetwork 为 cloud rootfs 导入的镜像补 eth0 DHCP（cloud-init 在 bake 后常为 disabled）。
+func (r *IncusRuntime) ensureContainerNetwork(ctx context.Context, name string) error {
+	script := `set -e
+mkdir -p /etc/systemd/network
+cat >/etc/systemd/network/10-eth0.network <<'EOF'
+[Match]
+Name=eth0
+
+[Network]
+DHCP=ipv4
+EOF
+systemctl restart systemd-networkd 2>/dev/null || true
+`
+	out, err := r.cmd(ctx, "exec", name, "--", "bash", "-lc", script).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("configure eth0 dhcp: %w: %s", err, out)
+	}
+	return nil
+}
+
+// waitContainerIPv4 等 eth0 DHCP。不在这里 ping 外网：docker 尚未启动时 NAT 偶发未就绪，
+// 硬等 90s ping 会把每次 Launch 拖死。
+func (r *IncusRuntime) waitContainerIPv4(ctx context.Context, name string) error {
+	check := "ip -4 addr show eth0 2>/dev/null | grep -q 'inet '"
+	for attempt := 0; attempt < 25; attempt++ {
+		if _, err := r.cmd(ctx, "exec", name, "--", "bash", "-lc", check).CombinedOutput(); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	out, _ := r.cmd(ctx, "exec", name, "--", "ip", "-4", "addr", "show").CombinedOutput()
+	return fmt.Errorf("eth0 has no IPv4 after 25s: %s", strings.TrimSpace(string(out)))
+}
+
+func workspaceDebsDir() string {
+	if d := strings.TrimSpace(os.Getenv("HA_WORKSPACE_DEBS_DIR")); d != "" {
+		return d
+	}
+	return "/var/lib/ha-cluster/workspace-debs"
+}
+
+func (r *IncusRuntime) installWorkspaceDocker(ctx context.Context, name string) error {
+	if _, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "--version").CombinedOutput(); err == nil {
+		_ = r.cmd(ctx, "exec", name, "--", "systemctl", "unmask", "docker").Run()
+		_ = r.cmd(ctx, "exec", name, "--", "systemctl", "enable", "--now", "docker").Run()
+		_ = r.cmd(ctx, "exec", name, "--", "service", "docker", "start").Run()
+		if _, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "info").CombinedOutput(); err != nil {
+			time.Sleep(2 * time.Second)
+		}
+		return nil
+	}
+
+	debsDir := workspaceDebsDir()
+	entries, err := os.ReadDir(debsDir)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf("docker missing in image and no offline debs under %s (re-run install-incus from Depot)", debsDir)
+	}
+	var debs []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".deb") {
+			continue
+		}
+		debs = append(debs, e.Name())
+	}
+	if len(debs) == 0 {
+		return fmt.Errorf("no .deb files in %s", debsDir)
+	}
+
+	if err := r.waitContainerExecReady(ctx, name); err != nil {
+		return err
+	}
+
+	tarPath, err := packWorkspaceDebsTar(debsDir, debs)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tarPath)
+
+	if out, err := r.cmd(ctx, "exec", name, "--", "mkdir", "-p", "/tmp/ha-docker-debs").CombinedOutput(); err != nil {
+		return fmt.Errorf("mkdir debs in container: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "file", "push", tarPath, name+"/tmp/ha-docker-debs.tar").CombinedOutput(); err != nil {
+		return fmt.Errorf("push debs tar: %w: %s", err, out)
+	}
+	script := "export DEBIAN_FRONTEND=noninteractive; " +
+		"tar -xf /tmp/ha-docker-debs.tar -C /tmp/ha-docker-debs; " +
+		"dpkg -i /tmp/ha-docker-debs/*.deb 2>/dev/null || true; " +
+		"apt-get -f install -y -qq -o Dir::Cache::archives=/tmp/ha-docker-debs; " +
+		"rm -f /tmp/ha-docker-debs.tar; " +
+		"systemctl enable --now docker || service docker start || true"
+	if out, err := r.cmd(ctx, "exec", name, "--env", "DEBIAN_FRONTEND=noninteractive", "--", "bash", "-lc", script).CombinedOutput(); err != nil {
+		return fmt.Errorf("dpkg docker: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "--version").CombinedOutput(); err != nil {
+		return fmt.Errorf("docker not available after offline install: %w: %s", err, out)
+	}
+	return nil
+}
+
+func (r *IncusRuntime) injectDockerRegistries(ctx context.Context, name string, regs []models.DockerRegistryCred) error {
+	raw, err := dockerConfigJSON(regs)
+	if err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp("", "ha-docker-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	cfg := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfg, raw, 0600); err != nil {
+		return err
+	}
+	if out, err := r.cmd(ctx, "exec", name, "--", "mkdir", "-p", "/root/.docker").CombinedOutput(); err != nil {
+		return fmt.Errorf("mkdir .docker: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "file", "push", cfg, name+"/root/.docker/config.json").CombinedOutput(); err != nil {
+		return fmt.Errorf("push docker config: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "exec", name, "--", "chmod", "600", "/root/.docker/config.json").CombinedOutput(); err != nil {
+		return fmt.Errorf("chmod docker config: %w: %s", err, out)
+	}
+	return nil
+}
+
 func (r *IncusRuntime) Stop(ctx context.Context, id uuid.UUID) error {
 	out, err := r.cmd(ctx, "stop", instName(id), "--force").CombinedOutput()
 	if err != nil {
@@ -176,9 +420,29 @@ func (r *IncusRuntime) Stop(ctx context.Context, id uuid.UUID) error {
 }
 
 func (r *IncusRuntime) Start(ctx context.Context, id uuid.UUID) error {
-	out, err := r.cmd(ctx, "start", instName(id)).CombinedOutput()
+	name := instName(id)
+	out, err := r.cmd(ctx, "start", name).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("incus start: %w: %s", err, out)
+	}
+	if err := r.waitContainerExecReady(ctx, name); err != nil {
+		return err
+	}
+	if err := r.ensureSSH(ctx, name); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *IncusRuntime) ensureSSH(ctx context.Context, name string) error {
+	if out, err := r.cmd(ctx, "exec", name, "--", "ssh-keygen", "-A").CombinedOutput(); err != nil {
+		return fmt.Errorf("ssh-keygen -A: %w: %s", err, out)
+	}
+	_ = r.cmd(ctx, "exec", name, "--", "systemctl", "reset-failed", "ssh.service", "ssh.socket").Run()
+	if out, err := r.cmd(ctx, "exec", name, "--", "systemctl", "enable", "--now", "ssh").CombinedOutput(); err != nil {
+		if out2, err2 := r.cmd(ctx, "exec", name, "--", "systemctl", "enable", "--now", "sshd").CombinedOutput(); err2 != nil {
+			return fmt.Errorf("enable ssh: %w / %s ; sshd: %v / %s", err, out, err2, out2)
+		}
 	}
 	return nil
 }
@@ -282,8 +546,29 @@ func PickRuntime() Runtime {
 	if os.Getenv("HA_RUNTIME") == "memory" {
 		return NewMemoryRuntime()
 	}
-	if os.Getenv("HA_RUNTIME") == "incus" || Available() {
+	if Available() {
 		return NewIncusRuntime()
+	}
+	if os.Getenv("HA_INCUS_IMAGE") != "" || os.Getenv("HA_REQUIRE_INCUS") == "1" {
+		return &brokenRuntime{err: fmt.Errorf("incus CLI not found (set HA_INCUS_IMAGE on worker with Incus installed)")}
 	}
 	return NewMemoryRuntime()
 }
+
+type brokenRuntime struct {
+	err error
+}
+
+func (b *brokenRuntime) Launch(context.Context, models.Workspace, models.Node, []string) (Instance, error) {
+	return Instance{}, b.err
+}
+func (b *brokenRuntime) Stop(context.Context, uuid.UUID) error { return b.err }
+func (b *brokenRuntime) Start(context.Context, uuid.UUID) error { return b.err }
+func (b *brokenRuntime) Destroy(context.Context, uuid.UUID) error { return b.err }
+func (b *brokenRuntime) Resize(context.Context, models.Workspace) error { return b.err }
+func (b *brokenRuntime) Get(context.Context, uuid.UUID) (Instance, bool) { return Instance{}, false }
+func (b *brokenRuntime) ExposePort(context.Context, uuid.UUID, uuid.UUID, int) (int, error) {
+	return 0, b.err
+}
+func (b *brokenRuntime) UnexposePort(context.Context, uuid.UUID, uuid.UUID) error { return b.err }
+func (b *brokenRuntime) SyncKeys(context.Context, uuid.UUID, []string) error { return b.err }

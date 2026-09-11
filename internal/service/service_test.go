@@ -16,6 +16,7 @@ import (
 
 func setupApp(t *testing.T) (*App, *models.User) {
 	t.Helper()
+	t.Setenv("HA_PROVISION_SYNC", "1")
 	st := memory.New()
 	app := New(st, workspace.NewMemoryRuntime(), []byte("unit-test-secret-key-32b!!"))
 	u, err := app.Register(context.Background(), "alice", "alice@example.com", "password1")
@@ -86,6 +87,7 @@ func TestCreateWorkspaceOccupiesAndRelease(t *testing.T) {
 }
 
 func TestCreateWorkspaceRollbackOnRuntimeFailure(t *testing.T) {
+	t.Setenv("HA_PROVISION_SYNC", "1")
 	st := memory.New()
 	app := New(st, workspace.FailLaunchOnce(), []byte("unit-test-secret-key-32b!!"))
 	u, _ := app.Register(context.Background(), "bob", "bob@example.com", "password1")

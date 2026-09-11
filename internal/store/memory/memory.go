@@ -94,7 +94,8 @@ type Store struct {
 	auditSeq     int64
 	invites      map[string]*models.Invitation
 	refresh      map[string]models.RefreshSession
-	ingress      map[uuid.UUID]*models.IngressRoute
+	ingress          map[uuid.UUID]*models.IngressRoute
+	dockerRegistries map[uuid.UUID]*models.DockerRegistry
 }
 
 func New() *Store {
@@ -111,7 +112,8 @@ func New() *Store {
 		workspaces:  map[uuid.UUID]*models.Workspace{},
 		invites:     map[string]*models.Invitation{},
 		refresh:     map[string]models.RefreshSession{},
-		ingress:     map[uuid.UUID]*models.IngressRoute{},
+		ingress:          map[uuid.UUID]*models.IngressRoute{},
+		dockerRegistries: map[uuid.UUID]*models.DockerRegistry{},
 	}
 }
 
@@ -469,6 +471,29 @@ func (s *Store) ListNodes(_ context.Context) ([]models.Node, error) {
 		out = append(out, *n)
 	}
 	return out, nil
+}
+
+func (s *Store) DeleteNode(_ context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.nodes[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	for _, a := range s.allocs {
+		if a.NodeID == id && a.State != models.AllocReleased {
+			return store.ErrConflict
+		}
+	}
+	for aid, a := range s.allocs {
+		if a.NodeID == id && a.State == models.AllocReleased {
+			delete(s.allocs, aid)
+		}
+	}
+	delete(s.nodes, id)
+	delete(s.nodeByName, n.Name)
+	s.saveSnapshotLocked()
+	return nil
 }
 
 func (s *Store) ReserveOnNode(_ context.Context, nodeID uuid.UUID, a *models.Allocation) error {

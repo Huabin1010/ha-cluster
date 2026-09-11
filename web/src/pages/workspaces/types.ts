@@ -8,6 +8,9 @@ export type Workspace = {
   visibility?: string;
   owner_user_id?: string;
   host_key_fp?: string;
+  node_id?: string;
+  node_name?: string;
+  created_at?: string;
   cpu_milli?: number;
   mem_bytes?: number;
   disk_bytes?: number;
@@ -106,6 +109,47 @@ export const STATUS_LABEL: Record<string, string> = {
 export function statusLabel(status: string): string {
   return STATUS_LABEL[status] || status;
 }
+
+export type WorkspaceBadgeVariant = "ok" | "warn" | "danger" | "outline";
+
+export function workspaceStatusVariant(status: string): WorkspaceBadgeVariant {
+  if (status === "running") return "ok";
+  if (
+    status === "fabric_degraded" ||
+    status === "requested" ||
+    status === "suspended" ||
+    status === "destroy_requested" ||
+    status === "destroy_pending_platform" ||
+    status === "provisioning"
+  ) {
+    return "warn";
+  }
+  if (status === "rejected" || status === "failed" || status === "node_lost") {
+    return "danger";
+  }
+  return "outline";
+}
+
+/** 状态指示小圆点的颜色类，确保指示点颜色与业务状态严格同步 */
+export function workspaceStatusDotClass(status: string): string {
+  if (status === "running") return "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.45)]";
+  if (
+    status === "fabric_degraded" ||
+    status === "requested" ||
+    status === "suspended" ||
+    status === "destroy_requested" ||
+    status === "destroy_pending_platform" ||
+    status === "provisioning"
+  ) {
+    return "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]";
+  }
+  if (status === "rejected" || status === "failed" || status === "node_lost") {
+    return "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.45)]";
+  }
+  return "bg-muted-foreground/40";
+}
+
+export const badgeVariant = workspaceStatusVariant;
 
 export function canApproveRole(projectRole?: string, platformRole?: string): boolean {
   if (platformRole === "platform_admin") return true;

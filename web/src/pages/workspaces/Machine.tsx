@@ -1,20 +1,20 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useGetIdentity, useOne } from "@refinedev/core";
-import { api, friendlyError, isApiError, type AuthUser } from "../../providers";
-import { canSSH, sshAccessLabel } from "../../lib/permissions";
+import { api, friendlyError, isApiError, type AuthUser } from "@/providers";
+import { canSSH, sshAccessLabel } from "@/lib/permissions";
 import { formatPlanSpec, ProjectOption, Workspace, workspaceSpec } from "./types";
 import { ImportKeyDialog } from "./ImportKeyDialog";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Textarea } from "../../components/ui/textarea";
-import { Field } from "../../components/ui/field";
-import { Alert, AlertDescription } from "../../components/ui/alert";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { SelectBox } from "../../components/ui/select";
-import { Badge } from "../../components/ui/badge";
-import { PageFrame } from "../../components/ui/page-frame";
-import { PageHeader, Loading, useToast } from "../../ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Field } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SelectBox } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeader, Loading, useToast } from "@/ui";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,7 +25,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "../../components/ui/alert-dialog";
+} from "@/components/ui/alert-dialog";
 
 type ConnInfo = {
   command: string;

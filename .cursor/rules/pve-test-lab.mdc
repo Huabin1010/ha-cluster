@@ -11,12 +11,13 @@ alwaysApply: true
 
 | 层 | 说明 |
 |----|------|
-| PVE 宿主机 | `192.168.1.8`（节点 `shuangyuan001`） |
+| PVE 宿主机 | `192.168.1.8`（节点 `shuangyuan001`）— **仅跑 VM**，禁止部署 Depot/HTTP staging |
+| RustFS（局域网） | `http://192.168.1.9:10000` → Depot 根 `…/typora/ha-cluster`（同公网 bucket/键） |
 | 测试 VM | `ha-test-01` `.84`、`-02` `.85`、`-03` `.87`（4c/4G/32G） |
 | 开发机 API | 默认 `http://192.168.1.100:8080`（`HA_API_ADDR=:8080`） |
 | EasyTier 虚 IP | `.205` / `.206` / `.207`（对齐 `easytier-fabric.mdc` 本地段） |
 
-PVE VM **模拟 Node**，不是用户 Workspace；正式纳管仍走 **join token + install.sh**（`node-install-depot.mdc`）。
+PVE VM **模拟 Node**，不是用户 Workspace；VM 从局域网 RustFS 拉离线包，正式纳管仍走 **join token + install.sh**（`node-install-depot.mdc`）。
 
 ## 扩容测试机（更大规格）
 

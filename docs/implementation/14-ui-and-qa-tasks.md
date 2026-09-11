@@ -532,7 +532,7 @@ ssh-config、ssh-target ACL、bastion Resolve/Dial、公钥 CRUD；联调真 SSH
 
 ```bash
 export PATH="$HOME/.local/go/bin:$PATH"
-go run ./cmd/ha-api          # :8080 内存账本 + admin/adminadmin
+go run ./cmd/ha-api          # :8080 内存账本 + admin/123456qq
 cd web && npm run dev        # :5173 proxy /api
 ```
 

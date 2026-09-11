@@ -213,7 +213,7 @@ func (a *App) provisionNewWorkspace(ctx context.Context, in CreateWorkspaceInput
 		_ = a.Ledger.Release(ctx, res.Allocation.ID)
 		return nil, err
 	}
-	return a.finishProvision(ctx, w, res.Node, res.Allocation.ID, in.Actor.ID, "workspace.create")
+	return a.startProvision(w, res.Node, res.Allocation.ID, in.Actor.ID, "workspace.create")
 }
 
 func (a *App) collectWorkspacePubkeys(ctx context.Context, w models.Workspace) []string {
@@ -240,6 +240,13 @@ func (a *App) collectWorkspacePubkeys(ctx context.Context, w models.Workspace) [
 
 func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node models.Node, allocID, actorID uuid.UUID, action string) (*models.Workspace, error) {
 	pubs := a.collectWorkspacePubkeys(ctx, *w)
+	regs, err := a.CollectAutoInjectRegistryCreds(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("docker registries: %w", err)
+	}
+	ctx = workspace.WithLaunchContext(ctx, workspace.LaunchContext{
+		SSHKeys: pubs, DockerRegistries: regs,
+	})
 	inst, err := a.Runtime.Launch(ctx, *w, node, pubs)
 	if err != nil {
 		w.Status = models.WSFailed
@@ -298,7 +305,7 @@ func (a *App) ApproveWorkspace(ctx context.Context, actor models.User, id uuid.U
 		_ = a.Ledger.Release(ctx, res.Allocation.ID)
 		return nil, err
 	}
-	return a.finishProvision(ctx, w, res.Node, res.Allocation.ID, actor.ID, "workspace.approve")
+	return a.startProvision(w, res.Node, res.Allocation.ID, actor.ID, "workspace.approve")
 }
 
 func (a *App) RejectWorkspace(ctx context.Context, actor models.User, id uuid.UUID, reason string) error {
@@ -610,6 +617,10 @@ func (a *App) StartWorkspace(ctx context.Context, actor models.User, id uuid.UUI
 	if err := a.Runtime.Start(ctx, id); err != nil {
 		return err
 	}
+	// 停机期间登记的公钥不会热同步；开机后再推一次，避免「运行中但 authorized_keys 为空」。
+	if pubs := a.collectWorkspacePubkeys(ctx, *w); len(pubs) > 0 {
+		_ = a.Runtime.SyncKeys(ctx, id, pubs)
+	}
 	w.Status = models.WSRunning
 	now := time.Now()
 	w.LastActivityAt = now
@@ -661,6 +672,9 @@ func (a *App) Heartbeat(ctx context.Context, n models.Node) (*models.Node, error
 	existing, err := a.Store.GetNodeByName(ctx, n.Name)
 	if err == nil {
 		n.ID = existing.ID
+		if n.LanIP == "" {
+			n.LanIP = existing.LanIP
+		}
 	} else {
 		n.ID = uuid.New()
 	}

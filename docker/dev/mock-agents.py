@@ -29,6 +29,8 @@ def heartbeat(name: str, fabric_ip: str) -> None:
         "allocatable_mem_bytes": 4 * 1024**3,
         "allocatable_disk_bytes": 32 * 1024**3,
         "cpu_usage_pct": 8.0,
+        "mem_total_bytes": 4 * 1024**3,
+        "disk_total_bytes": 40 * 1024**3,
         "mem_available_bytes": 3 * 1024**3,
         "disk_free_bytes": 28 * 1024**3,
         "fabric_path": "mock",

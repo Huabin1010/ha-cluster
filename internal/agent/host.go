@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bufio"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -72,25 +73,38 @@ func HostDiskCapacity(storagePath string) (totalBytes, allocatableBytes int64) {
 	return int64(u.TotalBytes), allocatable
 }
 
-func HostMemAvailable() int64 {
+func meminfoBytes(key string) int64 {
 	f, err := os.Open("/proc/meminfo")
 	if err != nil {
 		return 0
 	}
 	defer f.Close()
+	prefix := key
+	if !strings.HasSuffix(prefix, ":") {
+		prefix += ":"
+	}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := sc.Text()
-		if strings.HasPrefix(line, "MemAvailable:") {
-			fs := strings.Fields(line)
-			if len(fs) >= 2 {
-				kb, _ := strconv.ParseInt(fs[1], 10, 64)
-				return kb * 1024
-			}
-			break
+		if !strings.HasPrefix(line, prefix) {
+			continue
 		}
+		fs := strings.Fields(line)
+		if len(fs) < 2 {
+			return 0
+		}
+		kb, _ := strconv.ParseInt(fs[1], 10, 64)
+		return kb * 1024
 	}
 	return 0
+}
+
+func HostMemTotal() int64 {
+	return meminfoBytes("MemTotal:")
+}
+
+func HostMemAvailable() int64 {
+	return meminfoBytes("MemAvailable:")
 }
 
 func readCPUStat() (total, idle uint64, ok bool) {
@@ -162,6 +176,48 @@ func HostDiskFree(storagePath string) int64 {
 	return int64(u.AvailableBytes)
 }
 
+// HostLanIP returns the primary RFC1918 address (prefer 192.168/10., skip docker/incus bridges).
+func HostLanIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	var candidates []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		name := strings.ToLower(iface.Name)
+		if strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "veth") ||
+			strings.HasPrefix(name, "br-") || name == "incusbr0" {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipNet, ok := a.(*net.IPNet)
+			if !ok || ipNet.IP.To4() == nil || ipNet.IP.IsLoopback() {
+				continue
+			}
+			ip := ipNet.IP.String()
+			if strings.HasPrefix(ip, "192.168.") || strings.HasPrefix(ip, "10.") {
+				candidates = append(candidates, ip)
+			}
+		}
+	}
+	for _, ip := range candidates {
+		if strings.HasPrefix(ip, "192.168.") {
+			return ip
+		}
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return ""
+}
+
 func HostCapacity() (cpuMilli, memBytes int64) {
 	cpuMilli = int64(1) * 1000
 	if b, err := os.ReadFile("/proc/cpuinfo"); err == nil {
@@ -170,23 +226,7 @@ func HostCapacity() (cpuMilli, memBytes int64) {
 			cpuMilli = n * 1000
 		}
 	}
-	f, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return cpuMilli, 0
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := sc.Text()
-		if strings.HasPrefix(line, "MemTotal:") {
-			fs := strings.Fields(line)
-			if len(fs) >= 2 {
-				kb, _ := strconv.ParseInt(fs[1], 10, 64)
-				memBytes = kb * 1024
-			}
-			break
-		}
-	}
+	memBytes = HostMemTotal()
 	// reserve ~800Mi for system
 	const reserve = 800 * 1024 * 1024
 	if memBytes > reserve {

@@ -282,6 +282,13 @@ func (a *App) Reconcile(ctx context.Context) (released int, staleNodes int, err 
 			}
 		}
 	}
+	stuck, err := a.ReconcileStuckProvisioning(ctx, 20*time.Minute)
+	if err != nil {
+		return released, 0, err
+	}
+	if stuck > 0 {
+		released += stuck
+	}
 	_, offline, err := a.RefreshNodeHealth(ctx)
 	if err != nil {
 		return released, 0, err

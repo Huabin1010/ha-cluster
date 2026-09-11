@@ -7,7 +7,7 @@ export type Role = "admin" | "owner" | "dev" | "viewer";
 type SessionCache = Record<Role, { tokens: AuthTokens; timestamp: number } | undefined>;
 
 const USERS: Record<Role, { username: string; password: string }> = {
-  admin: { username: "admin", password: process.env.HA_ADMIN_PASSWORD ?? "adminadmin" },
+  admin: { username: "admin", password: process.env.HA_ADMIN_PASSWORD ?? "123456qq" },
   owner: { username: "qa_owner", password: "password1" },
   dev: { username: "qa_dev", password: "password1" },
   viewer: { username: "qa_viewer", password: "password1" },

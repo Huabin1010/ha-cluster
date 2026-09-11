@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"ha-cluster/internal/models"
+	"ha-cluster/internal/workspace"
 )
 
 const (
@@ -18,6 +19,12 @@ func (a *App) RefreshNodeHealth(ctx context.Context) (degraded, offline int, err
 	if err != nil {
 		return 0, 0, err
 	}
+	activeNodes, err := a.nodesWithActiveWorkspaces(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	rem, _ := a.Runtime.(*workspace.RemoteAgentRuntime)
+
 	now := time.Now()
 	for _, n := range nodes {
 		if n.Role == "control-plane" {
@@ -42,6 +49,16 @@ func (a *App) RefreshNodeHealth(ctx context.Context) (degraded, offline int, err
 			n.Ready = false
 			n.FabricPath = "offline"
 		}
+
+		// Mock heartbeats can keep nodes "healthy" after VMs are gone; probe ha-agent when workloads exist.
+		if rem != nil && activeNodes[n.ID] && n.HealthStatus != models.NodeOffline {
+			if !rem.AgentReachable(ctx, &n) {
+				n.HealthStatus = models.NodeOffline
+				n.Ready = false
+				n.FabricPath = "offline"
+			}
+		}
+
 		if n.HealthStatus != prev || n.Ready != prevReady || n.FabricPath != prevPath {
 			_ = a.Store.UpsertNode(ctx, &n)
 		}
@@ -51,6 +68,10 @@ func (a *App) RefreshNodeHealth(ctx context.Context) (degraded, offline int, err
 		case models.NodeOffline:
 			offline++
 		}
+	}
+
+	if _, err := a.ReconcileWorkspaceHealth(ctx); err != nil {
+		return degraded, offline, err
 	}
 	return degraded, offline, nil
 }

@@ -1,0 +1,74 @@
+---
+description: PVE 宿主机禁止部署服务；RustFS Depot 局域网/公网地址
+alwaysApply: true
+---
+
+# PVE 宿主机：禁止部署服务
+
+**PVE（`192.168.1.8`，`shuangyuan001`）只跑虚拟机**，不得在其上部署任何业务或中间层服务。
+
+## 禁止
+
+- ❌ `python -m http.server`、nginx、caddy 等临时/永久 HTTP 镜像
+- ❌ 在 PVE 上同步 `depot-mirror.tar` 并对外提供安装包
+- ❌ RustFS、MinIO、Registry、API、数据库等常驻服务
+- ❌ `upload-staging.ps1` 一类「scp 到 PVE + 起端口」流程（已废弃）
+
+## 允许
+
+- ✅ `qm` / `pct` 管理 VM
+- ✅ `ssh root@192.168.1.8` + `qm guest exec <vmid>` 向 **VM 内**下发命令
+- ✅ PVE 自带 hypervisor 组件（`pveproxy`、`pvedaemon` 等）
+
+安装包、脚本、大 bundle **一律从 RustFS Depot 拉取**（见下），由 Worker VM 直接 `curl`。
+
+---
+
+# RustFS Depot 服务信息
+
+单一来源常量：`packaging/depot_layout.py`（`DEPOT_PUBLIC_URL` / `DEPOT_LAN_URL`）。  
+S3 键布局见 `depot-s3-layout.mdc`；凭证 **只写** `docs/credentials.local.md`。
+
+| 项 | 局域网（lab / PVE VM） | 公网（生产 join） |
+|----|------------------------|-------------------|
+| 主机 | `192.168.1.9` | `rustfs.s.ggss.club` |
+| 端口 | `10000` | `50000` |
+| Endpoint | `http://192.168.1.9:10000` | `https://rustfs.s.ggss.club:50000` |
+| Bucket | `typora` | `typora` |
+| 前缀 | `ha-cluster/` | `ha-cluster/` |
+| Depot 根 URL | `http://192.168.1.9:10000/typora/ha-cluster` | `https://rustfs.s.ggss.club:50000/typora/ha-cluster` |
+
+公网与局域网 **同 bucket、同键布局**，仅 endpoint 不同。
+
+## 实验室用法
+
+`deploy/pve-lab/lab.env`：
+
+```bash
+DEPOT_PUBLIC=http://192.168.1.9:10000/typora/ha-cluster
+```
+
+```bash
+python deploy/pve-lab/bootstrap.py          # VM 从局域网 RustFS 拉包
+python deploy/pve-lab/bootstrap.py --use-public   # 仅维护者验证公网发布
+```
+
+上传（维护者）：
+
+```bash
+export HA_DEPOT_S3_ENDPOINT=http://192.168.1.9:10000   # 局域网
+# 或 HA_DEPOT_S3_ENDPOINT=https://rustfs.s.ggss.club:50000  # 公网
+export HA_DEPOT_S3_BUCKET=typora
+export HA_DEPOT_S3_ACCESS_KEY=...   # 见 credentials.local.md
+export HA_DEPOT_S3_SECRET_KEY=...
+python deploy/pve-lab/upload.py
+```
+
+## 常见拉取路径
+
+```bash
+${DEPOT}/lab/install.sh
+${DEPOT}/lab/worker-install.sh
+${DEPOT}/bundles/amd64/incus-offline.tar.zst
+${DEPOT}/bin/amd64/ha-agent
+```

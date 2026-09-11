@@ -2,6 +2,7 @@ package bastion
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -29,6 +30,9 @@ func Resolve(w models.Workspace, n models.Node, actor models.User, m *models.Mem
 	if !authz.CanSSHSession(actor, m, w) {
 		return Target{}, ErrDenied
 	}
+	if PreferLAN() && strings.TrimSpace(n.LanIP) != "" {
+		return Target{Host: strings.TrimSpace(n.LanIP), Port: w.SSHPort, Via: "lan"}, nil
+	}
 	if n.FabricIP != "" {
 		return Target{Host: n.FabricIP, Port: w.SSHPort, Via: "fabric"}, nil
 	}
@@ -51,6 +55,12 @@ func CanEnterPrivate(w models.Workspace, actorUserID string, ownerUserID string,
 	}
 	aid, _ := uuid.Parse(actorUserID)
 	return authz.CanEnterPrivateWorkspace(w, aid, role, admin)
+}
+
+// PreferLAN is true when HA_AGENT_VIA_LAN is set (PVE 实验室：操作员在局域网，不走 overlay).
+func PreferLAN() bool {
+	v := strings.TrimSpace(os.Getenv("HA_AGENT_VIA_LAN"))
+	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
 }
 
 func parseHostPort(s string, def int) (string, int) {

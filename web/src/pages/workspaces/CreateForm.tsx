@@ -1,13 +1,13 @@
 import { FormEvent, MutableRefObject, ReactNode, useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { api, friendlyError, isInsufficientCapacity } from "../../providers";
+import { api, friendlyError, isInsufficientCapacity } from "@/providers";
 import { formatUsageHint } from "./format";
 import { ARCHES, canApproveRole, formatPlanSpec, PlanItem, PLANS, PLAN_SPECS, ProjectOption, ProjectUsage } from "./types";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { SelectBox } from "../../components/ui/select";
-import { Field } from "../../components/ui/field";
-import { Alert, AlertDescription } from "../../components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { SelectBox } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../components/ui/dialog";
+} from "@/components/ui/dialog";
 
 type Props = {
   projects: ProjectOption[];
@@ -94,7 +94,7 @@ export function CreateForm({
 
   useEffect(() => {
     if (reloadUsageRef) {
-      reloadUsageRef.current = loadUsage;
+      (reloadUsageRef as any).current = loadUsage;
     }
   }, [reloadUsageRef, loadUsage]);
 
@@ -147,7 +147,7 @@ export function CreateForm({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent size="lg" className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{canApprove ? "开通服务器" : "申请服务器"}</DialogTitle>
           <DialogDescription>
@@ -176,32 +176,36 @@ export function CreateForm({
                 onChange={(e) => setName(e.target.value)}
               />
             </Field>
-            <Field label="套餐">
-              <SelectBox
-                testId="ws-plan-select"
-                value={plan}
-                onValueChange={setPlan}
-                options={
-                  availablePlans.length > 0
-                    ? availablePlans.map((p) => ({
-                        value: p.name,
-                        label: `${p.name}${formatPlanSpec(p) ? ` (${formatPlanSpec(p)})` : ""}`,
-                      }))
-                    : PLANS.map((p) => ({
-                        value: p,
-                        label: `${p}${PLAN_SPECS[p] ? ` (${PLAN_SPECS[p]})` : ""}`,
-                      }))
-                }
-              />
-            </Field>
-            <Field label="架构">
-              <SelectBox
-                testId="ws-arch-select"
-                value={arch}
-                onValueChange={setArch}
-                options={ARCHES.map((a) => ({ value: a, label: a }))}
-              />
-            </Field>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="套餐">
+                <SelectBox
+                  testId="ws-plan-select"
+                  value={plan}
+                  onValueChange={setPlan}
+                  options={
+                    availablePlans.length > 0
+                      ? availablePlans.map((p) => ({
+                          value: p.name,
+                          label: `${p.name}${formatPlanSpec(p) ? ` (${formatPlanSpec(p)})` : ""}`,
+                        }))
+                      : PLANS.map((p) => ({
+                          value: p,
+                          label: `${p}${PLAN_SPECS[p] ? ` (${PLAN_SPECS[p]})` : ""}`,
+                        }))
+                  }
+                />
+              </Field>
+              <Field label="架构">
+                <SelectBox
+                  testId="ws-arch-select"
+                  value={arch}
+                  onValueChange={setArch}
+                  options={ARCHES.map((a) => ({ value: a, label: a }))}
+                />
+              </Field>
+            </div>
+
             <Field label="可见性">
               <SelectBox
                 testId="ws-visibility-select"
@@ -213,13 +217,14 @@ export function CreateForm({
                 ]}
               />
             </Field>
+
             <div className="grid gap-2">
-              <Button type="button" variant="ghost" className="w-fit px-0" onClick={() => setShowAdvanced((v) => !v)}>
-                {showAdvanced ? "收起高级" : "高级：粘贴 project uuid"}
+              <Button type="button" variant="ghost" className="w-fit px-0 text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowAdvanced((v) => !v)}>
+                {showAdvanced ? "收起高级选项" : "高级选项：手动粘贴 project uuid"}
               </Button>
               {showAdvanced && (
                 <Input
-                  className="mono font-mono"
+                  className="mono font-mono text-xs"
                   placeholder="project uuid"
                   value={advancedId}
                   onChange={(e) => setAdvancedId(e.target.value)}
@@ -227,7 +232,12 @@ export function CreateForm({
                 />
               )}
             </div>
-            {usageHint && <p className="m-0 text-sm text-muted-foreground">{usageHint}</p>}
+
+            {usageHint && (
+              <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground border border-border/60 leading-relaxed break-words">
+                {usageHint}
+              </div>
+            )}
             {formErr && (
               <Alert variant="destructive">
                 <AlertDescription>{formErr}</AlertDescription>

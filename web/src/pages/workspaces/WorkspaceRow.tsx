@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, apiText, friendlyError } from "../../providers";
-import { canSSH } from "../../lib/permissions";
+import { Check, Copy, Download, KeyRound, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock, ShieldAlert } from "lucide-react";
+import { api, apiText, friendlyError } from "@/providers";
+import { formatTime } from "@/ui/format";
+import { canSSH } from "@/lib/permissions";
 import {
   formatPlanSpec,
   hasPendingResize,
@@ -9,13 +11,14 @@ import {
   isDestroyPendingPlatform,
   isDestroyRequested,
   statusLabel,
+  workspaceStatusVariant,
   Workspace,
   workspaceSpec,
 } from "./types";
-import { Button } from "../../components/ui/button";
-import { TableCell, TableRow } from "../../components/ui/table";
-import { Badge } from "../../components/ui/badge";
-import { Hint } from "../../components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { TableCell, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Hint } from "@/components/ui/tooltip";
 import { ImportKeyDialog } from "./ImportKeyDialog";
 import { ResizeDialog } from "./ResizeDialog";
 import {
@@ -28,7 +31,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "../../components/ui/alert-dialog";
+} from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 
 type Props = {
   ws: Workspace;
@@ -54,19 +58,25 @@ async function downloadSSHConfig(id: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-function badgeVariant(status: string) {
-  if (status === "running") return "ok" as const;
-  if (
-    status === "fabric_degraded" ||
-    status === "requested" ||
-    status === "suspended" ||
-    status === "destroy_requested" ||
-    status === "destroy_pending_platform"
-  ) {
-    return "warn" as const;
+function statusDotClass(status: string) {
+  switch (status) {
+    case "running":
+      return "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+    case "fabric_degraded":
+      return "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.45)]";
+    case "requested":
+    case "provisioning":
+    case "destroy_requested":
+      return "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.45)]";
+    case "failed":
+    case "rejected":
+    case "node_lost":
+      return "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]";
+    case "stopped":
+    case "suspended":
+    default:
+      return "bg-muted-foreground/40";
   }
-  if (status === "rejected" || status === "failed") return "danger" as const;
-  return "outline" as const;
 }
 
 export function WorkspaceRow({
@@ -84,6 +94,7 @@ export function WorkspaceRow({
 }: Props) {
   const [destroyOpen, setDestroyOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [copiedSsh, setCopiedSsh] = useState(false);
   const busy = busyId === ws.id;
   const pending = ws.status === "requested";
   const destroyPending = isDestroyPending(ws);
@@ -119,38 +130,66 @@ export function WorkspaceRow({
   }
 
   return (
-    <TableRow data-testid="ws-row" data-status={ws.status}>
-      <TableCell>{ws.name}</TableCell>
-      <TableCell>
-        <div className="grid gap-0.5">
-          <span>{ws.plan}</span>
-          {spec && <span className="text-xs text-muted-foreground">{formatPlanSpec(spec)}</span>}
+    <TableRow data-testid="ws-row" data-status={ws.status} className={ws.status === "failed" ? "bg-rose-500/5 hover:bg-rose-500/10" : undefined}>
+      <TableCell className="py-2.5 whitespace-nowrap font-medium text-foreground">
+        <div className="flex items-center gap-2">
+          <span className={cn("size-2 rounded-full shrink-0 transition-all", statusDotClass(ws.status))} />
+          <span className="truncate max-w-[180px] sm:max-w-xs">{ws.name}</span>
+          {ws.visibility === "private" ? (
+            <Hint label="私有">
+              <Lock className="size-3 text-amber-500/80 shrink-0" />
+            </Hint>
+          ) : (
+            <Hint label="共享">
+              <Globe className="size-3 text-primary/70 shrink-0" />
+            </Hint>
+          )}
         </div>
       </TableCell>
-      <TableCell className="mono font-mono">{ws.arch}</TableCell>
-      <TableCell>
-        <div className="flex flex-wrap items-center gap-1">
-          <Hint label={ws.status} className="font-mono">
+      <TableCell className="py-2.5 whitespace-nowrap">
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
+          <Hint label={`原始代码: ${ws.status}`} className="font-mono">
             <span className="inline-flex">
-              <Badge variant={badgeVariant(ws.status)}>{statusLabel(ws.status)}</Badge>
+              <Badge variant={workspaceStatusVariant(ws.status)} className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                {statusLabel(ws.status)}
+              </Badge>
             </span>
           </Hint>
           {resizePending && (
-            <Badge variant="warn" data-testid="ws-resize-pending">
+            <Badge variant="warn" data-testid="ws-resize-pending" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+              <Clock className="size-3 text-amber-500 shrink-0" />
               扩容待审
             </Badge>
           )}
         </div>
       </TableCell>
-      <TableCell className="mono font-mono text-muted-foreground">{ws.visibility || "shared"}</TableCell>
-      <TableCell>
-        <div className="flex flex-wrap gap-1">
+      <TableCell className="py-2.5 whitespace-nowrap">
+        <div className="inline-flex items-center gap-1.5 text-xs">
+          <Cpu className="size-3 text-muted-foreground opacity-70 shrink-0" />
+          <span className="font-medium text-foreground">{ws.plan}</span>
+          {spec && <span className="text-muted-foreground">({formatPlanSpec(spec)})</span>}
+          <span className="mono font-mono text-muted-foreground">{ws.arch}</span>
+        </div>
+      </TableCell>
+      <TableCell className="py-2.5 whitespace-nowrap text-xs">
+        {ws.node_name ? (
+          <span className="font-medium text-foreground">{ws.node_name}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="py-2.5 whitespace-nowrap text-xs text-muted-foreground">
+        {ws.created_at ? formatTime(ws.created_at) : "—"}
+      </TableCell>
+      <TableCell className="py-2.5 text-right w-[320px] pr-4">
+        <div className="flex items-center justify-end flex-wrap gap-1 whitespace-nowrap">
           {pending && canApprove && (
             <Button
               type="button"
-              size="sm"
+              size="compact"
               data-testid="ws-approve"
               disabled={busy}
+              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/approve`, { method: "POST", body: "{}" });
@@ -158,6 +197,7 @@ export function WorkspaceRow({
                 })
               }
             >
+              <Check className="size-3.5 shrink-0" />
               批准开通
             </Button>
           )}
@@ -166,11 +206,13 @@ export function WorkspaceRow({
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+                size="compact"
                 data-testid="ws-reject"
                 disabled={busy}
+                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
                 onClick={() => setRejectOpen(true)}
               >
+                <X className="size-3.5 shrink-0" />
                 拒绝
               </Button>
               <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
@@ -206,9 +248,10 @@ export function WorkspaceRow({
           {resizePending && canApprove && (
             <Button
               type="button"
-              size="sm"
+              size="compact"
               data-testid="ws-resize-approve"
               disabled={busy}
+              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/resize/approve`, { method: "POST", body: "{}" });
@@ -216,6 +259,7 @@ export function WorkspaceRow({
                 })
               }
             >
+              <Check className="size-3.5 shrink-0" />
               批准扩容
             </Button>
           )}
@@ -223,9 +267,10 @@ export function WorkspaceRow({
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="compact"
               data-testid="ws-resize-reject"
               disabled={busy}
+              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/resize/reject`, {
@@ -236,6 +281,7 @@ export function WorkspaceRow({
                 })
               }
             >
+              <X className="size-3.5 shrink-0" />
               {canApprove ? "拒绝扩容" : "撤销扩容"}
             </Button>
           )}
@@ -254,9 +300,10 @@ export function WorkspaceRow({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="compact"
               data-testid="ws-start"
               disabled={busy}
+              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/start`, { method: "POST" });
@@ -264,6 +311,7 @@ export function WorkspaceRow({
                 })
               }
             >
+              <Play className="size-3.5 shrink-0 text-emerald-500" />
               启动
             </Button>
           )}
@@ -271,9 +319,10 @@ export function WorkspaceRow({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="compact"
               data-testid="ws-stop"
               disabled={busy}
+              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/stop`, { method: "POST" });
@@ -281,6 +330,7 @@ export function WorkspaceRow({
                 })
               }
             >
+              <Square className="size-3.5 shrink-0 text-amber-500" />
               停止
             </Button>
           )}
@@ -289,11 +339,13 @@ export function WorkspaceRow({
               <Button
                 type="button"
                 variant="destructive"
-                size="sm"
+                size="compact"
                 data-testid="ws-cancel-request"
                 disabled={busy}
+                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
                 onClick={() => setDestroyOpen(true)}
               >
+                <X className="size-3.5 shrink-0" />
                 撤销申请
               </Button>
               <AlertDialog open={destroyOpen} onOpenChange={setDestroyOpen}>
@@ -330,9 +382,10 @@ export function WorkspaceRow({
             <Button
               type="button"
               variant="destructive"
-              size="sm"
+              size="compact"
               data-testid="ws-destroy-approve-project"
               disabled={busy}
+              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/destroy-request/approve`, { method: "POST", body: "{}" });
@@ -340,6 +393,7 @@ export function WorkspaceRow({
                 })
               }
             >
+              <Trash2 className="size-3.5 shrink-0" />
               销毁初审
             </Button>
           )}
@@ -348,11 +402,13 @@ export function WorkspaceRow({
               <Button
                 type="button"
                 variant="destructive"
-                size="sm"
+                size="compact"
                 data-testid="ws-destroy"
                 disabled={busy}
+                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
                 onClick={() => setDestroyOpen(true)}
               >
+                <Trash2 className="size-3.5 shrink-0" />
                 申请销毁
               </Button>
               <AlertDialog open={destroyOpen} onOpenChange={setDestroyOpen}>
@@ -388,9 +444,10 @@ export function WorkspaceRow({
             <Button
               type="button"
               variant="destructive"
-              size="sm"
+              size="compact"
               data-testid="ws-destroy-force"
               disabled={busy}
+              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/admin/dangerous-approvals/${ws.id}/approve`, { method: "POST", body: "{}" });
@@ -398,83 +455,90 @@ export function WorkspaceRow({
                 })
               }
             >
+              <Trash2 className="size-3.5 shrink-0" />
               平台终审
             </Button>
           )}
           {showSSHRequest && projectId && (
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" size="compact" asChild className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs">
               <Link data-testid="ws-request-ssh" to={`/projects/${projectId}/members`}>
+                <Terminal className="size-3.5 shrink-0" />
                 申请 SSH
               </Link>
             </Button>
           )}
           {showSSH && (
             <>
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="compact" asChild className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs">
                 <Link data-testid="ws-manage" to={`/workspaces/${ws.id}`}>
-                  连接 / 域名
+                  <Terminal className="size-3.5 shrink-0" />
+                  连接 / 详情
                 </Link>
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                data-testid="ws-copy-ssh"
-                disabled={busy}
-                onClick={() =>
-                  run(async () => {
-                    const info = await api<{ command: string }>(`/workspaces/${ws.id}/connection`);
-                    await navigator.clipboard.writeText(info.command);
-                    onToast("已复制 SSH 连接命令");
-                  })
-                }
-              >
-                复制连接
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                data-testid="ws-ssh-download"
-                disabled={busy}
-                onClick={() =>
-                  run(async () => {
-                    await downloadSSHConfig(ws.id);
-                    onToast("SSH config 已下载（含 Host / RemoteCommand）");
-                  })
-                }
-              >
-                下载 SSH
-              </Button>
+              <Hint label="复制 SSH 一键连接命令">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="compact"
+                  data-testid="ws-copy-ssh"
+                  disabled={busy}
+                  className={cn(
+                    "inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 px-2 text-xs",
+                    copiedSsh && "text-emerald-500 font-medium"
+                  )}
+                  onClick={() =>
+                    run(async () => {
+                      const info = await api<{ command: string }>(`/workspaces/${ws.id}/connection`);
+                      await navigator.clipboard.writeText(info.command);
+                      setCopiedSsh(true);
+                      setTimeout(() => setCopiedSsh(false), 2000);
+                      onToast("已复制 SSH 连接命令");
+                    })
+                  }
+                >
+                  {copiedSsh ? <Check className="size-3.5 text-emerald-500 shrink-0" /> : <Copy className="size-3.5 opacity-70 shrink-0" />}
+                  {copiedSsh ? "已复制" : "复制命令"}
+                </Button>
+              </Hint>
+              <Hint label="下载标准 SSH config 配置文件">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="compact"
+                  data-testid="ws-ssh-download"
+                  disabled={busy}
+                  className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 px-2 text-xs"
+                  onClick={() =>
+                    run(async () => {
+                      await downloadSSHConfig(ws.id);
+                      onToast("SSH config 已下载（含 Host / RemoteCommand）");
+                    })
+                  }
+                >
+                  <Download className="size-3.5 opacity-70 shrink-0" />
+                  配置
+                </Button>
+              </Hint>
               <ImportKeyDialog
                 trigger={
-                  <Button type="button" variant="ghost" size="sm" data-testid="ws-import-key" disabled={busy}>
-                    导入公钥
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="compact"
+                    data-testid="ws-import-key"
+                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 px-2 text-xs"
+                  >
+                    <KeyRound className="size-3.5 opacity-70 shrink-0" />
+                    导公钥
                   </Button>
                 }
-                onImported={() => onToast("公钥已导入，可用该密钥连接跳板")}
+                onImported={() => {
+                  onToast("公钥已导入");
+                  onRefresh();
+                }}
               />
             </>
           )}
-          <Hint label={ws.id} className="font-mono">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              data-testid="ws-copy-id"
-              disabled={busy}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(ws.id);
-                  onToast("已复制 workspace id");
-                } catch {
-                  onError("复制失败，请手动选择 id");
-                }
-              }}
-            >
-              复制 id
-            </Button>
-          </Hint>
         </div>
       </TableCell>
     </TableRow>

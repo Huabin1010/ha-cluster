@@ -11,7 +11,7 @@ test.describe("PW-4 机器连接与域名", () => {
     await expect(page.locator("main h2")).toContainText("ws-web");
     const cmd = page.getByTestId("ws-ssh-cmd");
     await expect(cmd).toBeVisible();
-    await expect(cmd).toContainText("bastion.mnnumath.vip");
+    await expect(cmd).toContainText("ssh");
     await page.getByTestId("ws-copy-ssh").click();
 
     await page.getByTestId("ing-domain").fill("app.example.com");

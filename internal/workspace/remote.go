@@ -75,20 +75,34 @@ func (r *RemoteAgentRuntime) resolveNode(ctx context.Context, wsID uuid.UUID) (*
 	return nil, fmt.Errorf("node for workspace %s not found", wsID)
 }
 
-func (r *RemoteAgentRuntime) targetURL(fabricIP, path string) string {
+func agentReachHost(n *models.Node) string {
+	if n == nil {
+		return ""
+	}
+	if os.Getenv("HA_AGENT_VIA_LAN") == "1" && strings.TrimSpace(n.LanIP) != "" {
+		return strings.TrimSpace(n.LanIP)
+	}
+	return strings.TrimSpace(n.FabricIP)
+}
+
+func (r *RemoteAgentRuntime) targetURL(host, path string) string {
 	port := r.Port
 	if port <= 0 {
 		port = 9091
 	}
-	return fmt.Sprintf("http://%s:%d%s", fabricIP, port, path)
+	return fmt.Sprintf("http://%s:%d%s", host, port, path)
 }
 
-func (r *RemoteAgentRuntime) postJSON(ctx context.Context, fabricIP, path string, in any, out any) error {
+func (r *RemoteAgentRuntime) postJSON(ctx context.Context, node *models.Node, path string, in any, out any) error {
+	host := agentReachHost(node)
+	if host == "" {
+		return fmt.Errorf("agent host for node %s not set", node.Name)
+	}
 	b, err := json.Marshal(in)
 	if err != nil {
 		return err
 	}
-	u := r.targetURL(fabricIP, path)
+	u := r.targetURL(host, path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(b))
 	if err != nil {
 		return err
@@ -127,15 +141,17 @@ func (r *RemoteAgentRuntime) Launch(ctx context.Context, w models.Workspace, nod
 		}
 	}
 
+	lc := LaunchContextFrom(ctx, sshKeys)
 	payload := map[string]any{
-		"workspace": w,
-		"node":      node,
-		"ssh_keys":  sshKeys,
+		"workspace":         w,
+		"node":              node,
+		"ssh_keys":          lc.SSHKeys,
+		"docker_registries": lc.DockerRegistries,
 	}
 	var inst Instance
-	err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/launch", payload, &inst)
+	err := r.postJSON(ctx, &node, "/v1/workspaces/launch", payload, &inst)
 	if err != nil {
-		if r.FallbackLocal != nil {
+		if r.FallbackLocal != nil && os.Getenv("HA_AGENT_ALLOW_MEMORY_FALLBACK") == "1" {
 			localInst, localErr := r.FallbackLocal.Launch(ctx, w, node, sshKeys)
 			if localErr == nil {
 				r.mu.Lock()
@@ -162,7 +178,7 @@ func (r *RemoteAgentRuntime) Stop(ctx context.Context, id uuid.UUID) error {
 			return err
 		}
 	}
-	if err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/stop", map[string]any{"workspace_id": id}, nil); err != nil {
+	if err := r.postJSON(ctx, node, "/v1/workspaces/stop", map[string]any{"workspace_id": id}, nil); err != nil {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Stop(ctx, id)
 		}
@@ -181,7 +197,7 @@ func (r *RemoteAgentRuntime) Start(ctx context.Context, id uuid.UUID) error {
 			return err
 		}
 	}
-	if err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/start", map[string]any{"workspace_id": id}, nil); err != nil {
+	if err := r.postJSON(ctx, node, "/v1/workspaces/start", map[string]any{"workspace_id": id}, nil); err != nil {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Start(ctx, id)
 		}
@@ -206,7 +222,7 @@ func (r *RemoteAgentRuntime) Destroy(ctx context.Context, id uuid.UUID) error {
 			return err
 		}
 	}
-	if err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/destroy", map[string]any{"workspace_id": id}, nil); err != nil {
+	if err := r.postJSON(ctx, node, "/v1/workspaces/destroy", map[string]any{"workspace_id": id}, nil); err != nil {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Destroy(ctx, id)
 		}
@@ -232,7 +248,7 @@ func (r *RemoteAgentRuntime) Resize(ctx context.Context, w models.Workspace) err
 			return err
 		}
 	}
-	if err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/resize", map[string]any{"workspace": w}, nil); err != nil {
+	if err := r.postJSON(ctx, node, "/v1/workspaces/resize", map[string]any{"workspace": w}, nil); err != nil {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Resize(ctx, w)
 		}
@@ -242,21 +258,53 @@ func (r *RemoteAgentRuntime) Resize(ctx context.Context, w models.Workspace) err
 }
 
 func (r *RemoteAgentRuntime) Get(ctx context.Context, id uuid.UUID) (Instance, bool) {
-	node, err := r.resolveNode(ctx, id)
-	if err != nil || node.FabricIP == "" {
-		if r.FallbackLocal != nil {
-			return r.FallbackLocal.Get(ctx, id)
-		}
-		return Instance{}, false
-	}
-	var inst Instance
-	if err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/get", map[string]any{"workspace_id": id}, &inst); err != nil {
+	inst, ok, err := r.GetStrict(ctx, id)
+	if err != nil || !ok {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Get(ctx, id)
 		}
 		return Instance{}, false
 	}
 	return inst, true
+}
+
+// GetStrict queries the worker agent only (no MemoryRuntime fallback).
+func (r *RemoteAgentRuntime) GetStrict(ctx context.Context, id uuid.UUID) (Instance, bool, error) {
+	node, err := r.resolveNode(ctx, id)
+	if err != nil {
+		return Instance{}, false, err
+	}
+	if agentReachHost(node) == "" {
+		return Instance{}, false, fmt.Errorf("agent host for node %s not set", node.Name)
+	}
+	var inst Instance
+	if err := r.postJSON(ctx, node, "/v1/workspaces/get", map[string]any{"workspace_id": id}, &inst); err != nil {
+		return Instance{}, false, err
+	}
+	return inst, true, nil
+}
+
+// AgentReachable checks ha-agent /healthz on the worker (LAN or fabric IP).
+func (r *RemoteAgentRuntime) AgentReachable(ctx context.Context, node *models.Node) bool {
+	host := agentReachHost(node)
+	if host == "" {
+		return false
+	}
+	u := r.targetURL(host, "/healthz")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return false
+	}
+	if r.Token != "" {
+		req.Header.Set("X-HA-Node-Token", r.Token)
+		req.Header.Set("Authorization", "Bearer "+r.Token)
+	}
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 func (r *RemoteAgentRuntime) ExposePort(ctx context.Context, wsID, routeID uuid.UUID, containerPort int) (int, error) {
@@ -272,7 +320,7 @@ func (r *RemoteAgentRuntime) ExposePort(ctx context.Context, wsID, routeID uuid.
 	var out struct {
 		HostPort int `json:"host_port"`
 	}
-	if err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/expose-port", map[string]any{
+	if err := r.postJSON(ctx, node, "/v1/workspaces/expose-port", map[string]any{
 		"workspace_id":   wsID,
 		"route_id":       routeID,
 		"container_port": containerPort,
@@ -295,7 +343,7 @@ func (r *RemoteAgentRuntime) UnexposePort(ctx context.Context, wsID, routeID uui
 			return err
 		}
 	}
-	if err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/unexpose-port", map[string]any{
+	if err := r.postJSON(ctx, node, "/v1/workspaces/unexpose-port", map[string]any{
 		"workspace_id": wsID,
 		"route_id":     routeID,
 	}, nil); err != nil {
@@ -321,7 +369,7 @@ func (r *RemoteAgentRuntime) SyncKeys(ctx context.Context, id uuid.UUID, keys []
 		"workspace_id": id,
 		"ssh_keys":     keys,
 	}
-	if err := r.postJSON(ctx, node.FabricIP, "/v1/workspaces/sync-keys", payload, nil); err != nil {
+	if err := r.postJSON(ctx, node, "/v1/workspaces/sync-keys", payload, nil); err != nil {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.SyncKeys(ctx, id, keys)
 		}

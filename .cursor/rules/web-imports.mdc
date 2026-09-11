@@ -1,0 +1,21 @@
+---
+description: web/src 跨目录 import 必须用 @/，禁止 ../ 与 ../../
+globs: web/src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# 前端模块导入
+
+`@/*` 映射 `src/*`。跨目录禁止 `../`、`../../`。
+
+```ts
+// 禁止
+import { cn } from "../../lib/utils";
+import { api } from "../providers";
+
+// 正确
+import { cn } from "@/lib/utils";
+import { api } from "@/providers";
+```
+
+同目录可以用 `./foo`（如 `./button`、`./types`）。`e2e/` 不在 `src/` 内，继续用相对路径。

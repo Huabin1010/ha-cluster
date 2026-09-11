@@ -1,6 +1,6 @@
 import { toast as sonner } from "sonner";
 import { type PropsWithChildren } from "react";
-import { Toaster } from "../components/ui/sonner";
+import { Toaster } from "@/components/ui/sonner";
 
 export type BannerKind = "error" | "info" | "success";
 

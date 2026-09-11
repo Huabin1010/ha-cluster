@@ -1,6 +1,6 @@
-import { Spinner } from "../components/ui/spinner";
-import { Skeleton as ShadcnSkeleton } from "../components/ui/skeleton";
-import { cn } from "../lib/utils";
+import { Spinner } from "@/components/ui/spinner";
+import { Skeleton as ShadcnSkeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 type Props = {
   label?: string;

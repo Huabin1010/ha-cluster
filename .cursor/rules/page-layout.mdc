@@ -1,0 +1,127 @@
+---
+description: 页面布局核心架构：顶部 Title/Header 固定 + 中间 Body/Table 自适应滚动 + 底部 Paginator 固定，杜绝视口切断与失控拉伸
+globs: web/src/**
+alwaysApply: true
+---
+
+# 页面视口三段式布局架构 (Fixed Header + Scrollable Body + Pinned Footer)
+
+在控制台的所有页面（包括数据表格页、项目详情复合页、配置面板）中，统一遵循 **“顶部的 title 固定、底部的 paginator 固定、中间的内容自适应滚动”** 的视口骨架。
+
+严禁页面随内容无限向下撑大导致：
+1. 向下滚动时顶部标题与操作栏被滚出视口（用户丢失操作入口与上下文）；
+2. 表格底端行被屏幕边缘硬性裁切遮挡；
+3. 底部关键分页器（Paginator）沉入很深的不可见区域或直接缺失。
+
+---
+
+## 核心容器高度继承链 (Container Height Chain)
+
+要让“顶底固定、中间滚动”生效，Flex 弹性盒的高度链必须像素级闭合，**严禁丢失 `min-h-0`**：
+
+```tsx
+// 1. 视口主容器（Layout.tsx 的 <main>）
+<main className="main-pane relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-4 md:p-6">
+  {children}
+</main>
+
+// 2. 页面根容器（必须填满高度并锁住溢出，禁止写 min-h-full pb-10）
+<div className="flex h-full min-h-0 w-full max-w-7xl mx-auto flex-col overflow-hidden">
+  
+  // 3. 顶部固定区域 (Fixed Header / Title)
+  <header className="shrink-0 pb-3 border-b border-border/60">
+    {/* 页面标题、快捷操作按钮、NavTabs 选项卡 */}
+  </header>
+
+  // 4. 中间自适应滚动区域 (Scrollable Body)
+  <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
+    <div className="w-full min-h-0 flex-1 overflow-auto">
+      {/* 表格 Table 或流式卡片容器，内部独立滚动 */}
+    </div>
+  </div>
+
+  // 5. 底部固定区域 (Pinned Footer / Paginator)
+  <footer className="shrink-0 pt-3 border-t border-border/60">
+    <Paginator ... />
+  </footer>
+
+</div>
+```
+
+---
+
+## 两种标准实现模式
+
+### 模式 A：独立列表 / 实体数据表页面（使用 `PageFrame`）
+
+所有独立资源列表（如工作区管理 `Workspaces.tsx`、节点列表 `Nodes.tsx`、审计日志 `Audit.tsx`）一律使用 `@/components/ui/page-frame`：
+
+```tsx
+import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeader } from "@/components/ui/page-header";
+import { Paginator } from "@/components/ui/pagination";
+
+export function ListPage() {
+  const pager = useClientPager(items, "items-key", 10);
+
+  return (
+    <PageFrame
+      header={
+        <PageHeader
+          title="资源列表"
+          description="说明文案"
+          action={<Button>新建</Button>}
+        />
+      }
+      footer={
+        <Paginator
+          page={pager.page}
+          pageCount={pager.pageCount}
+          pageSize={pager.pageSize}
+          total={pager.total}
+          onPageChange={pager.setPage}
+          onPageSizeChange={pager.setPageSize}
+        />
+      }
+    >
+      <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1">
+        <Table>
+          <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">...</TableHeader>
+          <TableBody>
+            {pager.slice.map((row) => (
+              <TableRow key={row.id}>...</TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </PageFrame>
+  );
+}
+```
+
+---
+
+### 模式 B：复合详情页 / 带有子 Tab 的复杂页面（如 `Detail.tsx`）
+
+当页面带有全局头信息（项目名、状态 Badge、编辑按钮）且下方包含多个子视图（概览、工作区、成员、设置）时：
+
+1. **全局 Header + Tabs 锁定在顶部**：
+   - 包含返回、标题、元数据、操作按钮及 `navTabs`，声明 `shrink-0 pb-3 border-b border-border/60`；
+   - 切换 tab 时，顶部的项目上下文始终固定，绝不随子视图滚动发生位移。
+2. **数据表格视图（如“工作区服务器”或“成员列表”）**：
+   - 视图外层：`flex flex-col min-h-0 flex-1 overflow-hidden`；
+   - 子标题与局部操作：`shrink-0 pb-3`；
+   - 表格承载区：`min-h-0 flex-1 overflow-auto`（搭配 `TableHeader sticky top-0 z-10` 表头吸顶）；
+   - 底部固定分页器：`shrink-0 pt-3 border-t border-border/60` 悬停于视口底端，配置 `Paginator` + `useClientPager`。
+3. **流式配置与设置视图（如“设置与预算”或“项目概览”）**：
+   - 视图容器：`min-h-0 flex-1 overflow-y-auto pr-1 flex flex-col gap-6 pb-6`；
+   - 表单卡片在中间顺畅纵向滚动，顶部的 Title 始终锚定在视口顶端。
+
+---
+
+## 严禁的反模式 (Anti-Patterns)
+
+1. ❌ **严禁页面根容器使用 `min-h-full pb-10` 随文档流无线向下撑高**：这会导致有数十条数据时把整个页面拉得无限长，顶端 Title 滚出屏幕，底端被切断且无固定分页器。
+2. ❌ **严禁表格直出渲染不加分页**：在有大量数据可能产生的列表或详情子表格中，严禁裸写 `items.map()`；必须接入 `useClientPager` 并提供固定底部的 `Paginator`。
+3. ❌ **严禁忘记给中间滚动容器加 `min-h-0`**：Flex 容器的默认 `min-height` 是 `auto`，如果不显式声明 `min-h-0`，中间容器不会限制在视口高度内，导致滚动条被顶到全局外层。
+4. ❌ **严禁表头随表格内容滚出视野**：滚动表格必须配置 `TableHeader` 的 `sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs`，保证在快速浏览数据时始终能看清列名。

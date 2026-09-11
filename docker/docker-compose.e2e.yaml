@@ -13,7 +13,7 @@ services:
       - HA_RUNTIME=incus
       - HA_INCUS_IMAGE=ha-ubuntu-24.04
       - HA_WEB_DIR=/app/web/dist
-      - HA_ADMIN_PASSWORD=adminadmin
+      - HA_ADMIN_PASSWORD=123456qq
       - HA_JWT_SECRET=e2e-test-secret-at-least-32-bytes-long
     volumes:
       - /var/lib/incus/unix.socket:/var/lib/incus/unix.socket
@@ -37,7 +37,7 @@ services:
       - E2E_BASE_URL=http://127.0.0.1:18088
       - E2E_API_URL=http://127.0.0.1:18088
       - E2E_SKIP_WEBSERVER=1
-      - HA_ADMIN_PASSWORD=adminadmin
+      - HA_ADMIN_PASSWORD=123456qq
     volumes:
       - ..:/workspace
       - /var/lib/incus/unix.socket:/var/lib/incus/unix.socket

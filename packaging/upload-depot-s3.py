@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload dist/ + install.sh to S3-compatible Depot (RustFS). Windows-friendly."""
+"""Upload dist/ to S3。键布局见 depot_layout.py；上传后写入 INDEX.md。"""
 from __future__ import annotations
 
 import os
@@ -12,9 +12,12 @@ except ImportError:
     print("error: pip install boto3", file=sys.stderr)
     sys.exit(1)
 
+from depot_layout import PREFIX, collect_uploads, generate_index, public_base
+
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
-PREFIX = os.environ.get("HA_DEPOT_S3_PREFIX", "ha-cluster")
+LAB = DIST / "pve-lab"
+
 ENDPOINT = os.environ["HA_DEPOT_S3_ENDPOINT"]
 BUCKET = os.environ["HA_DEPOT_S3_BUCKET"]
 AK = os.environ["HA_DEPOT_S3_ACCESS_KEY"]
@@ -35,32 +38,24 @@ def put(local: Path, key: str, content_type: str | None = None) -> None:
     if content_type:
         extra["ContentType"] = content_type
     s3.upload_file(str(local), BUCKET, f"{PREFIX}/{key}", ExtraArgs=extra or None)
-    print(f"uploaded {key}")
+    mib = local.stat().st_size / (1024 * 1024)
+    print(f"  {key}  ({mib:.1f} MiB)" if mib >= 0.01 else f"  {key}  ({local.stat().st_size} B)")
 
 
 def main() -> None:
-    put(ROOT / "packaging/install.sh", "install.sh", "text/x-shellscript")
-    for arch in ("amd64", "arm64"):
-        for name in (
-            f"ha-setup-linux-{arch}",
-            f"ha-payload-linux-{arch}.tar.zst",
-            f"ha-worker-bundle-linux-{arch}.tar.zst",
-        ):
-            p = DIST / name
-            if p.is_file():
-                put(p, name)
-        payload_dir = DIST / f"payload-linux-{arch}"
-        if payload_dir.is_dir():
-            for path in sorted(payload_dir.rglob("*")):
-                if path.is_file():
-                    rel = path.relative_to(payload_dir).as_posix()
-                    put(path, f"payload-linux-{arch}/{rel}")
-    versions = DIST / "VERSIONS.md"
-    if versions.is_file():
-        put(versions, "VERSIONS.md", "text/markdown")
-    public = os.environ.get("HA_DEPOT_PUBLIC", f"{ENDPOINT.rstrip('/')}/{BUCKET}/{PREFIX}")
-    print(f"\nPublic base: {public}")
-    print(f"curl -fsSL {public}/install.sh | sudo bash -s join --token 'ha://join/...'")
+    base = public_base(ENDPOINT, BUCKET)
+    uploads = collect_uploads(DIST, ROOT, LAB)
+    index_path = DIST / "INDEX.md"
+    index_path.write_text(generate_index(uploads, base), encoding="utf-8")
+    uploads.append((index_path, "INDEX.md", "text/markdown"))
+
+    print(f"==> upload {len(uploads)} objects → {PREFIX}/")
+    for local, key, ct in uploads:
+        put(local, key, ct)
+
+    print(f"\nPublic: {base}")
+    print(f"Index:  {base}/INDEX.md")
+    print(f"Join:   curl -fsSL {base}/install.sh | sudo bash -s join --token '…'")
 
 
 if __name__ == "__main__":

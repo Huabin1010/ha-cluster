@@ -15,9 +15,10 @@ import (
 )
 
 type LaunchRequest struct {
-	Workspace models.Workspace `json:"workspace"`
-	Node      models.Node      `json:"node"`
-	SSHKeys   []string         `json:"ssh_keys"`
+	Workspace        models.Workspace           `json:"workspace"`
+	Node             models.Node                `json:"node"`
+	SSHKeys          []string                   `json:"ssh_keys"`
+	DockerRegistries []models.DockerRegistryCred `json:"docker_registries"`
 }
 
 type IDRequest struct {
@@ -105,7 +106,10 @@ func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"invalid json: %v"}`, err), http.StatusBadRequest)
 		return
 	}
-	inst, err := s.Runtime.Launch(r.Context(), req.Workspace, req.Node, req.SSHKeys)
+	ctx := workspace.WithLaunchContext(r.Context(), workspace.LaunchContext{
+		SSHKeys: req.SSHKeys, DockerRegistries: req.DockerRegistries,
+	})
+	inst, err := s.Runtime.Launch(ctx, req.Workspace, req.Node, req.SSHKeys)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 		return

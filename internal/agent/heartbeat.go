@@ -18,6 +18,7 @@ type Status struct {
 	Role            string `json:"role"`
 	Power           string `json:"power"`
 	FabricIP        string `json:"fabric_ip"`
+	LanIP           string `json:"lan_ip,omitempty"`
 	AllocatableCPU  int64  `json:"allocatable_cpu_milli"`
 	AllocatableMem  int64  `json:"allocatable_mem_bytes"`
 	AllocatableDisk int64  `json:"allocatable_disk_bytes"`
@@ -26,6 +27,8 @@ type Status struct {
 	CPUUsagePct       float64 `json:"cpu_usage_pct"`
 	MemAvailableBytes int64   `json:"mem_available_bytes"`
 	DiskFreeBytes     int64   `json:"disk_free_bytes"`
+	MemTotalBytes     int64   `json:"mem_total_bytes"`
+	DiskTotalBytes    int64   `json:"disk_total_bytes"`
 }
 
 func DetectStatus(name, fabricIP string, cpu, mem, disk int64, storagePath ...string) Status {
@@ -42,25 +45,25 @@ func DetectStatus(name, fabricIP string, cpu, mem, disk int64, storagePath ...st
 			mem = m
 		}
 	}
+	sPath := ""
+	if len(storagePath) > 0 {
+		sPath = storagePath[0]
+	}
+	diskTotal, allocDisk := HostDiskCapacity(sPath)
 	if disk == 0 {
-		sPath := ""
-		if len(storagePath) > 0 {
-			sPath = storagePath[0]
-		}
-		_, allocDisk := HostDiskCapacity(sPath)
 		disk = allocDisk
 	}
 	cpuPct := HostCPUUsagePct()
 	memAvail := HostMemAvailable()
-	diskFree := HostDiskFree("")
-	if len(storagePath) > 0 && storagePath[0] != "" {
-		diskFree = HostDiskFree(storagePath[0])
-	}
+	memTotal := HostMemTotal()
+	diskFree := HostDiskFree(sPath)
+	lan := HostLanIP()
 	return Status{
 		Name: name, Arch: arch, Class: "desktop", Role: "worker", Power: "mains",
-		FabricIP: fabricIP, AllocatableCPU: cpu, AllocatableMem: mem, AllocatableDisk: disk,
+		FabricIP: fabricIP, LanIP: lan, AllocatableCPU: cpu, AllocatableMem: mem, AllocatableDisk: disk,
 		FabricPath: "p2p", FabricRTTMS: 1,
 		CPUUsagePct: cpuPct, MemAvailableBytes: memAvail, DiskFreeBytes: diskFree,
+		MemTotalBytes: memTotal, DiskTotalBytes: diskTotal,
 	}
 }
 

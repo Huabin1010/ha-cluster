@@ -14,7 +14,7 @@ docker compose up -d @args
 Write-Host ""
 Write-Host ">>> 控制台: http://localhost:5173"
 Write-Host ">>> API:    http://localhost:8080/healthz"
-Write-Host ">>> Admin:  admin / adminadmin"
+Write-Host ">>> Admin:  admin / 123456qq"
 Write-Host ">>> Adminer: http://localhost:8081  (postgres / ha / ha / ha)"
 Write-Host ""
 Write-Host ">>> 跑集成测试: docker compose --profile test run --rm test-integration"

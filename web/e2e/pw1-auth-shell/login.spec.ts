@@ -21,7 +21,7 @@ test.describe("PW-1 登录与注册", () => {
     const userIn = page.getByTestId("login-username");
     const passIn = page.getByTestId("login-password");
     await userIn.fill("admin");
-    await passIn.fill("adminadmin");
+    await passIn.fill("123456qq");
     await page.getByTestId("login-submit").click();
 
     await expect(page).toHaveURL(/\/projects/);

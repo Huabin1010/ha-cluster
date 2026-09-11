@@ -1,20 +1,25 @@
-import { MouseEvent, useState } from "react";
+import { MouseEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreate, useDelete, useGetIdentity, useList, useUpdate } from "@refinedev/core";
-import { Plus } from "lucide-react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
-import { Button } from "../components/ui/button";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { PageFrame } from "../components/ui/page-frame";
-import { Paginator } from "../components/ui/pagination";
-import { Empty, PageBody, PageHeader } from "../ui";
-import { friendlyError, type AuthUser } from "../providers";
-import { copyText, formatTime } from "./projects/format";
-import { canManageProject, type Project } from "./projects/types";
-import { ProjectFormDialog } from "./projects/FormDialog";
-import { ProjectDeleteDialog } from "./projects/DeleteDialog";
-import { useClientPager } from "../lib/use-client-pager";
-import { readCurrentProject, writeCurrentProject } from "../lib/current-project";
+import { Check, Clock, Copy, ExternalLink, FolderKanban, Hash, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, Tag, Trash2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { PageFrame } from "@/components/ui/page-frame";
+import { Paginator } from "@/components/ui/pagination";
+import { Hint } from "@/components/ui/tooltip";
+import { Elevated } from "@/lib/elevated";
+import { Empty, PageBody } from "@/ui";
+import { friendlyError, type AuthUser } from "@/providers";
+import { copyText, formatTime } from "@/pages/projects/format";
+import { canManageProject, type Project } from "@/pages/projects/types";
+import { ProjectFormDialog } from "@/pages/projects/FormDialog";
+import { ProjectDeleteDialog } from "@/pages/projects/DeleteDialog";
+import { useClientPager } from "@/lib/use-client-pager";
+import { readCurrentProject, writeCurrentProject } from "@/lib/current-project";
+import { cn } from "@/lib/utils";
 
 function slugConflictMessage(e: unknown): string | null {
   const raw = e instanceof Error ? e.message : String(e);
@@ -37,9 +42,22 @@ export function ProjectsPage() {
   const [formErr, setFormErr] = useState("");
   const [listErr, setListErr] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const rows = data?.data ?? [];
-  const pager = useClientPager(rows);
+
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return rows;
+    const q = search.trim().toLowerCase();
+    return rows.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.slug.toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q),
+    );
+  }, [rows, search]);
+
+  const pager = useClientPager(filteredRows);
 
   async function onCopyId(e: MouseEvent, id: string) {
     e.stopPropagation();
@@ -121,16 +139,65 @@ export function ProjectsPage() {
     <>
       <PageFrame
         header={
-          <PageHeader
-            title="项目"
-            description="登录后先选项目。进入后可申请隔离服务器，管理员批准后获得 SSH 连接。"
-            actions={
-              <Button type="button" data-testid="project-create-open" onClick={() => { setFormErr(""); setCreateOpen(true); }}>
-                <Plus className="h-4 w-4" />
-                创建项目
-              </Button>
-            }
-          />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5">
+                  <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">项目</h2>
+                  <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
+                    {rows.length} 个环境
+                  </Badge>
+                </div>
+                <p className="mt-1 mb-0 text-sm text-muted-foreground">
+                  协作与资源边界。登录后先选项目，项目内可申请隔离服务器，管理员批准后获得 SSH 连接。
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="compact"
+                  onClick={() => void refetch()}
+                  aria-label="刷新列表"
+                  className="h-9 px-3.5 text-muted-foreground hover:text-foreground font-normal shrink-0"
+                >
+                  <RefreshCw className={cn("size-3.5 mr-1.5 shrink-0", isLoading && "animate-spin")} />
+                  刷新
+                </Button>
+                <Button
+                  type="button"
+                  data-testid="project-create-open"
+                  onClick={() => {
+                    setFormErr("");
+                    setCreateOpen(true);
+                  }}
+                  className="h-9 px-4 font-medium shrink-0"
+                >
+                  <Plus className="size-4 mr-1.5 shrink-0" />
+                  创建项目
+                </Button>
+              </div>
+            </div>
+
+            {rows.length > 0 && (
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative flex-1 max-w-xs sm:max-w-sm">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="搜索项目名称、slug 或 ID…"
+                    className="h-8 pl-8 text-xs bg-surface-1/70 border-border/80 focus:bg-surface-1"
+                  />
+                </div>
+                {search && (
+                  <span className="text-xs text-muted-foreground">
+                    找到 {filteredRows.length} 个匹配项
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         }
         footer={
           <Paginator
@@ -151,101 +218,182 @@ export function ProjectsPage() {
           )}
           {rows.length === 0 ? (
             <Empty text="还没有项目，创建一个" />
+          ) : filteredRows.length === 0 ? (
+            <Empty text="未找到匹配的项目" description="试试更换搜索关键词" />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>名称</TableHead>
-                  <TableHead>slug</TableHead>
-                  <TableHead>id</TableHead>
-                  <TableHead>创建时间</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pager.slice.map((p) => {
-                  const manage = canManageProject(p.my_role, me?.platform_role, p.owner_id, me?.id);
-                  return (
-                    <TableRow
-                      key={p.id}
-                      className="cursor-pointer"
-                      data-testid="project-row"
-                      onClick={() => openProject(p)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          openProject(p);
-                        }
-                      }}
-                      tabIndex={0}
-                      role="link"
-                    >
-                      <TableCell>{p.name}</TableCell>
-                      <TableCell>{p.slug}</TableCell>
-                      <TableCell>
-                        <span className="mono font-mono text-xs">{p.id}</span>{" "}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          data-testid="project-copy-id"
-                          onClick={(e) => void onCopyId(e, p.id)}
-                          aria-label="复制项目 id"
-                        >
-                          {copiedId === p.id ? "已复制" : "复制"}
-                        </Button>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{formatTime(p.created_at)}</TableCell>
-                      <TableCell
-                        className="text-right"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            data-testid="project-detail"
-                            onClick={() => openProject(p)}
-                          >
-                            详情
-                          </Button>
-                          {manage && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                data-testid="project-edit"
-                                onClick={() => {
-                                  setFormErr("");
-                                  setEditTarget(p);
-                                }}
-                              >
-                                编辑
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                data-testid="project-delete"
-                                onClick={() => setRemoveTarget(p)}
-                              >
-                                删除
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
+            <Elevated
+              offset={1}
+              shadowLevel={2}
+              className="rounded-2xl border border-border/80 bg-surface-1 shadow-surface-2 overflow-hidden flex flex-col"
+            >
+              <div className="w-full overflow-x-auto">
+                <Table className="min-w-[860px]">
+                  <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
+                    <TableRow className="border-b border-border/60 hover:bg-transparent">
+                      <TableHead className="font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <FolderKanban className="size-3.5 opacity-60 shrink-0" />
+                          名称
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-[180px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <Tag className="size-3.5 opacity-60 shrink-0" />
+                          slug
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-[220px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <Hash className="size-3.5 opacity-60 shrink-0" />
+                          ID
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-[160px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <Clock className="size-3.5 opacity-60 shrink-0" />
+                          创建时间
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-[200px] text-right font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5 pr-4">
+                        <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
+                          <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
+                          操作
+                        </span>
+                      </TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {pager.slice.map((p, i) => {
+                      const manage = canManageProject(p.my_role, me?.platform_role, p.owner_id, me?.id);
+                      return (
+                        <TableRow
+                          key={p.id}
+                          index={i}
+                          className="cursor-pointer transition-colors"
+                          data-testid="project-row"
+                          onClick={() => openProject(p)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openProject(p);
+                            }
+                          }}
+                          tabIndex={0}
+                          role="link"
+                        >
+                          <TableCell className="py-2.5">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
+                                <FolderKanban className="size-3.5" />
+                              </span>
+                              <span className="font-semibold text-foreground text-sm tracking-tight truncate">
+                                {p.name}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-2.5 w-[180px]">
+                            <span className="inline-flex items-center rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 font-mono text-xs text-muted-foreground truncate max-w-[160px]">
+                              {p.slug}
+                            </span>
+                          </TableCell>
+                          <TableCell className="py-2.5 w-[220px]">
+                            <div
+                              className="flex items-center gap-1.5 max-w-[210px]"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span
+                                className="font-mono text-xs text-muted-foreground/80 truncate select-all"
+                                title={p.id}
+                              >
+                                {p.id}
+                              </span>
+                              <Hint label={copiedId === p.id ? "已复制 ID" : "复制完整 ID"}>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="compact"
+                                  data-testid="project-copy-id"
+                                  onClick={(e) => void onCopyId(e, p.id)}
+                                  className={cn(
+                                    "size-6 p-0 shrink-0 text-muted-foreground hover:text-foreground transition-colors",
+                                    copiedId === p.id && "text-emerald-500 bg-emerald-500/10 font-medium",
+                                  )}
+                                  aria-label="复制项目 ID"
+                                >
+                                  {copiedId === p.id ? (
+                                    <Check className="size-3 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="size-3 opacity-70" />
+                                  )}
+                                </Button>
+                              </Hint>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-2.5 w-[160px] text-xs text-muted-foreground whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1.5">
+                              <Clock className="size-3 opacity-50 shrink-0" />
+                              {formatTime(p.created_at)}
+                            </span>
+                          </TableCell>
+                          <TableCell
+                            className="text-right py-2.5 w-[180px] pr-4"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="compact"
+                                data-testid="project-detail"
+                                onClick={() => openProject(p)}
+                                className="h-7 px-2 text-xs font-medium text-muted-foreground hover:text-foreground shrink-0 inline-flex items-center gap-1"
+                              >
+                                <ExternalLink className="size-3 opacity-60 shrink-0" />
+                                详情
+                              </Button>
+                              {manage && (
+                                <>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="compact"
+                                    data-testid="project-edit"
+                                    onClick={() => {
+                                      setFormErr("");
+                                      setEditTarget(p);
+                                    }}
+                                    className="h-7 px-2 text-xs font-medium text-muted-foreground hover:text-foreground shrink-0 inline-flex items-center gap-1"
+                                  >
+                                    <Pencil className="size-3 opacity-60 shrink-0" />
+                                    编辑
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="compact"
+                                    data-testid="project-delete"
+                                    onClick={() => setRemoveTarget(p)}
+                                    className="h-7 px-2 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0 inline-flex items-center gap-1"
+                                  >
+                                    <Trash2 className="size-3 opacity-70 shrink-0" />
+                                    删除
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </Elevated>
           )}
         </PageBody>
       </PageFrame>
+
       <ProjectFormDialog
         open={createOpen}
         onOpenChange={(v) => {

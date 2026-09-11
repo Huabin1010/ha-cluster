@@ -15,6 +15,24 @@ func TestHostCapacity(t *testing.T) {
 	}
 }
 
+func TestHostMemTotal(t *testing.T) {
+	total := HostMemTotal()
+	if total <= 0 {
+		t.Skip("no /proc/meminfo")
+	}
+	avail := HostMemAvailable()
+	if avail <= 0 {
+		t.Fatalf("MemAvailable %d", avail)
+	}
+	if avail > total {
+		t.Fatalf("available %d > total %d", avail, total)
+	}
+	_, alloc := HostCapacity()
+	if alloc >= total {
+		t.Fatalf("allocatable %d should be less than MemTotal %d", alloc, total)
+	}
+}
+
 func TestHostDiskCapacity(t *testing.T) {
 	total, alloc := HostDiskCapacity("/")
 	if total <= 0 {

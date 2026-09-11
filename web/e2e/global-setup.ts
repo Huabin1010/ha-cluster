@@ -35,7 +35,7 @@ export default async function globalSetup() {
     waitUrl(WEB_URL, 60_000),
   ]);
 
-  const adminPassword = process.env.HA_ADMIN_PASSWORD ?? "adminadmin";
+  const adminPassword = process.env.HA_ADMIN_PASSWORD ?? "123456qq";
   try {
     await api.login("admin", adminPassword);
   } catch {

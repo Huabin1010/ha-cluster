@@ -4,4 +4,4 @@ export {
   formatBytes,
   formatCpuMilli,
   formatTime,
-} from "../../ui/format";
+} from "@/ui/format";

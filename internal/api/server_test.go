@@ -19,13 +19,18 @@ import (
 
 func testServer(t *testing.T) http.Handler {
 	t.Helper()
+	t.Setenv("HA_BASTION_HOST", "bastion.mnnumath.vip")
+	t.Setenv("HA_BASTION_PORT", "8099")
+	t.Setenv("HA_BASTION_DIRECT", "0")
+	t.Setenv("HA_AGENT_VIA_LAN", "0")
+	t.Setenv("HA_PROVISION_SYNC", "1")
 	st := memory.New()
 	app := service.New(st, workspace.NewMemoryRuntime(), []byte("unit-test-secret-key-32b!!"))
 	const Gi = 1024 * 1024 * 1024
 	_ = st.UpsertNode(t.Context(), &models.Node{
 		ID: uuid.New(), Name: "pc1", Arch: models.ArchAMD64, Role: "worker", Power: "mains",
 		AllocatableCPU: 8000, AllocatableMem: 2 * Gi, AllocatableDisk: 200 * Gi,
-		Ready: true, FabricIP: "10.88.0.10",
+		Ready: true, FabricIP: "10.88.0.10", LanIP: "192.168.1.82",
 	})
 	return New(app)
 }
@@ -128,6 +133,34 @@ func TestHeartbeatAndCapacity(t *testing.T) {
 	rr = doJSON(t, h, http.MethodGet, "/capacity", tok, nil)
 	if rr.Code != 200 {
 		t.Fatal(rr.Body.String())
+	}
+}
+
+func TestHeartbeatStoresHostTotals(t *testing.T) {
+	h := testServer(t)
+	const Gi = int64(1 << 30)
+	rr := doJSON(t, h, http.MethodPost, "/nodes/heartbeat", "", map[string]any{
+		"name": "jammy", "arch": "amd64", "role": "worker",
+		"allocatable_cpu_milli": 4000, "allocatable_mem_bytes": 4 * Gi, "allocatable_disk_bytes": 32 * Gi,
+		"mem_total_bytes": 4 * Gi, "disk_total_bytes": 40 * Gi,
+		"mem_available_bytes": 3 * Gi, "disk_free_bytes": 30 * Gi,
+		"fabric_ip": "10.129.129.205",
+	})
+	if rr.Code != 200 {
+		t.Fatal(rr.Body.String())
+	}
+	var n models.Node
+	if err := json.Unmarshal(rr.Body.Bytes(), &n); err != nil {
+		t.Fatal(err)
+	}
+	if n.MemTotalBytes != 4*Gi || n.DiskTotalBytes != 40*Gi {
+		t.Fatalf("host totals mem=%d disk=%d", n.MemTotalBytes, n.DiskTotalBytes)
+	}
+	if n.MemAvailableBytes != 3*Gi || n.DiskFreeBytes != 30*Gi {
+		t.Fatalf("host free mem=%d disk=%d", n.MemAvailableBytes, n.DiskFreeBytes)
+	}
+	if n.UsedMem != 0 {
+		t.Fatalf("ledger used mem should stay 0, got %d", n.UsedMem)
 	}
 }
 
@@ -389,6 +422,76 @@ func TestWorkspaceApprovalHTTP(t *testing.T) {
 	}
 	if !strings.Contains(conn.Body.String(), "bastion.mnnumath.vip") {
 		t.Fatal(conn.Body.String())
+	}
+}
+
+func TestSSHConnectionDirectMode(t *testing.T) {
+	h := testServer(t)
+	t.Setenv("HA_BASTION_DIRECT", "1")
+	t.Setenv("HA_AGENT_VIA_LAN", "0")
+	tok := registerLogin(t, h, "lab", "lab@x.com")
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "lab", "slug": "lab-direct"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", tok, map[string]string{
+		"name": "ws1", "plan": "nano", "arch": "amd64",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var ws models.Workspace
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+	conn := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/connection", tok, nil)
+	if conn.Code != http.StatusOK {
+		t.Fatal(conn.Body.String())
+	}
+	body := conn.Body.String()
+	if !strings.Contains(body, `"mode":"direct"`) {
+		t.Fatalf("want direct mode: %s", body)
+	}
+	if !strings.Contains(body, "10.88.0.10") {
+		t.Fatalf("want fabric ip in direct cmd: %s", body)
+	}
+	if strings.Contains(body, "bastion.mnnumath.vip") {
+		t.Fatalf("bastion host must not appear in direct mode: %s", body)
+	}
+}
+
+func TestSSHConnectionDirectLanMode(t *testing.T) {
+	h := testServer(t)
+	t.Setenv("HA_BASTION_DIRECT", "1")
+	t.Setenv("HA_AGENT_VIA_LAN", "1")
+	tok := registerLogin(t, h, "lab2", "lab2@x.com")
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "lab-lan", "slug": "lab-direct-lan"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", tok, map[string]string{
+		"name": "ws1", "plan": "nano", "arch": "amd64",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var ws models.Workspace
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+	conn := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/connection", tok, nil)
+	if conn.Code != http.StatusOK {
+		t.Fatal(conn.Body.String())
+	}
+	body := conn.Body.String()
+	if !strings.Contains(body, `"via":"lan"`) {
+		t.Fatalf("want lan via: %s", body)
+	}
+	if !strings.Contains(body, "192.168.1.82") {
+		t.Fatalf("want lan ip in direct cmd: %s", body)
+	}
+	if strings.Contains(body, "10.88.0.10") {
+		t.Fatalf("fabric ip must not appear when HA_AGENT_VIA_LAN=1: %s", body)
 	}
 }
 

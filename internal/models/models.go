@@ -134,6 +134,8 @@ type Node struct {
 	CPUUsagePct       float64   `json:"cpu_usage_pct,omitempty"`
 	MemAvailableBytes int64     `json:"mem_available_bytes,omitempty"`
 	DiskFreeBytes     int64     `json:"disk_free_bytes,omitempty"`
+	MemTotalBytes     int64     `json:"mem_total_bytes"`
+	DiskTotalBytes    int64     `json:"disk_total_bytes"`
 	Ready             bool      `json:"ready"`
 	LastHeartbeat     time.Time `json:"last_heartbeat"`
 	MachineType       string    `json:"machine_type,omitempty"`
@@ -164,6 +166,7 @@ type Workspace struct {
 	Visibility       string    `json:"visibility"`
 	OwnerUserID      uuid.UUID `json:"owner_user_id"`
 	NodeID           uuid.UUID `json:"node_id"`
+	NodeName         string    `json:"node_name,omitempty"`
 	AllocationID     uuid.UUID `json:"allocation_id"`
 	Status           string    `json:"status"`
 	SSHPort          int       `json:"ssh_port"`

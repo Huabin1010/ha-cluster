@@ -40,6 +40,12 @@ var membershipSSHSQL string
 //go:embed sql/008_workspace_destroy_resize.sql
 var workspaceDestroySQL string
 
+//go:embed sql/009_docker_registries.sql
+var dockerRegistriesSQL string
+
+//go:embed sql/010_node_host_totals.sql
+var nodeHostTotalsSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -83,6 +89,14 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, workspaceDestroySQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, dockerRegistriesSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, nodeHostTotalsSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -358,6 +372,7 @@ func scanNode(row interface{ Scan(dest ...any) error }) (*models.Node, error) {
 	err := row.Scan(&n.ID, &n.Name, &n.Arch, &n.Class, &n.Power, &n.Role, &n.FabricIP, &n.LanIP, &n.BreakglassSSH,
 		&n.AllocatableCPU, &n.AllocatableMem, &n.AllocatableDisk, &n.UsedCPU, &n.UsedMem, &n.UsedDisk,
 		&n.FabricPath, &n.FabricRTTMS, &n.HealthStatus, &n.CPUUsagePct, &n.MemAvailableBytes, &n.DiskFreeBytes,
+		&n.MemTotalBytes, &n.DiskTotalBytes,
 		&n.Ready, &n.LastHeartbeat, &n.MachineType, &n.Remark, &tagsRaw)
 	if err != nil {
 		return nil, mapErr(err)
@@ -370,7 +385,8 @@ func scanNode(row interface{ Scan(dest ...any) error }) (*models.Node, error) {
 
 const nodeCols = `id,name,arch,class,power,role,fabric_ip,lan_ip,breakglass_ssh,
 		allocatable_cpu_milli,allocatable_mem_bytes,allocatable_disk_bytes,used_cpu_milli,used_mem_bytes,used_disk_bytes,
-		fabric_path,fabric_rtt_ms,health_status,cpu_usage_pct,mem_available_bytes,disk_free_bytes,ready,last_heartbeat,
+		fabric_path,fabric_rtt_ms,health_status,cpu_usage_pct,mem_available_bytes,disk_free_bytes,
+		mem_total_bytes,disk_total_bytes,ready,last_heartbeat,
 		machine_type,remark,tags`
 
 func (s *Store) UpsertNode(ctx context.Context, n *models.Node) error {
@@ -385,7 +401,7 @@ func (s *Store) UpsertNode(ctx context.Context, n *models.Node) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
 		ON CONFLICT (name) DO UPDATE SET
 			arch=EXCLUDED.arch, class=EXCLUDED.class, power=EXCLUDED.power, role=EXCLUDED.role,
 			fabric_ip=EXCLUDED.fabric_ip, lan_ip=EXCLUDED.lan_ip, breakglass_ssh=EXCLUDED.breakglass_ssh,
@@ -394,10 +410,12 @@ func (s *Store) UpsertNode(ctx context.Context, n *models.Node) error {
 			fabric_path=EXCLUDED.fabric_path, fabric_rtt_ms=EXCLUDED.fabric_rtt_ms,
 			health_status=EXCLUDED.health_status, cpu_usage_pct=EXCLUDED.cpu_usage_pct,
 			mem_available_bytes=EXCLUDED.mem_available_bytes, disk_free_bytes=EXCLUDED.disk_free_bytes,
+			mem_total_bytes=EXCLUDED.mem_total_bytes, disk_total_bytes=EXCLUDED.disk_total_bytes,
 			ready=EXCLUDED.ready, last_heartbeat=EXCLUDED.last_heartbeat`,
 		n.ID, n.Name, n.Arch, n.Class, n.Power, n.Role, n.FabricIP, n.LanIP, n.BreakglassSSH,
 		n.AllocatableCPU, n.AllocatableMem, n.AllocatableDisk, n.UsedCPU, n.UsedMem, n.UsedDisk,
 		n.FabricPath, n.FabricRTTMS, n.HealthStatus, n.CPUUsagePct, n.MemAvailableBytes, n.DiskFreeBytes,
+		n.MemTotalBytes, n.DiskTotalBytes,
 		n.Ready, n.LastHeartbeat, n.MachineType, n.Remark, tagsJSON)
 	return err
 }
@@ -441,6 +459,29 @@ func (s *Store) ListNodes(ctx context.Context) ([]models.Node, error) {
 		out = append(out, *n)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) DeleteNode(ctx context.Context, id uuid.UUID) error {
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM allocations WHERE node_id=$1 AND state=$2`, id, models.AllocReleased); err != nil {
+		return err
+	}
+	var active int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM allocations WHERE node_id=$1 AND state <> $2`, id, models.AllocReleased).Scan(&active); err != nil {
+		return err
+	}
+	if active > 0 {
+		return store.ErrConflict
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM nodes WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) ReserveOnNode(ctx context.Context, nodeID uuid.UUID, a *models.Allocation) error {

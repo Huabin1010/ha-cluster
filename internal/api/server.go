@@ -134,6 +134,12 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 			ar.Get("/dangerous-approvals", s.listDangerousApprovals)
 			ar.Post("/dangerous-approvals/{id}/approve", s.approveDestroyPlatform)
 			ar.Post("/join-tokens", s.generateJoinToken)
+			ar.Get("/docker-registries", s.listDockerRegistries)
+			ar.Post("/docker-registries", s.createDockerRegistry)
+			ar.Post("/docker-registries/test", s.testDockerRegistryRaw)
+			ar.Patch("/docker-registries/{id}", s.patchDockerRegistry)
+			ar.Delete("/docker-registries/{id}", s.deleteDockerRegistry)
+			ar.Post("/docker-registries/{id}/test", s.testDockerRegistry)
 		})
 		r.Patch("/nodes/{id}", s.patchNode)
 		r.Post("/users/{id}/suspend", s.suspend)
@@ -270,6 +276,17 @@ func decodeJSON(r *http.Request, v any) error {
 func listEnvelope(w http.ResponseWriter, items any, total int) {
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	writeJSON(w, http.StatusOK, map[string]any{"data": items, "total": total})
+}
+
+func (s *Server) attachWorkspaceNodeNames(ctx context.Context, items []models.Workspace) {
+	for i := range items {
+		if items[i].NodeID == uuid.Nil {
+			continue
+		}
+		if n, err := s.App.Store.GetNode(ctx, items[i].NodeID); err == nil {
+			items[i].NodeName = n.Name
+		}
+	}
 }
 
 func (s *Server) attachMyRole(ctx context.Context, u *models.User, p *models.Project) {
@@ -645,6 +662,7 @@ func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []models.Workspace{}
 	}
+	s.attachWorkspaceNodeNames(r.Context(), items)
 	listEnvelope(w, items, len(items))
 }
 
@@ -662,6 +680,11 @@ func (s *Server) getWorkspace(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.App.RequireMembership(r.Context(), *userFrom(r), ws.ProjectID, models.RoleViewer); err != nil {
 		writeErr(w, http.StatusForbidden, err)
 		return
+	}
+	if ws.NodeID != uuid.Nil {
+		if n, err := s.App.Store.GetNode(r.Context(), ws.NodeID); err == nil {
+			ws.NodeName = n.Name
+		}
 	}
 	writeJSON(w, http.StatusOK, ws)
 }
@@ -732,25 +755,26 @@ func (s *Server) sshConfig(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	ws, _, err := s.App.SSHTarget(r.Context(), *userFrom(r), id)
+	ws, n, err := s.App.SSHTarget(r.Context(), *userFrom(r), id)
 	if err != nil {
 		writeErr(w, http.StatusForbidden, err)
 		return
 	}
 	u := userFrom(r)
-	port := bastionSSHPort()
-	cfg := "# Isolated workspace " + ws.ID.String() + "\n" +
-		"# scp: scp -P " + strconv.Itoa(port) + " -o RequestTTY=force -o RemoteCommand=" + ws.ID.String() +
-		" ./file " + u.Username + "@bastion.mnnumath.vip:/root/\n" +
-		"Host ha-" + ws.ID.String()[:8] + "\n" +
-		"  HostName bastion.mnnumath.vip\n" +
-		"  User " + u.Username + "\n" +
-		"  Port " + strconv.Itoa(port) + "\n" +
-		"  ForwardAgent yes\n" +
-		"  RequestTTY force\n" +
-		"  RemoteCommand " + ws.ID.String() + "\n"
+	var mem *models.Membership
+	if m, err := s.App.Store.GetMembership(r.Context(), ws.ProjectID, u.ID); err == nil {
+		mem = m
+	}
+	cfg := buildSSHConfig(ws, n, u, mem)
 	w.Header().Set("Content-Type", "text/plain")
 	_, _ = w.Write([]byte(cfg))
+}
+
+func bastionHost() string {
+	if v := strings.TrimSpace(os.Getenv("HA_BASTION_HOST")); v != "" {
+		return v
+	}
+	return "bastion.mnnumath.vip"
 }
 
 func bastionSSHPort() int {
@@ -764,10 +788,6 @@ func bastionSSHPort() int {
 }
 
 func writeSSHTarget(w http.ResponseWriter, ws *models.Workspace, n *models.Node, actor *models.User, mem *models.Membership) {
-	host := n.FabricIP
-	if host == "" {
-		host = n.LanIP
-	}
 	actorID := uuid.Nil
 	role := ""
 	if actor != nil {
@@ -778,6 +798,13 @@ func writeSSHTarget(w http.ResponseWriter, ws *models.Workspace, n *models.Node,
 	}
 	isAdmin := actor != nil && actor.PlatformRole == models.RolePlatformAdmin
 	tg, _ := bastion.Resolve(*ws, *n, *actor, mem)
+	host := tg.Host
+	if host == "" {
+		host = n.FabricIP
+	}
+	if host == "" {
+		host = n.LanIP
+	}
 	sshAccess := ""
 	if mem != nil {
 		sshAccess = mem.SSHAccess
@@ -813,6 +840,16 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	}
 	if items == nil {
 		items = []models.Node{}
+	}
+	includeAll := r.URL.Query().Get("all") == "1"
+	if !includeAll {
+		filtered := make([]models.Node, 0, len(items))
+		for _, n := range items {
+			if n.Ready && n.HealthStatus != models.NodeOffline {
+				filtered = append(filtered, n)
+			}
+		}
+		items = filtered
 	}
 	listEnvelope(w, items, len(items))
 }

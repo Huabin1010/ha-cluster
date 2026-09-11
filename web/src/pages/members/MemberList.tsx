@@ -1,17 +1,18 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Mail, Users } from "lucide-react";
+import { Check, Copy, ExternalLink, Hash, Mail, Plus, Shield, SlidersHorizontal, Terminal, Trash2, User, Users, Clock } from "lucide-react";
 import { useGetIdentity } from "@refinedev/core";
-import { api, friendlyError, type AuthUser } from "../../providers";
+import { api, friendlyError, type AuthUser } from "@/providers";
 import { ASSIGNABLE_ROLES, ROLE_HELP, roleLabel } from "./roles";
-import { canManageMembers, canSSH, sshAccessLabel } from "../../lib/permissions";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { SelectBox } from "../../components/ui/select";
-import { Field } from "../../components/ui/field";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Alert, AlertDescription } from "../../components/ui/alert";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { canManageMembers, canSSH } from "@/lib/permissions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { SelectBox } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
+import { Badge } from "@/components/ui/badge";
+import { Hint } from "@/components/ui/tooltip";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
   DialogBody,
@@ -21,9 +22,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../components/ui/dialog";
-import { PageFrame } from "../../components/ui/page-frame";
-import { Paginator } from "../../components/ui/pagination";
+} from "@/components/ui/dialog";
+import { PageFrame } from "@/components/ui/page-frame";
+import { Paginator } from "@/components/ui/pagination";
+import { Elevated } from "@/lib/elevated";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,9 +36,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "../../components/ui/alert-dialog";
-import { Loading } from "../../ui";
-import { useClientPager } from "../../lib/use-client-pager";
+} from "@/components/ui/alert-dialog";
+import { Loading } from "@/ui";
+import { useClientPager } from "@/lib/use-client-pager";
 import { BatchCreateUsersDialog } from "./BatchCreateUsersDialog";
 
 export type Member = {
@@ -247,26 +249,94 @@ export function MemberList({ projectId, projectName }: Props) {
     return <p className="text-sm text-muted-foreground">请选择一个项目</p>;
   }
 
+  function renderRoleBadge(role: string) {
+    if (role === "owner") {
+      return (
+        <Badge variant="default" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
+          <Shield className="size-3 text-primary-foreground shrink-0" />
+          所有者 (OWNER)
+        </Badge>
+      );
+    }
+    if (role === "admin") {
+      return (
+        <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap border-blue-500/30 text-blue-500 bg-blue-500/10">
+          <Shield className="size-3 text-blue-500 shrink-0" />
+          管理员 (ADMIN)
+        </Badge>
+      );
+    }
+    if (role === "developer") {
+      return (
+        <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap border-emerald-500/30 text-emerald-500 bg-emerald-500/10">
+          <User className="size-3 text-emerald-500 shrink-0" />
+          开发者 (DEV)
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-muted-foreground">
+        <User className="size-3 opacity-60 shrink-0" />
+        观察者 (VIEWER)
+      </Badge>
+    );
+  }
+
+  function renderSshBadge(access?: string, mode?: string) {
+    if (access === "granted") {
+      return (
+        <Badge variant="ok" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
+          <Check className="size-3 text-emerald-500 shrink-0" />
+          {mode === "read_only" ? "只读 (RO)" : "已授权 (RW)"}
+        </Badge>
+      );
+    }
+    if (access === "pending") {
+      return (
+        <Badge variant="warn" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
+          <Clock className="size-3 text-amber-500 shrink-0" />
+          待审批
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-muted-foreground opacity-60">
+        未开通
+      </Badge>
+    );
+  }
+
   const tokenBox = inviteToken ? (
-    <Alert variant="info" data-testid="invite-token">
+    <Alert variant="info" data-testid="invite-token" className="mt-2">
       <AlertDescription className="grid gap-3">
-        <p className="m-0">把下面的 token 发给对方（或分享带 token 的链接）。对方登录后打开接受页即可加入。</p>
-        <code className="mono invite-token-text block break-all rounded-md bg-background p-2 font-mono text-xs">{inviteToken}</code>
+        <p className="m-0 text-xs">把下面的 token 发给对方（或分享带 token 的链接）。对方登录后打开接受页即可加入。</p>
+        <code className="mono invite-token-text block break-all rounded-md bg-background p-2 font-mono text-xs border border-border/70">{inviteToken}</code>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" data-testid="invite-copy" onClick={() => void copyText("token", inviteToken)}>
-            {copied === "token" ? "已复制 token" : "复制 token"}
+          <Button
+            type="button"
+            variant="outline"
+            size="compact"
+            data-testid="invite-copy"
+            className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 h-7 text-xs"
+            onClick={() => void copyText("token", inviteToken)}
+          >
+            {copied === "token" ? <Check className="size-3 text-emerald-500 shrink-0" /> : <Copy className="size-3 opacity-70 shrink-0" />}
+            {copied === "token" ? "已复制" : "复制 Token"}
           </Button>
-          <Button variant="default" size="sm" asChild>
+          <Button variant="default" size="compact" asChild className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 h-7 text-xs">
             <Link to={acceptPath} data-testid="invite-accept-link">
+              <ExternalLink className="size-3 shrink-0" />
               打开接受页
             </Link>
           </Button>
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="compact"
+            className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 h-7 text-xs"
             onClick={() => void copyText("link", `${window.location.origin}${acceptPath}`)}
           >
+            {copied === "link" ? <Check className="size-3 text-emerald-500 shrink-0" /> : <Copy className="size-3 opacity-70 shrink-0" />}
             {copied === "link" ? "已复制链接" : "复制邀请链接"}
           </Button>
         </div>
@@ -276,294 +346,370 @@ export function MemberList({ projectId, projectName }: Props) {
 
   return (
     <>
-    <PageFrame
-      className="members-panel"
-      header={
-        <div className="grid gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="m-0 text-base font-semibold">{projectName ? `${projectName} · 成员` : "成员"}</h3>
-              <p className="mono mt-1 mb-0 font-mono text-xs text-muted-foreground">project: {projectId}</p>
-              <p className="mt-1 mb-0 text-sm text-muted-foreground">owner 不可通过此表单转让；添加已存在账号为成员需 admin 权限。</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {myRole === "developer" && !canSSH(myRole, mySshAccess, me?.platform_role) && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-testid="member-request-ssh"
-                  disabled={busy || mySshAccess === "pending"}
-                  onClick={() => void requestSSH()}
-                >
-                  {mySshAccess === "pending" ? "SSH 待审批" : "申请 SSH 连接权"}
-                </Button>
-              )}
-              {canBatchCreate && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-testid="batch-create-open"
-                  onClick={() => setBatchOpen(true)}
-                >
-                  <Users className="h-4 w-4" />
-                  批量创建用户
-                </Button>
-              )}
-              <Dialog open={addOpen} onOpenChange={setAddOpen}>
-                <DialogTrigger asChild>
-                  <Button type="button" data-testid="member-add-open">
-                    <Plus className="h-4 w-4" />
-                    添加成员
+      <PageFrame
+        className="members-panel"
+        header={
+          <div className="grid gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="m-0 text-base font-semibold text-foreground flex items-center gap-2">
+                  <Users className="size-4 text-primary shrink-0" />
+                  {projectName ? `${projectName} · 项目成员` : "项目成员名单"}
+                </h3>
+                <p className="mt-1 mb-0 text-xs text-muted-foreground">
+                  项目 ID: <span className="font-mono">{projectId}</span> · 管理团队成员与 SSH 跳板机接入权限
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {myRole === "developer" && !canSSH(myRole, mySshAccess, me?.platform_role) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="compact"
+                    data-testid="member-request-ssh"
+                    disabled={busy || mySshAccess === "pending"}
+                    className="h-8 px-3 text-xs gap-1.5 shrink-0"
+                    onClick={() => void requestSSH()}
+                  >
+                    <Terminal className="size-3.5 shrink-0" />
+                    {mySshAccess === "pending" ? "SSH 待审批" : "申请 SSH 权限"}
                   </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>添加成员</DialogTitle>
-                    <DialogDescription>将已有账号加入本项目。owner 不可通过此表单转让。</DialogDescription>
-                  </DialogHeader>
-                  <form className="flex min-h-0 flex-1 flex-col" onSubmit={add} data-testid="member-add-form">
-                    <DialogBody className="grid gap-4">
-                      <Field label="用户名">
-                        <Input
-                          data-testid="member-username"
-                          value={username}
-                          onChange={(e) => setUsername(e.target.value)}
-                          required
-                          autoComplete="off"
-                        />
-                      </Field>
-                      <Field label="角色">
-                        <SelectBox
-                          testId="member-role"
-                          value={addRole}
-                          onValueChange={setAddRole}
-                          options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
-                        />
-                      </Field>
-                    </DialogBody>
-                    <DialogFooter>
-                      <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
-                        取消
-                      </Button>
-                      <Button data-testid="member-add" type="submit" disabled={busy}>
-                        添加成员
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                )}
+                {canBatchCreate && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="compact"
+                    data-testid="batch-create-open"
+                    className="h-8 px-3 text-xs gap-1.5 shrink-0"
+                    onClick={() => setBatchOpen(true)}
+                  >
+                    <Users className="size-3.5 shrink-0" />
+                    批量创建用户
+                  </Button>
+                )}
+                <Dialog open={addOpen} onOpenChange={setAddOpen}>
+                  <DialogTrigger asChild>
+                    <Button type="button" size="compact" data-testid="member-add-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
+                      <Plus className="size-3.5 shrink-0" />
+                      添加成员
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent size="lg" className="sm:max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>添加成员</DialogTitle>
+                      <DialogDescription>将已有账号加入当前项目边界。owner 不可通过此表单直接转让。</DialogDescription>
+                    </DialogHeader>
+                    <form className="flex min-h-0 flex-1 flex-col" onSubmit={add} data-testid="member-add-form">
+                      <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
+                        <Field label="用户名">
+                          <Input
+                            data-testid="member-username"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            placeholder="输入已有用户名"
+                            required
+                            autoComplete="off"
+                          />
+                        </Field>
+                        <Field label="项目角色">
+                          <SelectBox
+                            testId="member-role"
+                            value={addRole}
+                            onValueChange={setAddRole}
+                            options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
+                          />
+                        </Field>
+                      </DialogBody>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
+                          取消
+                        </Button>
+                        <Button data-testid="member-add" type="submit" disabled={busy}>
+                          添加成员
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
 
-              <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-                <DialogTrigger asChild>
-                  <Button type="button" variant="outline" data-testid="invite-open">
-                    <Mail className="h-4 w-4" />
-                    生成邀请
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>生成邀请</DialogTitle>
-                    <DialogDescription>生成 token 发给对方，登录后即可加入。</DialogDescription>
-                  </DialogHeader>
-                  <form className="flex min-h-0 flex-1 flex-col" onSubmit={invite} data-testid="invite-form">
-                    <DialogBody className="grid gap-4">
-                      <Field label="邀请邮箱">
-                        <Input
-                          type="email"
-                          data-testid="invite-email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          required
-                        />
-                      </Field>
-                      <Field label="角色">
-                        <SelectBox
-                          testId="invite-role"
-                          value={inviteRole}
-                          onValueChange={setInviteRole}
-                          options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
-                        />
-                      </Field>
-                      {tokenBox}
-                    </DialogBody>
-                    <DialogFooter>
-                      <Button type="button" variant="outline" onClick={() => setInviteOpen(false)}>
-                        取消
-                      </Button>
-                      <Button type="submit" disabled={busy}>
-                        生成邀请
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+                  <DialogTrigger asChild>
+                    <Button type="button" variant="outline" size="compact" data-testid="invite-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
+                      <Mail className="size-3.5 shrink-0" />
+                      生成邀请
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent size="lg" className="sm:max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>生成邀请链接</DialogTitle>
+                      <DialogDescription>生成专用一次性邀请 Token，受邀成员登录后即可加入本项目。</DialogDescription>
+                    </DialogHeader>
+                    <form className="flex min-h-0 flex-1 flex-col" onSubmit={invite} data-testid="invite-form">
+                      <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
+                        <Field label="受邀人邮箱">
+                          <Input
+                            type="email"
+                            data-testid="invite-email"
+                            placeholder="colleague@example.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                          />
+                        </Field>
+                        <Field label="初始角色">
+                          <SelectBox
+                            testId="invite-role"
+                            value={inviteRole}
+                            onValueChange={setInviteRole}
+                            options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
+                          />
+                        </Field>
+                        {tokenBox}
+                      </DialogBody>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setInviteOpen(false)}>
+                          取消
+                        </Button>
+                        <Button type="submit" disabled={busy}>
+                          生成邀请 Token
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
+            {err && (
+              <Alert variant="destructive" role="alert" data-testid="member-error">
+                <AlertDescription>{err}</AlertDescription>
+              </Alert>
+            )}
           </div>
-          {err && (
-            <Alert variant="destructive" role="alert" data-testid="member-error">
-              <AlertDescription>{err}</AlertDescription>
-            </Alert>
+        }
+        footer={
+          <Paginator
+            page={pager.page}
+            pageCount={pager.pageCount}
+            pageSize={pager.pageSize}
+            total={pager.total}
+            onPageChange={pager.setPage}
+            onPageSizeChange={pager.setPageSize}
+          />
+        }
+      >
+        <div className="grid gap-4">
+          <Elevated
+            offset={1}
+            shadowLevel={1}
+            data-testid="role-help"
+            aria-label="角色说明"
+            className="rounded-xl border border-border/80 bg-surface-1 p-4 shadow-surface-1"
+          >
+            <h4 className="m-0 text-xs font-semibold text-foreground flex items-center gap-1.5 mb-2.5">
+              <Shield className="size-3.5 text-primary shrink-0" />
+              项目角色与权限说明
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+              {Object.entries(ROLE_HELP).map(([role, tip]) => (
+                <div key={role} className="p-2.5 rounded-lg border border-border/60 bg-surface-2/40 flex flex-col gap-1">
+                  <span className="font-mono font-bold text-foreground text-[11px] uppercase tracking-wider">
+                    {role}
+                  </span>
+                  <span className="text-muted-foreground text-[11px] leading-relaxed">
+                    {tip}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Elevated>
+
+          {loading ? (
+            <div className="py-12 text-center">
+              <Loading label="加载成员名单…" />
+            </div>
+          ) : rows.length === 0 ? (
+            <Elevated
+              offset={1}
+              shadowLevel={1}
+              className="rounded-xl border border-border/80 bg-surface-1 p-8 shadow-surface-1 text-center flex flex-col items-center justify-center gap-2"
+            >
+              <Users className="size-8 text-muted-foreground/40 mb-1" />
+              <p className="text-sm font-medium text-foreground m-0">暂无项目成员（或无权查看）</p>
+              <p className="text-xs text-muted-foreground m-0">点击上方「添加成员」或「生成邀请」将协作伙伴加入该项目。</p>
+            </Elevated>
+          ) : (
+            <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
+              <Table data-testid="member-table" className="min-w-[700px]">
+                <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
+                  <TableRow className="border-b border-border/60 hover:bg-transparent">
+                    <TableHead className="py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <User className="size-3.5 opacity-60 shrink-0" />
+                        成员账户
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[180px] py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <Hash className="size-3.5 opacity-60 shrink-0" />
+                        用户 ID
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[150px] py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <Shield className="size-3.5 opacity-60 shrink-0" />
+                        项目角色
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[130px] py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <Terminal className="size-3.5 opacity-60 shrink-0" />
+                        SSH 权限
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[200px] text-right py-2.5 pr-4">
+                      <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
+                        <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
+                        操作
+                      </span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pager.slice.map((m) => {
+                    const displayName = m.username || userMap[m.user_id];
+                    return (
+                      <TableRow key={m.user_id} data-testid="member-row">
+                        <TableCell className="py-2.5 font-medium whitespace-nowrap">
+                          <div className="inline-flex items-center gap-2">
+                            <span className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[11px] shrink-0 border border-primary/20">
+                              {(displayName || m.user_id).slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="font-medium text-foreground">{displayName || "—"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="mono font-mono text-xs py-2.5 whitespace-nowrap text-muted-foreground">
+                          <Hint label={m.user_id}>
+                            <span className="cursor-help">{m.user_id.slice(0, 12)}…</span>
+                          </Hint>
+                        </TableCell>
+                        <TableCell className="py-2.5 whitespace-nowrap">
+                          {renderRoleBadge(m.role)}
+                        </TableCell>
+                        <TableCell className="py-2.5 whitespace-nowrap">
+                          {renderSshBadge(m.ssh_access, m.ssh_mode)}
+                        </TableCell>
+                        <TableCell className="text-right py-2.5 w-[200px] pr-4">
+                          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                            {m.role !== "owner" && canManage && (
+                              <>
+                                {m.ssh_access === "pending" && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="compact"
+                                    data-testid="member-approve-ssh"
+                                    disabled={busy}
+                                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                                    onClick={() => void approveSSH(m.user_id)}
+                                  >
+                                    <Check className="size-3.5 text-emerald-500 shrink-0" />
+                                    批准 SSH
+                                  </Button>
+                                )}
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="compact"
+                                  data-testid="member-edit-role"
+                                  disabled={busy}
+                                  className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                                  onClick={() => onOpenEdit(m)}
+                                >
+                                  <Shield className="size-3.5 opacity-70 shrink-0" />
+                                  修改角色
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="compact"
+                                  data-testid="member-remove"
+                                  disabled={busy}
+                                  className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                                  onClick={() => void remove(m.user_id, m.role)}
+                                >
+                                  <Trash2 className="size-3.5 shrink-0" />
+                                  移除
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </div>
-      }
-      footer={
-        <Paginator
-          page={pager.page}
-          pageCount={pager.pageCount}
-          pageSize={pager.pageSize}
-          total={pager.total}
-          onPageChange={pager.setPage}
-          onPageSizeChange={pager.setPageSize}
-        />
-      }
-    >
-      <div className="grid gap-4">
-        <Card data-testid="role-help" aria-label="角色说明">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">角色说明</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="m-0 grid gap-1 pl-4 text-sm text-muted-foreground">
-              {Object.entries(ROLE_HELP).map(([role, tip]) => (
-                <li key={role}>
-                  <code>{role}</code>：{tip}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+      </PageFrame>
 
-        {loading ? (
-          <Loading label="加载中…" />
-        ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">暂无成员（或无权查看）</p>
-        ) : (
-          <Table data-testid="member-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>成员</TableHead>
-                <TableHead>user_id</TableHead>
-                <TableHead>角色</TableHead>
-                <TableHead>SSH</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pager.slice.map((m) => {
-                const displayName = m.username || userMap[m.user_id];
-                return (
-                  <TableRow key={m.user_id} data-testid="member-row">
-                    <TableCell>
-                      {displayName ? (
-                        <span className="font-medium text-foreground">{displayName}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="mono font-mono text-xs">{m.user_id}</TableCell>
-                    <TableCell>{roleLabel(m.role)}</TableCell>
-                    <TableCell>{sshAccessLabel(m.ssh_access)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        {m.role !== "owner" && canManage && (
-                          <>
-                            {m.ssh_access === "pending" && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                data-testid="member-approve-ssh"
-                                disabled={busy}
-                                onClick={() => void approveSSH(m.user_id)}
-                              >
-                                批准 SSH
-                              </Button>
-                            )}
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              data-testid="member-edit-role"
-                              disabled={busy}
-                              onClick={() => onOpenEdit(m)}
-                            >
-                              修改角色
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              data-testid="member-remove"
-                              disabled={busy}
-                              onClick={() => void remove(m.user_id, m.role)}
-                            >
-                              移除
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-    </PageFrame>
-    <Dialog open={!!editTarget} onOpenChange={(v) => !v && setEditTarget(null)}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>修改成员角色</DialogTitle>
-          <DialogDescription>更新该成员在当前项目中的权限角色。</DialogDescription>
-        </DialogHeader>
-        {editTarget && (
-          <form className="flex min-h-0 flex-1 flex-col" onSubmit={saveRole} data-testid="member-edit-form">
-            <DialogBody className="grid gap-4">
-              <Field label="新角色">
-                <SelectBox
-                  testId="member-edit-role-select"
-                  value={editRole}
-                  onValueChange={setEditRole}
-                  options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
-                />
-              </Field>
-            </DialogBody>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditTarget(null)}>
-                取消
-              </Button>
-              <Button data-testid="member-save-role" type="submit" disabled={busy}>
-                保存角色
-              </Button>
-            </DialogFooter>
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
-    <AlertDialog open={!!removeId} onOpenChange={(v) => !v && setRemoveId(null)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>移除成员</AlertDialogTitle>
-        </AlertDialogHeader>
-        <AlertDialogBody>
-          <AlertDialogDescription>确认移除成员 {removeId}？</AlertDialogDescription>
-        </AlertDialogBody>
-        <AlertDialogFooter>
-          <AlertDialogCancel data-testid="confirm-cancel">取消</AlertDialogCancel>
-          <AlertDialogAction data-testid="confirm-ok" onClick={() => void confirmRemove()}>
-            确定
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    <BatchCreateUsersDialog
-      open={batchOpen}
-      onOpenChange={setBatchOpen}
-      currentProjectId={projectId}
-      currentProjectName={projectName}
-      onSuccess={load}
-    />
+      <Dialog open={!!editTarget} onOpenChange={(v) => !v && setEditTarget(null)}>
+        <DialogContent size="lg" className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>修改成员角色</DialogTitle>
+            <DialogDescription>更新该成员在当前项目中的权限级别。</DialogDescription>
+          </DialogHeader>
+          {editTarget && (
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={saveRole} data-testid="member-edit-form">
+              <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
+                <Field label="新角色">
+                  <SelectBox
+                    testId="member-edit-role-select"
+                    value={editRole}
+                    onValueChange={setEditRole}
+                    options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
+                  />
+                </Field>
+              </DialogBody>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditTarget(null)}>
+                  取消
+                </Button>
+                <Button data-testid="member-save-role" type="submit" disabled={busy}>
+                  保存角色
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!removeId} onOpenChange={(v) => !v && setRemoveId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除项目成员</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            <AlertDialogDescription>确认将成员「{removeId}」从当前项目中移除？移除后该成员将失去对该项目及所有服务器的访问权。</AlertDialogDescription>
+          </AlertDialogBody>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="confirm-cancel">取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" data-testid="confirm-ok" onClick={() => void confirmRemove()}>
+              确定移除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <BatchCreateUsersDialog
+        open={batchOpen}
+        onOpenChange={setBatchOpen}
+        currentProjectId={projectId}
+        currentProjectName={projectName}
+        onSuccess={load}
+      />
     </>
   );
 }

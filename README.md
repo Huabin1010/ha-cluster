@@ -107,7 +107,7 @@ docker compose up -d
 
 - 控制台：<http://localhost:5173>
 - API：<http://localhost:8080>
-- 管理员：`admin` / `adminadmin`
+- 管理员：`admin` / `123456qq`
 - 数据库管理（Adminer）：<http://localhost:8081>
 
 集成测试：

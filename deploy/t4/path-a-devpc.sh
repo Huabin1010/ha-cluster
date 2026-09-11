@@ -8,7 +8,7 @@ export PATH="${HOME}/.local/go/bin:${ROOT}/bin:${PATH}"
 
 API_ADDR="${HA_API_ADDR:-127.0.0.1:8080}"
 API_URL="http://${API_ADDR}"
-ADMIN_PASS="${HA_ADMIN_PASSWORD:-adminadmin}"
+ADMIN_PASS="${HA_ADMIN_PASSWORD:-123456qq}"
 JWT_SECRET="${HA_JWT_SECRET:-dev-insecure-change-me-please-32b}"
 NODE_NAME="${HA_NODE_NAME:-dev-pc}"
 FABRIC_IP="${HA_FABRIC_IP:-192.168.1.148}"

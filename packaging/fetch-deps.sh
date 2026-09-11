@@ -23,6 +23,11 @@ need_cmd python3
 need_cmd unzip
 need_cmd sha256sum
 
+CURL_RETRY_ALL=""
+if curl --help 2>&1 | grep -q retry-all-errors; then
+  CURL_RETRY_ALL="--retry-all-errors"
+fi
+
 download() {
   local url="$1" dest="$2"
   mkdir -p "$(dirname "${dest}")"
@@ -31,8 +36,7 @@ download() {
     return 0
   fi
   echo "  GET ${url}"
-  # Resume partials; generous timeouts for large airgap/rootfs over flaky links.
-  curl -fL --retry 8 --retry-delay 5 --retry-all-errors \
+  curl -fL --retry 8 --retry-delay 5 ${CURL_RETRY_ALL} \
     --connect-timeout 30 --max-time 0 \
     -C - -o "${dest}.partial" "${url}"
   mv "${dest}.partial" "${dest}"
@@ -175,7 +179,7 @@ fetch_debs() {
         local idx component
         for component in universe main multiverse restricted; do
           idx="$(mktemp)"
-          if curl -fsL --retry 5 --retry-delay 2 --retry-all-errors \
+          if curl -fsL --retry 5 --retry-delay 2 ${CURL_RETRY_ALL} \
             --connect-timeout 30 --max-time 300 \
             -o "${idx}" \
             "${pool_host}/dists/${suite}/${component}/binary-${arch}/Packages.gz"; then
@@ -242,5 +246,9 @@ case "${ARCH_ARG}" in
     exit 2
     ;;
 esac
+
+if [[ "${ARCH_ARG}" == "amd64" || "${ARCH_ARG}" == "all" ]]; then
+  bash "${ROOT}/packaging/fetch-incus.sh" amd64 all
+fi
 
 echo "OK: cache ready under ${CACHE}"

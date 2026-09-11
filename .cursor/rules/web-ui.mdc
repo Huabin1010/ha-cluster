@@ -6,6 +6,8 @@ alwaysApply: true
 
 # ha-web UI 约定
 
+跨目录 import 一律用 `@/`（`@/*` → `src/*`），禁止 `../`、`../../`。同目录文件可以用 `./foo`。
+
 前端控制台只使用 `web/src/components/ui/` 下的 **shadcn/ui** 组件。页面里不要写原生 `<select>` / `<option>`、`window.confirm`、`window.alert`、自定义 toast 实现。
 
 - 选择器：`Select` / `SelectBox`（Radix），打开时用 shadcn 标准微动画（fade + zoom + slide）。不要原生 select。
@@ -13,22 +15,114 @@ alwaysApply: true
 - 确认：`AlertDialog`（顶栏标题固定、中间可滚、底栏按钮固定）。
 - Hover 提示：`Tooltip` / `Hint`（Radix）。截断 id、中文映射后的原文、图标按钮含义都用它，不要写原生 `title`。例外：表单 `pattern` 校验失败文案可以保留 `title`。根上已有 `TooltipProvider`，页面里直接用 `Hint`。
 - 主题：`next-themes` + `ThemeToggle`，页面必须同时支持浅色 / 暗色（token 走 CSS 变量，不要写死 `bg-white`）。
+- **设计系统**：全面遵循 Fluid Functionalism 规范（详见 `fluid-functionalism.mdc`），动效统一走 `spring` 预设，悬浮高亮使用 `useFluidHover` + `<FluidHoverHighlight>`，尺寸阶梯遵循 `SizeProvider`，滚动条走 `@/components/ui/scroll-area`，层级走 `<Elevated>`。
 
-## 创建：按钮 + 弹窗
+## 页面与表格布局：严禁异常断字折行 (Strict Anti-Wrapping)
 
-所有「创建 / 添加 / 生成邀请」都是列表页顶部一个按钮，点开 `Dialog`：
+任何表格、列表项、卡片行内的紧凑元数据和内联操作，**严禁被随意挤压折行断字**（如文字断成“已复\n制”、或“图标在上、文字在下”）：
 
-- **顶部固定**：`DialogHeader`
-- **中间可滚**：`DialogBody`
-- **底部固定**：`DialogFooter`（取消 + 提交）
+1. **内联操作与微型按钮防折行**：
+   - 动作按钮、复制按钮、状态切换按钮一律锁定 `inline-flex items-center gap-1.5 whitespace-nowrap shrink-0`。
+   - 列表/表格中的复制 ID 或短码，**首选纯图标模式**：`<Hint label="复制 ID"><Button size="compact" className="size-6 p-0 shrink-0">...</Button></Hint>`，既节省空间又规避宽度变化；如带文字，则必须提供固定最小宽度或防抖动尺寸，禁止文字折断。
+2. **标签徽章 (Badge) 严禁折行与图标竖排断裂**：
+   - 状态徽章、角色 Badge（如「角色: OWNER」）、环境标签一律强制锁定 `inline-flex items-center whitespace-nowrap shrink-0`。
+   - **图标与文字同行居中防断裂**：Badge 内部嵌套图标（如 `Shield`、`Check`、`Clock`）时，包装容器必须为 `inline-flex items-center gap-1 whitespace-nowrap shrink-0`，图标本身必须声明 `shrink-0`，**严禁图标被顶至上方、文字折到下方**。
+   - **清除多余指示圆点**：除 `variant="dot"` 或显式传入 `dot={true}` 外，其他变体（如 `outline`、`solid`、`ok` 等）**严禁渲染多余的状态小圆点**，避免圆点与内容图标冲突挤占宽度引发换行。
+3. **表格列宽三层架构 (Table Layout Architecture)**：
+   - **定宽保护列**：ID 列（`w-[180px]` ~ `w-[220px]`）、状态列（`w-[110px]` ~ `w-[140px]`）、时间列（`w-[150px]` ~ `w-[170px]`）、操作列（`w-[160px]` ~ `w-[240px]`）必须指定显式宽度并加 `whitespace-nowrap`，禁止自适应缩减到断行。
+   - **弹性截断列**：项目名称、工作区名称、描述等长文本列，使用 `min-w-0 flex-1 truncate` 吸收视口伸缩。
+   - **横向滚动兜底**：所有 Table 必须位于支持横向滚动的容器内（如 `overflow-x-auto` 或 `ScrollArea`），窄屏优先横向滑动，绝不以挤碎内部单元格为代价。
 
-## 列表：顶底固定 + 中间滚动
+## 语义化图标丰富化 (Icon-Enriched Display)
 
-用 `PageFrame`：
+界面不能只有干瘪的纯文字，适度在关键元数据和操作前增加统一风格的 Lucide 图标，提升视觉识别效率：
 
-- **顶部固定**：`PageHeader` + 筛选 / 创建
-- **中间可滚**：表格或空态
-- **底部固定**：完整 `Paginator`
+1. **核心对象与元数据前置图标**：
+   - 业务对象：项目 `FolderKanban`、工作区 `Box` / `Server`、节点 `Cpu` / `HardDrive`、成员 `Users` / `Shield`、密钥 `KeyRound`。
+   - 属性与指标：时间 `Clock`、网络 IP `Globe` / `Network`、延迟 `Activity`、配置规格 `Cpu` / `Database`。
+   - 状态多维表达：成功/在线 `CheckCircle2`、运行中 `PlayCircle`、待审/警告 `Clock` / `AlertTriangle`、失败/危险 `AlertCircle`、私有/锁定 `Lock`。
+2. **图标规范与尺寸阶梯**：
+   - 图标与文字同行居中：`inline-flex items-center gap-1.5 shrink-0`。
+   - 尺寸对应：内联微型元数据 `size-3` 或 `size-3.5`；按钮与标准文本 `size-3.5` 或 `size-4`；卡片头/空态 `size-5` ~ `size-8`。
+   - 图标克制弱化：次要信息的图标统一搭配 `text-muted-foreground` 或 `opacity-60`，保持页面层次分明、整洁克制，不喧宾夺主。
+3. **操作按钮前置动作图标**：
+   - 创建 `Plus`、连接/终端 `Terminal`、启动 `Play`、停止 `Square`、重启 `RotateCw`、下载 `Download`、导入公钥 `KeyRound`、删除/销毁 `Trash2`、复制 `Copy` / `Check`。
+   - 纯图标按钮必须包裹 `<Hint label="...">` 或自带 `aria-label`。
+
+## 语义色彩保真度与状态表达细节 (Semantic Color Fidelity & Empathy in Details)
+
+严禁在状态反馈上敷衍用户或盲目使用中性灰白色模糊严重错误，确保视觉感知与业务逻辑严格一致：
+
+1. **失败与危险必红 (Zero-Neutral-Error Policy)**：
+   - **严禁错误状态灰色化**：凡是表征异常、失败（`failed` / `error`）、拒绝（`rejected`）、离线（`offline`）、失联（`node_lost`）的状态徽章（Badge），必须明确使用危险色变体 `variant="danger"`（微光红底 + 红色高亮边框）。
+   - 严禁用毫无情绪的 `outline`（灰白无害边框）或 `secondary` 变体来展示失败，必须让用户一眼即时察觉异常。
+2. **状态指示点 (Status Dot) 与业务状态严格同步，杜绝无脑硬编码绿点**：
+   - 列表项、卡片行若包含前置指示小圆点（`rounded-full`），其底色与光晕必须根据当前实体状态动态联动：
+     - **正常运行 / 在线 / 成功**：`bg-emerald-500`（可附带翡翠柔和微光 `shadow-[0_0_8px_rgba(16,185,129,0.45)]`）；
+     - **待审批 / 扩容中 / 网络降级 / 告警**：`bg-amber-500`（琥珀微光）；
+     - **运行失败 / 异常丢失 / 审批驳回 / 节点离线**：`bg-rose-500`（玫瑰红微光 `shadow-[0_0_8px_rgba(244,63,94,0.45)]`）；
+     - **已停止 / 休眠 / 未初始化**：`bg-muted-foreground/40`（静默中性灰）。
+   - **绝对禁止逻辑矛盾**：严禁在已经失败或离线（如 `FAILED`、`OFFLINE`）的实例行前依然渲染绿色小圆点！
+3. **用户同理心与中文语义化本地化 (Empathy in Localization & Technical Traceability)**：
+   - **拒绝生硬暴露英文代码**：严禁将后端全大写枚举、数据库下划线代码（如 `FAILED`、`fabric_degraded`、`destroy_pending_platform`）直接原样丢给用户。
+   - **友好中文映射**：页面展示必须优先接入本地化映射（如 `statusLabel(status)`），转换为平实亲切的中文（如“失败”、“网络降级”、“待平台终审”）。
+   - **保留技术追溯能力**：为了便于开发和运维排障，原始状态字串必须包裹在 `<Hint label={status} className="font-mono">` 中，供鼠标悬停随时查验。
+4. **元数据防折行与微图标协同**：
+   - 规格标签（如 `nano · x86_64`）在卡片或列表中建议前置微型 `Cpu` 或 `Server` 图标（`size-3`，配合 `opacity-70`），并整体包裹 `inline-flex items-center gap-1 shrink-0 whitespace-nowrap`，彻底杜绝折行撕裂。
+
+## 创建：按钮 + 弹窗与尺寸规范 (Dialog Architecture & Zero Horizontal Scroll)
+
+所有「创建 / 添加 / 申请服务器 / 生成邀请」都是列表页顶部一个按钮，点开 `Dialog`：
+
+- **三段式固定骨架**：
+  - **顶部固定**：`DialogHeader`
+  - **中间可滚**：`DialogBody`（严防横向滚动）
+  - **底部固定**：`DialogFooter`（取消 + 提交）
+- **弹窗尺寸阶梯 (Dialog Sizing Hierarchy)**：
+  - **禁止在多字段表单使用过窄小弹窗**：`size="sm"`（400px）仅用于单输入框（如极简重命名）或简短确认提示。
+  - **中大配置类表单标配 `size="lg"`**：涉及 2 个以上字段、套餐/规格/架构下拉、网络设置、提示说明等复杂表单（如「开通服务器」`CreateForm`、「导入密钥」`ImportKeyDialog`），一律声明 `<DialogContent size="lg" className="sm:max-w-xl">`（或 `sm:max-w-lg`），提供充裕的横向呼吸空间。
+  - **多行批量/复合表单标配 `size="xl"`**：包含批量文本解析、多列数据表、分步引导等（如 `BatchCreateUsersDialog`），声明 `size="xl"` 或 `sm:max-w-2xl`~`4xl`。
+- **严禁弹窗内部出现横向滚动条 (Strict Zero Horizontal Scrolling in Dialogs)**：
+  - `DialogBody` 必须强制锁定 `overflow-x-hidden overflow-y-auto max-w-full`，杜绝任何产生底部横向滚动条的情况。
+  - **杜绝内边距双重叠加**：`DialogContent` 外部已具备统一内边距，`DialogBody` 严禁再加重复的横向内边距（如再次 `px-6`）以防内容区被大幅挤压。
+  - **文本与提示自适应折行**：弹窗内的说明文本、用量说明（`usageHint`）、警告与状态提示必须显式添加 `break-words min-w-0`，严禁固定宽度的长文本容器撑出横向溢出。
+
+## 列表与页面滚动架构规范：顶底固定 + 中间滚动 (Fixed Header + Scrollable Body + Pinned Footer)
+
+详见专用规则 `.cursor/rules/page-layout.mdc`。页面布局必须遵循 **“顶部的 title 固定、底部的 paginator 固定、中间的内容自适应滚动”**：
+
+1. **容器高度继承链 (Container Height Parity)**：
+   - 布局层 `<main>` 声明 `flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-4 md:p-6`。
+   - 页面根容器必须显式锁定 `h-full min-h-0 flex flex-col overflow-hidden`，严禁无脑使用 `min-h-full pb-10` 随文档流无限撑长，避免向下滚动时头部标题消失、底部表格被切断。
+2. **两类典型页面的落地模式**：
+   - **模式 A：独立列表/数据表格页 (Pinned Workspaces / Tables)**：
+     - 必须使用 `PageFrame` 架构：`header` (固定筛选/Title) + `children` (中间 `min-h-0 flex-1 overflow-auto` 独立滚动) + `footer` (固定 `Paginator` 分页器)。
+     - 表格头部必须配置 `TableHeader sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs`，保证在滚动查看数据时表头始终吸顶可见。
+   - **模式 B：复合详情与带子 Tab 页面 (如 `Detail.tsx`)**：
+     - 全局 Header（项目 Title、Slug、角色 Badge、编辑/删除按钮及 NavTabs 导航栏）统一锁定在页面顶端（`shrink-0 pb-3 border-b border-border/60`）；
+     - 中间视图分发区域（如工作区服务器、成员列表）：表格部分必须接入 `useClientPager` 分页切片，承载在 `min-h-0 flex-1 overflow-auto` 中独立滚动；
+     - 底部固定分页器：表格下方必须声明 `shrink-0 pt-3 border-t border-border/60` 固定承载 `Paginator`，即使有数十台机器，顶部的 Title 和底部的 Paginator 也始终保持在视口内固定可见。
+
+## 表单输入控件几何规范与聚焦环净化 (Form Control Geometry & Focus Ring Hygiene)
+
+表单输入框（`Input`、`Textarea`、`SelectTrigger`、`Combobox`）必须保持严格的几何一致与聚焦光圈协同，杜绝视觉割裂：
+
+1. **聚焦环与边框协同，严禁双层边框与圆角撕裂 (Single-Layer Focus Ring Hygiene)**：
+   - 聚焦态严禁出现“外层高光 Ring + 内层灰白高对比 Border”的双重边框撕裂现象，严禁在圆角处产生内外圆弧错位、白边夹层或药丸内影。
+   - 统一使用边框与焦点色一体化微光策略：
+     `focus-visible:outline-none focus-visible:border-[color:var(--focus-ring,#6B97FF)] focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]`
+     聚焦时边框变色与 1px 同心环完美贴合，视觉圆融一体。
+2. **全局圆角与形态一致性 (Shape & Radius Parity)**：
+   - 严禁输入框硬编码写死 `rounded-md` (6px)。
+   - 所有输入类控件必须接入 `useShape().input`，跟随全局设计系统（默认 `rounded-lg` 8px，pill 模式为 `rounded-[20px]`），与同一表单中的 `SelectBox`、`Button` 保持绝对对齐。
+3. **尺寸阶梯与控件等高 (Size Ladder Parity)**：
+   - 严禁 Input 写死 `h-10 sm:h-9`。所有输入控件必须接入 `useSize()`：
+     - `default`：36px 控件高度（`h-9`），文本 13px（`text-[13px]`），内边距 `px-3`。
+     - `compact`：28px 控件高度（`h-7`），文本 12px（`text-[12px]`），内边距 `px-2`。
+     确保单行 Input 与 SelectTrigger 在任意尺寸下垂直像素级等高。
+4. **表面底色与弹窗和谐 (Surface & Background Harmonization)**：
+   - 输入框在 Dialog / Modal 浮层中严禁写死 `bg-background` 形成深黑突兀补丁。
+   - 统一采用 `border border-border bg-transparent text-foreground hover:bg-hover/30 hover:border-border/80`，占位符为 `placeholder:text-muted-foreground`，微动效统一为 `transition-all duration-80`。
 
 ## 测试
 

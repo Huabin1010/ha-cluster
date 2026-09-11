@@ -264,7 +264,7 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     expect(auditText).toBeTruthy();
 
     // 触发系统对账核验
-    const adminTokens = await api.login("admin", process.env.HA_ADMIN_PASSWORD ?? "adminadmin");
+    const adminTokens = await api.login("admin", process.env.HA_ADMIN_PASSWORD ?? "123456qq");
     const adminReconcile = await api.reconcile(adminTokens.token);
     expect(adminReconcile).toHaveProperty("released");
 

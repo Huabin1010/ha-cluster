@@ -1,6 +1,10 @@
 import type { AccessControlProvider } from "@refinedev/core";
-import { authProvider, type AuthUser } from "../providers";
-import { canApproveDangerousOps, canManageNodes, canViewAudit, isPlatformAdmin } from "../lib/permissions";
+import { authProvider, type AuthUser } from "@/providers";
+import { canApproveDangerousOps, canManageNodes, canViewAudit, isPlatformAdmin } from "@/lib/permissions";
+
+function adminOnly(role?: string, reason = "仅 platform_admin 可访问此页。") {
+  return { can: isPlatformAdmin(role), reason };
+}
 
 export const accessControlProvider: AccessControlProvider = {
   can: async ({ resource, action }) => {
@@ -26,6 +30,10 @@ export const accessControlProvider: AccessControlProvider = {
         can: canApproveDangerousOps(role),
         reason: "仅平台超级管理员可终审危险操作。",
       };
+    }
+
+    if (resource === "docker-registries") {
+      return adminOnly(role);
     }
 
     if (action === "reconcile") {

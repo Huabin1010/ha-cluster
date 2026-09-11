@@ -2,7 +2,7 @@ export {
   fmtBytes,
   fmtCPU,
   fmtTime,
-} from "../../ui/format";
+} from "@/ui/format";
 
 /** 审计操作中文映射 */
 export const ACTION_LABEL: Record<string, string> = {

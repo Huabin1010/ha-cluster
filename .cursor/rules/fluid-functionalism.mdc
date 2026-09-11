@@ -1,0 +1,165 @@
+---
+description: Fluid Functionalism 设计系统规范：Fluid Hover, Motion, Scrollbars, Sizes, Surfaces
+globs: web/**
+alwaysApply: true
+---
+
+# Fluid Functionalism UI 系统规范
+
+前端控制台全面遵循 [Fluid Functionalism](https://www.fluidfunctionalism.com/) 设计规范。禁止随手手写随意 duration / transition、固定高阶硬编码尺寸或脱离层级系统的阴影。
+
+## 1. 动效与弹簧 (Motion System)
+
+- **永不手写 duration**：统一使用 `@/lib/springs` 导出的 `spring` 预设：
+  - `spring.fast`：`0.08s, bounce: 0`。用于 Hover、淡入淡出、Tooltip、聚焦环。
+  - `spring.moderate`：`0.16s, bounce: 0`。临界阻尼，用于下拉菜单、Tab、短距离位移、抽屉。
+  - `spring.slow`：`0.24s, bounce: 0.12`。用于 Dialog、大型表面进入。
+- **退出必须更快**：退出的 transition 必须使用 `spring.<tier>.exit`（退出为纯 tween，无弹跳），严禁将 enter spring 复用于退出。
+  ```tsx
+  import { motion } from "framer-motion";
+  import { spring } from "@/lib/springs";
+
+  <motion.div
+    transition={spring.fast}
+    exit={{ opacity: 0, transition: spring.fast.exit }}
+  />
+  ```
+
+## 2. 流畅悬浮高亮 (Fluid Hover)
+
+列表、侧边栏、菜单与选项集合中的 hover 光标跟随与高亮，使用 `useFluidHover` 与 `<FluidHoverHighlight>`：
+
+- 容器使用 `relative` 并展开 `hover.handlers`。
+- 子项使用 `useRegisterFluidHoverItem(registerItem, index, ref)` 注册，并添加 `relative z-10`。
+- `axis`: 垂直列表为 `"y"`（默认），水平条为 `"x"`，卡片网格为 `"xy"`。
+```tsx
+import { useRef } from "react";
+import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hover";
+import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
+
+function List({ rows }: { rows: string[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hover = useFluidHover(containerRef, { axis: "y" });
+  return (
+    <div ref={containerRef} className="relative flex flex-col gap-1 p-2" {...hover.handlers}>
+      <FluidHoverHighlight hover={hover} className="rounded-lg" />
+      {rows.map((label, i) => (
+        <Row key={label} index={i} registerItem={hover.registerItem}>{label}</Row>
+      ))}
+    </div>
+  );
+}
+```
+
+## 3. 双档尺寸阶梯 (Sizes System)
+
+全局与局部控件尺寸由 `@/lib/size-context` 阶梯管理：
+- `default`：36px 控件高度（`h-9`），文本 13px，图标 16px。
+- `compact`：28px 控件高度（`h-7`），文本 12px，图标 14px，间距减半，用于密集工具栏、表格操作、侧边栏。
+- 通过 `<SizeProvider size="compact">` 批量约束子树，或通过 `useSize()` 读取响应式 class 与像素值。
+
+## 4. 八级表面与层级阴影 (Surfaces & Elevation)
+
+- 避免生硬的 `shadow-md` / `shadow-lg`，统一走 8 级表面与阴影标尺（`bg-surface-1` ~ `bg-surface-8`，`shadow-surface-1` ~ `shadow-surface-8`）。
+- 弹窗、下拉、浮层使用 `<Elevated>`：
+  - 下拉/Popover/Select：`offset={2}`（比底板高 2 级）。
+  - 对话框/Modal：`offset={4}`，固定阴影推荐 `shadowLevel={5}`。
+```tsx
+import { Elevated } from "@/lib/elevated";
+
+<Elevated offset={2} className="rounded-xl p-2">
+  {/* 内容自动继承并提升基底 */}
+</Elevated>
+```
+
+## 5. 形状与平滑滚动条 (Shapes & Scrollbars)
+
+- 统一使用 `@/components/ui/scroll-area`，内建边缘渐变遮罩 (`scroll-fade` / `scroll-fade-x`) 与触控自动回退。
+- 圆角支持通过 `@/lib/shape-context` 动态在 `rounded` (8px) 与 `pill` (20px) 之间无缝切换。
+- 交互状态统一复用全局 Token：`bg-hover`、`bg-active`、`bg-selected`。
+
+## 6. 布局稳定性与紧凑防断行 (Layout Stability & Anti-Wrapping)
+
+- **防断字与防竖排折行**：微型按钮、状态标签、哈希/ID、时间戳与操作控件严禁被挤压折行（杜绝汉字断行如“已复\n制”、或“图标在上、文字在下”）。
+- **统一锁定约束**：所有行内操作与紧凑单元格强制声明 `inline-flex items-center gap-1.5 whitespace-nowrap shrink-0`。
+- **徽章与标签 (Badge) 零异常换行**：
+  - 角色 Badge、状态标签必须锁死 `inline-flex items-center whitespace-nowrap shrink-0`。
+  - **杜绝图标文字上下折断**：嵌套 Lucide 图标的 Badge，内层容器必须统一锁定 `inline-flex items-center gap-1 whitespace-nowrap shrink-0`，图标必须加 `shrink-0`，严禁图标孤立在第一行、文字折到第二行。
+  - **指示圆点守卫**：只有在 `variant="dot"` 或显式传 `dot={true}` 时才渲染指示圆点；其他变体（`outline` / `solid` / `ok` 等）严禁强行渲染多余小圆点挤占横向空间。
+- **列表与表格列宽架构**：
+  - 定宽列：ID、状态、时间、操作必须分配明确保护宽度（如 `w-[180px]` 或 `w-px whitespace-nowrap`）。
+  - 弹性列：名称、描述承担剩余自适应空间，必须加 `truncate min-w-0`。
+  - 容器横向滚动：Table 容器必须包裹在 `overflow-x-auto` 中，窄屏宁可横滑也不得折压单元格。
+- **复制按钮设计**：列表内短码复制推荐 **纯图标模式**（`size-6` 或 `size-7` 搭配 `<Hint>` 提示），状态切换时图标原地变换（`Copy` → `Check`），尺寸固定零抖动。
+
+## 7. 图标阶梯与语义增强 (Icon Hierarchy & Enrichment)
+
+- **语义图标丰富视觉**：适度在关键元数据前配置 Lucide 图标（如 `Clock`、`Globe`、`Cpu`、`KeyRound`、`FolderKanban`、`Terminal`），消除纯干瘪文本堆叠。
+- **同行对齐与等比尺寸**：
+  - 微型元数据：`size-3` 或 `size-3.5`（`shrink-0`，搭配 `text-muted-foreground` 或 `opacity-60`）。
+  - 按钮与标准标签：`size-3.5` 或 `size-4`（`shrink-0`）。
+  - 强调与引导：Hover 时跟随文字过渡提亮，重要状态使用对应语义色（绿色 `emerald`、蓝色 `sky`、黄色 `amber`、红色 `rose`）。
+
+## 8. 弹窗与浮层尺寸梯队与零横向滚动 (Dialog Sizing & Zero Horizontal Scroll)
+
+- **表单弹窗必须匹配信息体量**：严禁用过窄的默认 `size="sm"`（400px）来塞入多字段表单。
+  - 单输入框/简易确认：`size="sm"`。
+  - 多字段配置表单（如开通服务器、导入密钥、扩容配置）：标配 `size="lg"`（`540px` ~ `sm:max-w-xl`）。
+  - 复合数据/表格导入（如批量用户创建、高级路由规则）：标配 `size="xl"`（`880px` ~ `sm:max-w-2xl`~`4xl`）。
+- **零横向滚动条铁律**：
+  - 对话框内容区 `DialogBody` 统一锁定 `overflow-x-hidden overflow-y-auto max-w-full`。
+  - 严禁内外层内边距重复嵌套压缩横向有效宽度（`DialogContent` 具备外 padding，`DialogBody` 不应再套横向 `px-6`）。
+  - 内部文本段落、Hint/Alert 提示块强制声明 `break-words min-w-0`，确保自适应换行，绝不产生多余的横向滚动条。
+
+## 9. 表单控件几何一致性与聚焦环净化 (Form Control Geometry & Focus Ring Hygiene)
+
+- **严禁双重边框与圆角撕裂 (Zero Double Borders & Ring-Border Desync)**：
+  - 传统默认的 `border border-input` + `focus-visible:ring-2 focus-visible:ring-ring` 在深色背景或弹窗浮层下，会导致外层生成 2px 的亮蓝环，内层却残留 1px 的灰白粗糙高对比线条，尤其在两端圆角处产生明显的内外圆弧错位、白边夹层与“药丸胶囊内影”。
+  - 聚焦态严禁内层留着高亮原边框。必须统一采用边框与聚焦光圈协同规范：
+    `focus-visible:outline-none focus-visible:border-[color:var(--focus-ring,#6B97FF)] focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]`
+    聚焦时边框自身自然变为焦点色，并辅以 1px 贴合同心微光，杜绝一切圆角夹缝与双重断层。
+- **全局圆角与形态阶梯统一 (Shape & Radius Parity)**：
+  - 严禁在同一表单中混用孤立的 `rounded-md` (6px) 与 Select/Button 的 `rounded-lg` (8px)。
+  - 所有输入控件（`Input`、`Textarea`、`SelectTrigger`、`Combobox`）必须统一接入 `useShape().input`，跟随全局 `ShapeProvider`（默认 `rounded-lg`，pill 模式为 `rounded-[20px]`），保持表单全列外沿曲率与呼吸空间绝对一致。
+- **尺寸阶梯与控件等高 (Size Ladder Parity)**：
+  - 严禁 Input 硬编码写死 `h-10 sm:h-9`。
+  - 所有表单控件必须接入 `useSize(size)`，继承 `SizeProvider` 双档阶梯：
+    - `default`：36px 控件高度（`h-9`），文本 13px（`text-[13px]`），水平内边距 12px（`px-3`）。
+    - `compact`：28px 控件高度（`h-7`），文本 12px（`text-[12px]`），水平内边距 8px（`px-2`）。
+    确保 Input 与同行/同屏的 SelectBox、Button 垂直像素级等高对齐。
+- **表面底色与弹窗和谐 (Surface & Background Harmonization)**：
+  - 输入框在 Dialog / Modal 浮层中严禁写死 `bg-background`（深黑底色在浅色表面上形成突兀黑洞）。
+  - 统一使用 `bg-transparent` 或环境 `bg-surface`，静态边框为 `border-border`，悬浮时响应柔和微光 `hover:bg-hover/30 hover:border-border/80`，占位符统一使用 `placeholder:text-muted-foreground`，微动效统一配置 `transition-all duration-80`。
+
+## 10. 全局与主视口滚动架构规范 (Viewport & Scrolling Architecture)
+
+- **严禁主视口一刀切截断 (No Blind `overflow-hidden` on Main Viewport)**：
+  - 页面主内容承载容器 `<main>` 严禁盲目配置 `overflow-hidden`。一旦在外层锁定 `overflow-hidden`，任何直接渲染在内部的长页面（如项目详情 `Detail`、设置与预算、卡片流、接受邀请页等）一旦高度超出视口，下方内容将被完全裁切且无法通过鼠标滚轮或触控滚动访问，导致关键危险操作与保存按钮直接死锁。
+  - 主视口必须统一声明为弹性纵向滚动与防横溢出容器：`flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden`，以优雅的全局 `scrollbar-width: thin` 默认承载流式页面自适应滚动。
+- **两类页面形态的滚动解耦与协作**：
+  - **流式卡片与详情页 (Document Flow / Auto-Scroll Pages)**：
+    - 如项目概览/设置（`Detail.tsx`）、复杂配置卡片流。
+    - 根容器声明 `min-h-full w-full max-w-7xl mx-auto flex flex-col gap-... pb-10`，在 `<main>` 的 `overflow-y-auto` 下顺畅自适应向下展开，底端必须留出安全留白（`pb-10`），杜绝紧贴视口边缘。
+  - **固定顶底数据表格页 (Pinned Workspaces / Tables, i.e. `PageFrame`)**：
+    - 必须采用 `PageFrame` 骨架：`header` (固定筛选) + `children` (中间滚动) + `footer` (固定分页)。
+    - `PageFrame` 根容器显式锁定 `h-full min-h-0 flex-1 flex flex-col`。通过 `h-full` 约束其高度始终严格对齐 `<main>` 的可视内容盒，由中间 `<div className="min-h-0 flex-1 overflow-auto">` 独立承载数据行滚动，既确保顶底三段式结构绝不走形，又杜绝内外双滚动条；在屏幕极度变矮时，由外层 `<main>` 触发兜底滚动，保护顶底操作不被切断。
+
+## 11. 语义色彩保真度与状态表达细节 (Semantic Color Fidelity & Empathy in Details)
+
+- **失败与危险必红 (Zero-Neutral-Error Policy)**：
+  - 严禁对严重异常、报错、审批拒绝或离线状态使用灰色、浅白无感情的 `outline` 变体（如将 `failed`、`error`、`offline`、`rejected` 渲染成灰白色 Badge）。
+  - 所有失败与危险状态必须使用 `variant="danger"`（微光红底 + 红色高亮边框），确保用户能在扫视界面的极短时间内第一时间捕捉到系统异常与故障。
+- **状态指示点 (Status Dot) 与业务状态严格同步，杜绝无脑硬编码绿点**：
+  - 列表项、卡片行若包含前置指示小圆点（`rounded-full`），其底色与光晕必须根据当前实体状态动态联动：
+    - **正常运行 / 在线 / 成功**：`bg-emerald-500`（可附带翡翠柔和微光 `shadow-[0_0_8px_rgba(16,185,129,0.45)]`）；
+    - **待审批 / 扩容中 / 网络降级 / 告警**：`bg-amber-500`（琥珀微光）；
+    - **运行失败 / 异常丢失 / 审批驳回 / 节点离线**：`bg-rose-500`（玫瑰红微光 `shadow-[0_0_8px_rgba(244,63,94,0.45)]`）；
+    - **已停止 / 休眠 / 未初始化**：`bg-muted-foreground/40`（静默中性灰）。
+  - **绝对禁止逻辑矛盾**：严禁在已经失败或离线（如 `FAILED`、`OFFLINE`）的实例行前依然渲染绿色小圆点！
+- **用户同理心与中文语义化本地化 (Empathy in Localization & Technical Traceability)**：
+  - **拒绝生硬暴露英文代码**：严禁将后端全大写英文枚举、数据库下划线代码（如 `FAILED`、`fabric_degraded`、`destroy_pending_platform`）直接原样丢给用户。
+  - **友好中文映射**：页面展示必须优先接入本地化映射（如 `statusLabel(status)`），转换为平实亲切的中文（如“失败”、“网络降级”、“待平台终审”）。
+  - **保留技术追溯能力**：为了便于开发和运维排障，原始状态字串必须包裹在 `<Hint label={status} className="font-mono">` 中，供鼠标悬停随时查验。
+- **元数据防折行与微图标协同 (Anti-Wrapping & Icon Synergy)**：
+  - 规格标签（如 `nano · x86_64`）在卡片或列表中建议前置微型 `Cpu` 或 `Server` 图标（`size-3`，配合 `opacity-70`），并整体包裹 `inline-flex items-center gap-1 shrink-0 whitespace-nowrap`，彻底杜绝折行撕裂。
+

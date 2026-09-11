@@ -1,19 +1,21 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useGetIdentity, useList } from "@refinedev/core";
-import { isInsufficientCapacity, type AuthUser } from "../providers";
-import { Banner, Empty, Loading, PageHeader, useToast } from "../ui";
-import { CreateForm } from "./workspaces/CreateForm";
-import { WorkspaceRow } from "./workspaces/WorkspaceRow";
-import { canApproveRole, ProjectOption, Workspace } from "./workspaces/types";
-import { Button } from "../components/ui/button";
-import { SelectBox } from "../components/ui/select";
-import { Field } from "../components/ui/field";
-import { Table, TableBody, TableHead, TableHeader, TableRow } from "../components/ui/table";
-import { PageFrame } from "../components/ui/page-frame";
-import { Paginator } from "../components/ui/pagination";
-import { useClientPager } from "../lib/use-client-pager";
-import { writeCurrentProject } from "../lib/current-project";
+import { Server, Layers, Cpu, RefreshCw, FolderKanban, ShieldAlert, PlayCircle, Clock, HeartPulse, SlidersHorizontal } from "lucide-react";
+import { isInsufficientCapacity, type AuthUser } from "@/providers";
+import { Banner, Loading, useToast } from "@/ui";
+import { CreateForm } from "@/pages/workspaces/CreateForm";
+import { WorkspaceRow } from "@/pages/workspaces/WorkspaceRow";
+import { canApproveRole, ProjectOption, Workspace } from "@/pages/workspaces/types";
+import { Button } from "@/components/ui/button";
+import { SelectBox } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageFrame } from "@/components/ui/page-frame";
+import { Paginator } from "@/components/ui/pagination";
+import { Elevated } from "@/lib/elevated";
+import { useClientPager } from "@/lib/use-client-pager";
+import { writeCurrentProject } from "@/lib/current-project";
 
 export function WorkspacesPage() {
   const toast = useToast();
@@ -45,7 +47,16 @@ export function WorkspacesPage() {
   const projects = projectData?.data ?? [];
   const selected = projects.find((p) => p.id === projectFilter);
   const canApprove = canApproveRole(selected?.my_role, me?.platform_role);
-  const rows = (data?.data ?? []).filter((w) => w.status !== "destroyed");
+  const [showAbnormal, setShowAbnormal] = useState(false);
+  const rows = useMemo(() => {
+    const list = data?.data ?? [];
+    return list.filter((w) => {
+      if (w.status === "destroyed") return false;
+      if (!showAbnormal && (w.status === "node_lost" || w.status === "failed")) return false;
+      return true;
+    });
+  }, [data, showAbnormal]);
+  const runningCount = rows.filter((w) => w.status === "running" || w.status === "fabric_degraded").length;
   const pending = rows.filter((w) => w.status === "requested").length;
   const pendingResize = rows.filter((w) => w.resize_status === "pending").length;
   const pendingDestroy = rows.filter((w) => w.status === "destroy_requested").length;
@@ -67,11 +78,33 @@ export function WorkspacesPage() {
   return (
     <PageFrame
       header={
-        <div className="grid gap-3">
-          <PageHeader
-            title="服务器"
-            description="按项目申请隔离机器（例如 2 核 / 2GiB / 5GiB 盘）。开通与扩/降配需管理员批准；销毁须项目初审 + 平台终审。"
-            actions={
+        <div className="flex flex-col gap-4">
+          {/* 顶栏标题与开通入口 */}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
+                <Server className="size-4.5" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">服务器</h2>
+                  <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
+                    {rows.length} 台实例
+                  </Badge>
+                  {selected && (
+                    <Badge variant="default" className="px-2 py-0.5 text-xs font-normal inline-flex items-center gap-1">
+                      <FolderKanban className="size-3" />
+                      当前项目: {selected.name}
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-1 mb-0 text-sm text-muted-foreground">
+                  项目隔离的 Linux 计算环境。开通与扩缩容需管理员审批，销毁须项目初审与平台终审。
+                </p>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
               <CreateForm
                 projects={projects}
                 initialProjectId={projectFilter}
@@ -85,8 +118,73 @@ export function WorkspacesPage() {
                 }}
                 onError={showError}
               />
-            }
-          />
+            </div>
+          </div>
+
+          {/* 统计指标卡片条 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Elevated
+              offset={1}
+              shadowLevel={1}
+              className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  <Server className="size-3.5 text-primary" /> 全部服务器
+                </span>
+              </div>
+              <div className="text-lg font-bold tracking-tight text-foreground font-mono mt-1">
+                {rows.length} <span className="text-xs font-normal text-muted-foreground">台</span>
+              </div>
+            </Elevated>
+
+            <Elevated
+              offset={1}
+              shadowLevel={1}
+              className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  <PlayCircle className="size-3.5 text-emerald-500" /> 运行中
+                </span>
+              </div>
+              <div className="text-lg font-bold tracking-tight text-foreground font-mono mt-1">
+                {runningCount} <span className="text-xs font-normal text-muted-foreground">台</span>
+              </div>
+            </Elevated>
+
+            <Elevated
+              offset={1}
+              shadowLevel={1}
+              className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  <Clock className="size-3.5 text-amber-500" /> 待审批申请
+                </span>
+              </div>
+              <div className="text-lg font-bold tracking-tight text-foreground font-mono mt-1">
+                {pending + pendingResize} <span className="text-xs font-normal text-muted-foreground">条</span>
+              </div>
+            </Elevated>
+
+            <Elevated
+              offset={1}
+              shadowLevel={1}
+              className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  <ShieldAlert className="size-3.5 text-rose-500" /> 销毁待审
+                </span>
+              </div>
+              <div className="text-lg font-bold tracking-tight text-foreground font-mono mt-1">
+                {pendingDestroy} <span className="text-xs font-normal text-muted-foreground">条</span>
+              </div>
+            </Elevated>
+          </div>
+
+          {/* 审批与通知横幅 */}
           {pending > 0 && canApprove && (
             <Banner kind="info">
               <span data-testid="ws-pending-banner">有 {pending} 条服务器申请待审批</span>
@@ -111,23 +209,56 @@ export function WorkspacesPage() {
               <span data-testid="ws-error">{err}</span>
             </Banner>
           )}
-          <div className="flex flex-wrap items-end gap-3">
-            <Field label="按项目筛选" className="min-w-52">
-              <SelectBox
-                testId="ws-filter-project"
-                value={projectFilter || "__all__"}
-                onValueChange={(v) => setProjectFilter(v === "__all__" ? "" : v)}
-                placeholder="全部项目"
-                options={[
-                  { value: "__all__", label: "全部项目" },
-                  ...projects.map((p) => ({ value: p.id, label: `${p.name} (${p.slug})` })),
-                ]}
-              />
-            </Field>
-            <Button type="button" variant="outline" onClick={() => void refetch()}>
-              刷新
-            </Button>
-          </div>
+
+          {/* 过滤与操作栏 */}
+          <Elevated
+            offset={1}
+            shadowLevel={1}
+            className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-wrap items-center justify-between gap-3"
+          >
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <span className="text-xs font-medium text-muted-foreground shrink-0 flex items-center gap-1.5">
+                <FolderKanban className="size-3.5 text-primary" />
+                项目筛选:
+              </span>
+              <div className="w-full max-w-xs sm:max-w-sm">
+                <SelectBox
+                  testId="ws-filter-project"
+                  value={projectFilter || "__all__"}
+                  onValueChange={(v) => setProjectFilter(v === "__all__" ? "" : v)}
+                  placeholder="全部项目"
+                  options={[
+                    { value: "__all__", label: "全部项目" },
+                    ...projects.map((p) => ({ value: p.id, label: `${p.name} (${p.slug})` })),
+                  ]}
+                />
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant={showAbnormal ? "secondary" : "outline"}
+                size="compact"
+                data-testid="ws-show-abnormal"
+                className="h-8 px-3 text-xs gap-1.5 shrink-0"
+                onClick={() => setShowAbnormal((v) => !v)}
+              >
+                <ShieldAlert className="size-3.5 opacity-70 shrink-0" />
+                {showAbnormal ? "隐藏异常" : "含异常"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="compact"
+                onClick={() => void refetch()}
+                className="h-8 px-3 text-xs gap-1.5 shrink-0"
+              >
+                <RefreshCw className="size-3.5 opacity-70 shrink-0" />
+                刷新列表
+              </Button>
+            </div>
+          </Elevated>
         </div>
       }
       footer={
@@ -142,47 +273,92 @@ export function WorkspacesPage() {
       }
     >
       {isLoading ? (
-        <Loading label="加载服务器…" />
+        <div className="py-12 text-center">
+          <Loading label="加载服务器…" />
+        </div>
       ) : rows.length === 0 ? (
-        <Empty
-          title={projectFilter ? "该项目还没有服务器" : "还没有服务器"}
-          description="在项目里申请隔离环境；普通成员需管理员批准后才能连接。"
-        />
+        <div className="py-8 flex flex-col items-center justify-center">
+          <Elevated
+            offset={1}
+            shadowLevel={2}
+            className="rounded-2xl border border-border/80 bg-surface-1 p-8 shadow-surface-2 text-center max-w-md w-full flex flex-col items-center gap-3"
+          >
+            <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20 shadow-xs">
+              <Server className="size-6" />
+            </div>
+            <div>
+              <h3 className="m-0 text-base font-semibold text-foreground">
+                {projectFilter ? "该项目下暂无服务器" : "集群中暂无服务器"}
+              </h3>
+              <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed">
+                点击右上角「开通服务器」即可为项目申请独立的隔离 Linux 容器环境，获得专属 IP 与 SSH 极速跳板连接。
+              </p>
+            </div>
+          </Elevated>
+        </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>名称</TableHead>
-              <TableHead>套餐</TableHead>
-              <TableHead>arch</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>可见性</TableHead>
-              <TableHead>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pager.slice.map((w) => {
-              const wsProject = projects.find((p) => p.id === w.project_id);
-              const wsCanApprove = canApproveRole(wsProject?.my_role, me?.platform_role) || canApprove;
-              return (
+        <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
+          <Table className="min-w-[900px]">
+            <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
+              <TableRow className="border-b border-border/60 hover:bg-transparent">
+                <TableHead className="py-2.5">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <Server className="size-3.5 opacity-60 shrink-0" />
+                    服务器名称
+                  </span>
+                </TableHead>
+                <TableHead className="w-[140px] py-2.5">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <HeartPulse className="size-3.5 opacity-60 shrink-0" />
+                    状态
+                  </span>
+                </TableHead>
+                <TableHead className="w-[220px] py-2.5">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <Layers className="size-3.5 opacity-60 shrink-0" />
+                    配置规格
+                  </span>
+                </TableHead>
+                <TableHead className="w-[160px] py-2.5">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <Cpu className="size-3.5 opacity-60 shrink-0" />
+                    宿主机节点
+                  </span>
+                </TableHead>
+                <TableHead className="w-[160px] py-2.5">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <Clock className="size-3.5 opacity-60 shrink-0" />
+                    创建时间
+                  </span>
+                </TableHead>
+                <TableHead className="w-[320px] text-right py-2.5 pr-4">
+                  <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
+                    <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
+                    快捷操作
+                  </span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pager.slice.map((ws) => (
                 <WorkspaceRow
-                  key={w.id}
-                  ws={w}
+                  key={ws.id}
+                  ws={ws}
                   busyId={busyId}
-                  canApprove={wsCanApprove}
+                  canApprove={canApprove}
                   platformRole={me?.platform_role}
-                  myRole={wsProject?.my_role}
-                  mySshAccess={wsProject?.my_ssh_access}
-                  projectId={w.project_id}
+                  myRole={selected?.my_role}
+                  mySshAccess={selected?.my_role === "owner" || selected?.my_role === "admin" ? "granted" : "none"}
+                  projectId={projectFilter}
                   onBusy={setBusyId}
-                  onRefresh={afterMutation}
-                  onToast={(msg) => toast.show(msg, "info")}
-                  onError={(msg) => showError(msg)}
+                  onRefresh={() => void refetch()}
+                  onToast={(m) => toast.show(m, "success")}
+                  onError={(e) => showError(e)}
                 />
-              );
-            })}
-          </TableBody>
-        </Table>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </PageFrame>
   );

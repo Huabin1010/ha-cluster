@@ -8,7 +8,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "../../components/ui/alert-dialog";
+} from "@/components/ui/alert-dialog";
 
 type Props = {
   open: boolean;
@@ -31,7 +31,7 @@ export function ProjectDeleteDialog({ open, name, onOpenChange, onConfirm }: Pro
         </AlertDialogBody>
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="confirm-cancel">取消</AlertDialogCancel>
-          <AlertDialogAction data-testid="confirm-ok" onClick={onConfirm}>
+          <AlertDialogAction variant="destructive" data-testid="confirm-ok" onClick={onConfirm}>
             删除
           </AlertDialogAction>
         </AlertDialogFooter>

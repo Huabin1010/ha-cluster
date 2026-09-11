@@ -24,6 +24,8 @@ import (
 // 固定 UUID，避免开发热重载后 JWT 里的 user id 对不上 store。
 var adminUserID = uuid.MustParse("00000000-0000-0000-0000-000000000009")
 
+const defaultAdminPassword = "123456qq"
+
 func main() {
 	ctx := context.Background()
 	st := openStore(ctx)
@@ -95,8 +97,8 @@ func env(k, d string) string {
 }
 
 // ensureBootstrapAdmin 保证始终有可登录的管理员：
-// 1) 已有 admin 用户 → 修复角色/空密码/ token_version；
-// 2) 没有任何 platform_admin → 自动创建 admin（密码 HA_ADMIN_PASSWORD，默认 adminadmin）。
+// 1) 已有 admin 用户 → 修复角色、同步 HA_ADMIN_PASSWORD、补 token_version；
+// 2) 没有任何 platform_admin → 自动创建 admin（密码 HA_ADMIN_PASSWORD，默认 123456qq）。
 // 设 HA_SEED=0 可关闭自动创建（仍允许手动注册首个用户为管理员）。
 func ensureBootstrapAdmin(app *service.App) {
 	if os.Getenv("HA_SEED") == "0" {
@@ -116,6 +118,7 @@ func ensureBootstrapAdmin(app *service.App) {
 		}
 	}
 
+	wantPass := env("HA_ADMIN_PASSWORD", defaultAdminPassword)
 	u, err := app.Store.GetUserByUsername(ctx, "admin")
 	if err == nil {
 		changed := false
@@ -123,11 +126,16 @@ func ensureBootstrapAdmin(app *service.App) {
 			u.PlatformRole = models.RolePlatformAdmin
 			changed = true
 		}
-		if u.PasswordHash == "" {
-			if hash, hashErr := auth.HashPassword(env("HA_ADMIN_PASSWORD", "adminadmin")); hashErr == nil {
+		if u.PasswordHash == "" || !auth.VerifyPassword(wantPass, u.PasswordHash) {
+			if hash, hashErr := auth.HashPassword(wantPass); hashErr == nil {
 				u.PasswordHash = hash
+				if u.TokenVersion < 1 {
+					u.TokenVersion = 1
+				} else {
+					u.TokenVersion++
+				}
 				changed = true
-				log.Printf("repaired empty admin password hash")
+				log.Printf("synced admin password from HA_ADMIN_PASSWORD")
 			}
 		}
 		if u.TokenVersion == 0 {
@@ -145,7 +153,7 @@ func ensureBootstrapAdmin(app *service.App) {
 		return
 	}
 
-	hash, hashErr := auth.HashPassword(env("HA_ADMIN_PASSWORD", "adminadmin"))
+	hash, hashErr := auth.HashPassword(wantPass)
 	if hashErr != nil {
 		log.Printf("bootstrap admin: hash password: %v", hashErr)
 		return

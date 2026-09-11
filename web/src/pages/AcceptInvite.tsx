@@ -1,12 +1,14 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, friendlyError } from "../providers";
-import { PageHeader } from "../ui";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Field } from "../components/ui/field";
-import { Card, CardContent } from "../components/ui/card";
-import { Alert, AlertDescription } from "../components/ui/alert";
+import { motion, AnimatePresence } from "framer-motion";
+import { api, friendlyError } from "@/providers";
+import { PageHeader } from "@/ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Elevated } from "@/lib/elevated";
+import { spring } from "@/lib/springs";
 
 export function AcceptInvitePage() {
   const [searchParams] = useSearchParams();
@@ -64,50 +66,90 @@ export function AcceptInvitePage() {
   }
 
   return (
-    <section className="grid gap-4">
-      <PageHeader title="接受邀请" description="粘贴管理员发给你的邀请 token。需已登录。" />
-      <p className="m-0 -mt-2 text-sm text-muted-foreground">
-        未登录请先{" "}
-        <Button variant="link" className="h-auto p-0" asChild>
-          <Link to="/login">登录</Link>
-        </Button>
-        。
-      </p>
-      <Card className="max-w-lg">
-        <CardContent className="pt-6">
-          <form className="grid gap-4" onSubmit={onSubmit}>
-            <Field label="邀请 token">
-              <Input
-                data-testid="accept-token"
-                className="mono font-mono"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                required
-                autoComplete="off"
-                placeholder="粘贴 token"
-              />
-            </Field>
+    <motion.section
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={spring.moderate}
+      className="grid gap-6 max-w-xl"
+    >
+      <div>
+        <PageHeader
+          title="接受邀请"
+          description="粘贴项目管理员签发的邀请 Token 即可加入协作项目。需当前已登录。"
+        />
+        <p className="m-0 mt-2 text-xs text-muted-foreground sm:text-sm">
+          未登录请先{" "}
+          <Button variant="link" className="h-auto p-0 text-xs sm:text-sm font-medium" asChild>
+            <Link to="/login">登录账号</Link>
+          </Button>
+          。
+        </p>
+      </div>
+
+      <Elevated
+        offset={2}
+        shadowLevel={3}
+        className="rounded-2xl border border-border/80 bg-surface-2 p-6 sm:p-8 shadow-surface-3 transition-colors duration-150"
+      >
+        <form className="grid gap-5" onSubmit={onSubmit}>
+          <Field label="邀请 Token">
+            <Input
+              data-testid="accept-token"
+              className="mono font-mono text-xs sm:text-sm tracking-tight"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              required
+              autoComplete="off"
+              placeholder="粘贴邀请 Token"
+            />
+          </Field>
+
+          <AnimatePresence mode="wait">
             {err && (
-              <Alert variant="destructive" role="alert" data-testid="accept-error">
-                <AlertDescription>{err}</AlertDescription>
-              </Alert>
+              <motion.div
+                key="accept-err"
+                initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98, transition: spring.fast.exit }}
+                transition={spring.fast}
+              >
+                <Alert variant="destructive" role="alert" data-testid="accept-error">
+                  <AlertDescription>{err}</AlertDescription>
+                </Alert>
+              </motion.div>
             )}
             {ok && (
-              <Alert variant="success" data-testid="accept-ok">
-                <AlertDescription>
-                  {ok}，正在跳转到项目…
-                </AlertDescription>
-              </Alert>
+              <motion.div
+                key="accept-ok"
+                initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98, transition: spring.fast.exit }}
+                transition={spring.fast}
+              >
+                <Alert variant="success" data-testid="accept-ok">
+                  <AlertDescription>
+                    {ok}，正在跳转至对应项目…
+                  </AlertDescription>
+                </Alert>
+              </motion.div>
             )}
-            <Button data-testid="accept-submit" type="submit" disabled={busy || !token.trim()}>
-              {busy ? "提交中…" : "接受邀请"}
+          </AnimatePresence>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+            <Button
+              data-testid="accept-submit"
+              type="submit"
+              disabled={busy || !token.trim()}
+              className="w-full sm:w-auto font-medium"
+            >
+              {busy ? "提交中…" : "确认接受邀请"}
             </Button>
-            <Button variant="link" className="h-auto w-fit p-0" asChild>
+            <Button variant="ghost" className="text-xs text-muted-foreground hover:text-foreground" asChild>
               <Link to="/members">返回成员页</Link>
             </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </section>
+          </div>
+        </form>
+      </Elevated>
+    </motion.section>
   );
 }

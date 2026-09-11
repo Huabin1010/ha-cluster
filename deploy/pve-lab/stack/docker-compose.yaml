@@ -1,0 +1,50 @@
+name: ha-cluster-pve
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ha
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ha}
+      POSTGRES_DB: ha
+    volumes:
+      - ha-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ha -d ha"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    image: ${HA_API_IMAGE:-ha-cluster-api:local}
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8080}:8080"
+      - "80:8080"
+    environment:
+      HA_API_ADDR: ":8080"
+      DATABASE_URL: postgres://ha:${POSTGRES_PASSWORD:-ha}@postgres:5432/ha?sslmode=disable
+      HA_JWT_SECRET: ${HA_JWT_SECRET:-dev-insecure-change-me-please-32b}
+      HA_ADMIN_PASSWORD: ${HA_ADMIN_PASSWORD:-123456qq}
+      HA_NODE_TOKEN: ${HA_NODE_TOKEN:-ha-test-node-token-2026}
+      HA_INTERNAL_TOKEN: ${HA_INTERNAL_TOKEN:-internal-dev}
+      HA_RUNTIME: ${HA_RUNTIME:-remote}
+      HA_AGENT_VIA_LAN: ${HA_AGENT_VIA_LAN:-1}
+      HA_BASTION_HOST: ${HA_BASTION_HOST:-192.168.1.66}
+      HA_BASTION_PORT: ${HA_BASTION_PORT:-8099}
+      HA_BASTION_DIRECT: ${HA_BASTION_DIRECT:-1}
+      HA_SEED: ${HA_SEED:-1}
+      HA_WEB_DIR: /app/web/dist
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+volumes:
+  ha-pg-data:

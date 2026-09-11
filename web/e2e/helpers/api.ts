@@ -259,7 +259,7 @@ export const api = {
     if (!adminTok) {
       const creds = await request<AuthTokens>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ username: "admin", password: process.env.HA_ADMIN_PASSWORD ?? "adminadmin" }),
+        body: JSON.stringify({ username: "admin", password: process.env.HA_ADMIN_PASSWORD ?? "123456qq" }),
       });
       adminTok = (creds.data as AuthTokens).token;
     }
@@ -286,6 +286,10 @@ export const api = {
     used_cpu_milli?: number;
     used_mem_bytes?: number;
     used_disk_bytes?: number;
+    mem_total_bytes?: number;
+    disk_total_bytes?: number;
+    mem_available_bytes?: number;
+    disk_free_bytes?: number;
     fabric_path?: string;
     fabric_rtt_ms?: number;
     ready?: boolean;

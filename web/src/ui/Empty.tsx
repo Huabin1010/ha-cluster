@@ -1,5 +1,5 @@
 import { Inbox } from "lucide-react";
-import { Card, CardContent } from "../components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
 type Props = {
   text?: string;

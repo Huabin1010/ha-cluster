@@ -45,6 +45,23 @@ func StartBackgroundTasks(ctx context.Context, app *App) {
 	}()
 
 	go func() {
+		t := time.NewTicker(2 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if n, err := app.ReconcileStuckProvisioning(context.Background(), 20*time.Minute); err != nil {
+					log.Printf("stuck provisioning: %v", err)
+				} else if n > 0 {
+					log.Printf("stuck provisioning: failed %d workspaces", n)
+				}
+			}
+		}
+	}()
+
+	go func() {
 		t := time.NewTicker(10 * time.Minute)
 		defer t.Stop()
 		for {

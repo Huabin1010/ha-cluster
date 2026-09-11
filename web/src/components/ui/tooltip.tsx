@@ -1,45 +1,284 @@
-import * as React from "react";
+"use client";
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { cn } from "../../lib/utils";
+import { motion, useMotionValue } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { spring, exitFallbackMs } from "@/lib/springs";
+import { fontWeights } from "@/lib/font-weight";
+import { useShape } from "@/lib/shape-context";
 
-export const TooltipProvider = TooltipPrimitive.Provider;
-export const Tooltip = TooltipPrimitive.Root;
-export const TooltipTrigger = TooltipPrimitive.Trigger;
+// ---------------------------------------------------------------------------
+// Portal container context
+// ---------------------------------------------------------------------------
 
-export const TooltipContent = React.forwardRef<
-  React.ElementRef<typeof TooltipPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 8, ...props }, ref) => (
-  <TooltipPrimitive.Portal>
-    <TooltipPrimitive.Content
-      ref={ref}
-      sideOffset={sideOffset}
-      className={cn(
-        "z-[80] overflow-hidden rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md origin-[var(--radix-tooltip-content-transform-origin)] animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-        className,
-      )}
-      {...props}
-    />
-  </TooltipPrimitive.Portal>
-));
-TooltipContent.displayName = TooltipPrimitive.Content.displayName;
+const TooltipPortalContainerContext = createContext<HTMLElement | null>(null);
 
-type HintProps = {
-  label?: React.ReactNode;
-  side?: React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>["side"];
-  className?: string;
-  children: React.ReactElement;
-};
-
-/** Hover 提示。无文案时原样渲染 children，不包一层。 */
-export function Hint({ label, side = "top", className, children }: HintProps) {
-  if (label == null || label === "") return children;
+function TooltipPortalContainer({
+  value,
+  children,
+}: {
+  value: HTMLElement | null;
+  children: ReactNode;
+}) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side={side} className={className}>
-        {label}
-      </TooltipContent>
+    <TooltipPortalContainerContext.Provider value={value}>
+      {children}
+    </TooltipPortalContainerContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+
+const DEFAULT_DELAY = 200;
+
+// Tracks whether an app-level <TooltipProvider> is above us. Each Tooltip
+// only wraps itself in a local primitive Provider when there isn't one —
+// a per-instance Provider would defeat cross-tooltip skip-delay grouping
+// (moving between adjacent tooltips would re-wait the full delay). Radix's
+// Root throws without a Provider, so the local fallback can't be dropped.
+const TooltipGroupContext = createContext(false);
+
+interface TooltipProviderProps {
+  children: ReactNode;
+  /** Hover delay before tooltips open, in ms. Defaults to 200. */
+  delayDuration?: number;
+  /** After a tooltip closes, adjacent tooltips opened within this window
+   *  skip the hover delay, in ms. Defaults to 300. */
+  skipDelayDuration?: number;
+}
+
+/** Groups descendant Tooltips so that once one opens, moving to an adjacent
+ *  trigger shows its tooltip instantly instead of re-waiting the full delay.
+ *  Wrap once at the app (or section) level; bare Tooltips still work without
+ *  it via a per-instance fallback. */
+function TooltipProvider({
+  children,
+  delayDuration = DEFAULT_DELAY,
+  skipDelayDuration = 300,
+}: TooltipProviderProps) {
+  return (
+    <TooltipGroupContext.Provider value={true}>
+      <TooltipPrimitive.Provider
+        delayDuration={delayDuration}
+        skipDelayDuration={skipDelayDuration}
+      >
+        {children}
+      </TooltipPrimitive.Provider>
+    </TooltipGroupContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type TooltipSide = "top" | "right" | "bottom" | "left";
+
+interface TooltipProps {
+  content: ReactNode;
+  children: React.ReactElement;
+  side?: TooltipSide;
+  sideOffset?: number;
+  /** Hover delay before this tooltip opens, in ms. Defaults to 200, or to the
+   *  ambient TooltipProvider's delayDuration when one is present. */
+  delayDuration?: number;
+  className?: string;
+  /** Extra classes for the portalled content element — Radix copies its
+   *  z-index onto the popper wrapper, so pass a z utility here to lift the
+   *  whole tooltip above other fixed layers (default z-50). */
+  contentClassName?: string;
+  /** When true, forces the tooltip open. When false, forces it closed. When undefined, uses default hover/focus behavior. */
+  forceOpen?: boolean;
+  /** Follow the cursor along one axis while hovering the trigger — for tall
+   *  or wide triggers (the Sidebar rail) where a centered tooltip sits far
+   *  from the pointer. The other axis stays anchored by `side`. */
+  followCursor?: "x" | "y";
+  /** Called when the tooltip's internal open state changes (before forceOpen is applied). */
+  onOpenChange?: (open: boolean) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Animation helpers
+// ---------------------------------------------------------------------------
+
+function getSlideOffset(side: TooltipSide) {
+  switch (side) {
+    case "top":
+      return { y: 4 };
+    case "bottom":
+      return { y: -4 };
+    case "left":
+      return { x: 4 };
+    case "right":
+      return { x: -4 };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tooltip
+// ---------------------------------------------------------------------------
+
+function Tooltip({
+  content,
+  children,
+  side = "top",
+  sideOffset = 8,
+  delayDuration,
+  className,
+  contentClassName,
+  forceOpen,
+  onOpenChange: onOpenChangeProp,
+  followCursor,
+}: TooltipProps) {
+  if (content === undefined || content === null || content === "") {
+    return children;
+  }
+
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = forceOpen !== undefined ? forceOpen : internalOpen;
+  const [mounted, setMounted] = useState(false);
+  const shape = useShape();
+  const portalContainer = useContext(TooltipPortalContainerContext);
+  const hasAmbientProvider = useContext(TooltipGroupContext);
+
+  useEffect(() => {
+    if (open) setMounted(true);
+  }, [open]);
+
+  // Fallback release for the deferred unmount: onAnimationComplete is the
+  // primary signal, but rAF-driven animation callbacks can stall in
+  // throttled/background tabs. The exit tween runs at spring.fast.exit, so
+  // the fallback tracks that tier.
+  useEffect(() => {
+    if (open) return;
+    const id = setTimeout(() => setMounted(false), exitFallbackMs(spring.fast));
+    return () => clearTimeout(id);
+  }, [open]);
+
+  const handleExitComplete = () => {
+    if (!open) setMounted(false);
+  };
+
+  // Cursor-follow offset from the trigger's center, driven as a motion value
+  // so per-move updates skip React re-renders.
+  const followOffset = useMotionValue(0);
+  // A force-opened follow-cursor tooltip has no cursor to follow — it rests
+  // centered on the trigger until a real pointer takes over.
+  useEffect(() => {
+    if (forceOpen && followCursor) followOffset.set(0);
+  }, [forceOpen, followCursor, followOffset]);
+  const handleFollowMove = (event: React.PointerEvent) => {
+    if (!followCursor) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    followOffset.set(
+      followCursor === "y"
+        ? event.clientY - (rect.top + rect.height / 2)
+        : event.clientX - (rect.left + rect.width / 2)
+    );
+  };
+
+  const slideOffset = getSlideOffset(side);
+
+  // An explicit delayDuration overrides the ambient provider's delay; left
+  // undefined, the Root inherits it from the nearest provider.
+  const tooltip = (
+    <TooltipPrimitive.Root delayDuration={delayDuration} open={open} onOpenChange={(v) => { setInternalOpen(v); onOpenChangeProp?.(v); }}>
+      <TooltipPrimitive.Trigger asChild onPointerMove={followCursor ? handleFollowMove : undefined}>
+        {children}
+      </TooltipPrimitive.Trigger>
+      {mounted && (
+        <TooltipPrimitive.Portal forceMount container={portalContainer ?? undefined}>
+          <TooltipPrimitive.Content
+            side={side}
+            sideOffset={sideOffset}
+            forceMount
+            className={cn("z-50", contentClassName)}
+          >
+            <motion.div
+              style={
+                followCursor === "y"
+                  ? { y: followOffset }
+                  : followCursor === "x"
+                    ? { x: followOffset }
+                    : undefined
+              }
+            >
+              <motion.div
+                className={cn(
+                  // Trim recenters the label; the padding bump only applies
+                  // where text-box is supported, keeping the same overall
+                  // height (~26px) as untrimmed browsers.
+                  "bg-foreground text-background text-[12px] px-2 py-1",
+                  "[text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both]:py-2",
+                  shape.bg,
+                  className
+                )}
+                style={{ fontVariationSettings: fontWeights.medium }}
+                initial={{ opacity: 0, ...slideOffset }}
+                animate={{
+                  opacity: open ? 1 : 0,
+                  x: 0,
+                  y: 0,
+                }}
+                transition={open ? spring.fast : spring.fast.exit}
+                onAnimationComplete={handleExitComplete}
+              >
+                {content}
+              </motion.div>
+            </motion.div>
+          </TooltipPrimitive.Content>
+        </TooltipPrimitive.Portal>
+      )}
+    </TooltipPrimitive.Root>
+  );
+
+  // Fallback: Radix's Root requires a Provider above it, so without an
+  // ambient TooltipProvider each instance carries its own with the library's
+  // default delay. Grouped skip-delay needs the shared app-level
+  // TooltipProvider.
+  if (hasAmbientProvider) return tooltip;
+
+  return (
+    <TooltipPrimitive.Provider delayDuration={delayDuration ?? DEFAULT_DELAY}>
+      {tooltip}
+    </TooltipPrimitive.Provider>
+  );
+}
+
+export { Tooltip, TooltipPortalContainer, TooltipProvider };
+export type { TooltipProps, TooltipProviderProps, TooltipSide };
+
+
+
+export function Hint({
+  content,
+  label,
+  children,
+  side = "top",
+  className,
+}: {
+  content?: React.ReactNode;
+  label?: React.ReactNode;
+  children: React.ReactNode;
+  side?: "top" | "right" | "bottom" | "left";
+  className?: string;
+}) {
+  const display = content ?? label;
+  if (!display) {
+    return className ? <span className={className}>{children}</span> : <>{children}</>;
+  }
+  return (
+    <Tooltip content={display} side={side}>
+      <span className={className}>{children}</span>
     </Tooltip>
   );
 }

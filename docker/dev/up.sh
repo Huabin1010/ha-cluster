@@ -14,7 +14,7 @@ cat <<'EOF'
 
 >>> 控制台: http://localhost:5173
 >>> API:    http://localhost:8080/healthz
->>> Admin:  admin / adminadmin
+>>> Admin:  admin / 123456qq
 >>> Adminer: http://localhost:8081  (System=postgres, User=ha, Password=ha, Database=ha)
 
 >>> 跑集成测试: docker compose --profile test run --rm test-integration

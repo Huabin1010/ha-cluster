@@ -9,8 +9,8 @@ set -euo pipefail
 ROOT="/tmp/ha-pve-lab-install"
 mkdir -p "${ROOT}"
 
-curl --connect-timeout 5 --max-time 30 -fsSL "${STAGING}/reset-worker.sh" -o "${ROOT}/reset.sh"
+curl --connect-timeout 5 --max-time 30 -fsSL "${STAGING%/}/lab/reset-worker.sh" -o "${ROOT}/reset.sh"
 bash "${ROOT}/reset.sh"
 
-curl --connect-timeout 5 --max-time 30 -fsSL "${STAGING}/install.sh" -o "${ROOT}/install.sh"
+curl --connect-timeout 5 --max-time 30 -fsSL "${STAGING%/}/lab/install.sh" -o "${ROOT}/install.sh"
 bash "${ROOT}/install.sh"

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-PVE 测试 Worker 一键安装（默认 PVE 局域网镜像，约 1 分钟内完成三台）。
+PVE 测试 Worker 一键安装（从局域网 RustFS Depot 拉包）。
 
   python deploy/pve-lab/pack.py              # 仅打包
   python deploy/pve-lab/upload.py            # 上传 Depot（发布用，不必每次跑）
-  python deploy/pve-lab/bootstrap.py         # 同步到 PVE + 并行安装 + 验收
+  python deploy/pve-lab/bootstrap.py         # 并行安装 + 验收
 
 选项：
-  --skip-sync    跳过 scp（PVE 上已有 /tmp/ha-pve-lab-staging）
   --skip-reset   不重置，仅覆盖安装
-  --depot-only   不用局域网镜像，走公网 Depot（较慢）
+  --use-public   用公网 Depot（默认 lab.env 里 DEPOT_PUBLIC 指向局域网 RustFS）
 """
 from __future__ import annotations
 
@@ -18,7 +17,6 @@ import json
 import re
 import subprocess
 import sys
-import tarfile
 import time
 import urllib.error
 import urllib.request
@@ -26,8 +24,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LAB = Path(__file__).resolve().parent
-DIST = ROOT / "dist" / "pve-lab"
-GUEST_TIMEOUT = 120  # 单台 agent 安装通常 < 30s
+sys.path.insert(0, str(ROOT / "packaging"))
+from depot_layout import DEPOT_LAN_URL, DEPOT_PUBLIC_URL  # noqa: E402
+
+GUEST_TIMEOUT = 1800  # bake docker into image can take several minutes
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -39,22 +39,28 @@ def load_env(path: Path) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        out[k.strip()] = v.strip().strip('"')
+        out[k.strip()] = v.strip().strip('"').strip("\r")
     return out
 
 
-def run(cmd: list[str], timeout: int = 120) -> None:
-    print("+", " ".join(cmd[:6]), ("..." if len(cmd) > 6 else ""))
-    cp = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    if cp.returncode != 0:
-        raise RuntimeError((cp.stderr or cp.stdout or "command failed").strip())
+def depot_url(env: dict[str, str], use_public: bool) -> str:
+    if use_public:
+        return DEPOT_PUBLIC_URL.rstrip("/")
+    return env.get("DEPOT_PUBLIC", DEPOT_LAN_URL).rstrip("/")
+
+
+def verify_depot(base: str) -> None:
+    try:
+        urllib.request.urlopen(f"{base}/lab/install.sh", timeout=15)
+    except urllib.error.URLError as e:
+        sys.exit(f"Depot 不可达 {base}: {e}")
 
 
 def guest_exec(env: dict[str, str], vmid: int, bash_body: str) -> tuple[int, str, float]:
     host = env.get("PVE_HOST", "192.168.1.8")
     user = env.get("PVE_USER", "root")
     inner = bash_body.replace("'", "'\"'\"'")
-    remote = f"qm guest exec {vmid} -- bash -lc '{inner}'"
+    remote = f"qm guest exec {vmid} --timeout {GUEST_TIMEOUT} -- bash -lc '{inner}'"
     t0 = time.perf_counter()
     cp = subprocess.run(
         ["ssh", "-o", "BatchMode=yes", f"{user}@{host}", remote],
@@ -69,99 +75,42 @@ def guest_exec(env: dict[str, str], vmid: int, bash_body: str) -> tuple[int, str
     return code, out, elapsed
 
 
-def mirror_url(env: dict[str, str]) -> str:
-    host = env.get("PVE_HOST", "192.168.1.8")
-    port = env.get("PVE_MIRROR_PORT", "19090")
-    return f"http://{host}:{port}"
-
-
-def mirror_alive(env: dict[str, str]) -> bool:
-    host = env.get("PVE_HOST", "192.168.1.8")
-    user = env.get("PVE_USER", "root")
-    port = env.get("PVE_MIRROR_PORT", "19090")
-    cp = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            f"{user}@{host}",
-            f"curl -sf -o /dev/null http://127.0.0.1:{port}/install.sh",
-        ],
-        capture_output=True,
-        timeout=8,
-    )
-    return cp.returncode == 0
-
-
-def sync_pve_mirror(env: dict[str, str]) -> str:
-    """开发机 → PVE：单个 tar 上传（~3s），VM 走局域网拉包。"""
-    host = env.get("PVE_HOST", "192.168.1.8")
-    user = env.get("PVE_USER", "root")
-    port = env.get("PVE_MIRROR_PORT", "19090")
-    remote = "/tmp/ha-pve-lab-staging"
-    tarball = DIST.parent / "pve-lab-bundle.tar"
-
-    if not DIST.is_dir():
-        subprocess.run([sys.executable, str(LAB / "pack.py")], cwd=ROOT, check=True)
-
-    with tarfile.open(tarball, "w") as tar:
-        for f in sorted(DIST.iterdir()):
-            if f.is_file():
-                tar.add(f, arcname=f.name)
-
-    run(["scp", "-o", "BatchMode=yes", str(tarball), f"{user}@{host}:/tmp/pve-lab-bundle.tar"], timeout=60)
-    run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            f"{user}@{host}",
-            f"mkdir -p {remote} && tar xf /tmp/pve-lab-bundle.tar -C {remote} "
-            f"&& sed -i 's/\\r$//' {remote}/*.sh {remote}/*.env 2>/dev/null || true",
-        ],
-        timeout=30,
-    )
-    subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            f"{user}@{host}",
-            "systemctl stop ha-pve-lab-http 2>/dev/null || true; "
-            f"systemd-run --unit=ha-pve-lab-http --collect "
-            f"/usr/bin/python3 -m http.server {port} --bind 0.0.0.0 --directory {remote}",
-        ],
-        check=False,
-        timeout=15,
-    )
-    time.sleep(0.5)
-    base = mirror_url(env)
-    if not mirror_alive(env):
-        raise RuntimeError(f"mirror check failed: {base}/install.sh")
-    return base
-
-
 def install_one(env: dict[str, str], node: dict, staging: str, skip_reset: bool) -> tuple[str, float, str]:
     vmid, name, fabric = node["vmid"], node["name"], node["fabric_ip"]
     api = env.get("HA_API_BASE", "http://192.168.1.100:8080")
     token = env.get("HA_NODE_TOKEN", "ha-test-node-token-2026")
     skip_incus = env.get("SKIP_INCUS", "1")
     skip_et = env.get("SKIP_EASYTIER", "1")
+    install_mode = env.get("HA_INSTALL_MODE", "offline")
+    apt_mirror = env.get("HA_APT_MIRROR", "tuna")
+    verify_egress = env.get("HA_VERIFY_EGRESS", "0")
+    et_secret = env.get("HA_ET_SECRET", "")
+    et_peers = env.get("HA_ET_PEERS", "")
+    et_net = env.get("HA_ET_NET", "ha-cluster-easytier")
+    et_extra = (
+        f"HA_ET_NET='{et_net}' HA_ET_SECRET='{et_secret}' HA_ET_PEERS='{et_peers}' "
+        if skip_et != "1" and et_secret
+        else ""
+    )
 
     if skip_reset:
         script = "install.sh"
         body = (
-            f"export STAGING='{staging}' NODE_NAME='{name}' FABRIC_IP='{fabric}' "
+            f"export STAGING='{staging}' DEPOT_PUBLIC='{staging}' NODE_NAME='{name}' FABRIC_IP='{fabric}' "
             f"HA_API_BASE='{api}' HA_NODE_TOKEN='{token}' "
-            f"SKIP_INCUS='{skip_incus}' SKIP_EASYTIER='{skip_et}'; "
-            f"curl --connect-timeout 5 --max-time 30 -fsSL '{staging}/{script}' -o /tmp/ha-i.sh && bash /tmp/ha-i.sh"
+            f"SKIP_INCUS='{skip_incus}' SKIP_EASYTIER='{skip_et}' "
+            f"HA_INSTALL_MODE='{install_mode}' HA_APT_MIRROR='{apt_mirror}' "
+            f"HA_VERIFY_EGRESS='{verify_egress}' {et_extra}; "
+            f"curl --connect-timeout 5 --max-time 30 -fsSL '{staging}/lab/{script}' -o /tmp/ha-i.sh && bash /tmp/ha-i.sh"
         )
     else:
         body = (
-            f"export STAGING='{staging}' NODE_NAME='{name}' FABRIC_IP='{fabric}' "
+            f"export STAGING='{staging}' DEPOT_PUBLIC='{staging}' NODE_NAME='{name}' FABRIC_IP='{fabric}' "
             f"HA_API_BASE='{api}' HA_NODE_TOKEN='{token}' "
-            f"SKIP_INCUS='{skip_incus}' SKIP_EASYTIER='{skip_et}'; "
-            f"curl --connect-timeout 5 --max-time 30 -fsSL '{staging}/reinstall.sh' -o /tmp/ha-r.sh && bash /tmp/ha-r.sh"
+            f"SKIP_INCUS='{skip_incus}' SKIP_EASYTIER='{skip_et}' "
+            f"HA_INSTALL_MODE='{install_mode}' HA_APT_MIRROR='{apt_mirror}' "
+            f"HA_VERIFY_EGRESS='{verify_egress}' {et_extra}; "
+            f"curl --connect-timeout 5 --max-time 30 -fsSL '{staging}/lab/reinstall.sh' -o /tmp/ha-r.sh && bash /tmp/ha-r.sh"
         )
 
     code, out, elapsed = guest_exec(env, vmid, body)
@@ -171,7 +120,7 @@ def install_one(env: dict[str, str], node: dict, staging: str, skip_reset: bool)
 
 
 def verify_api(api: str, names: list[str]) -> None:
-    login = json.dumps({"username": "admin", "password": "adminadmin"}).encode()
+    login = json.dumps({"username": "admin", "password": "123456qq"}).encode()
     req = urllib.request.Request(api.rstrip("/") + "/auth/login", data=login, headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(req, timeout=10) as r:
         tok = json.loads(r.read())["token"]
@@ -186,37 +135,22 @@ def verify_api(api: str, names: list[str]) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--skip-sync", action="store_true")
     ap.add_argument("--skip-reset", action="store_true")
-    ap.add_argument("--depot-only", action="store_true", help="用公网 Depot，不用 PVE 局域网镜像")
+    ap.add_argument("--use-public", action="store_true", help="用公网 Depot（默认局域网 RustFS 192.168.1.9:10000）")
     args = ap.parse_args()
 
     env = load_env(LAB / "lab.env")
-    depot = env.get("DEPOT_PUBLIC", "https://rustfs.s.ggss.club:50000/typora/ha-cluster").rstrip("/")
+    staging = depot_url(env, args.use_public)
     api = env.get("HA_API_BASE", "http://192.168.1.100:8080")
     nodes = json.loads((LAB / "nodes.json").read_text(encoding="utf-8"))
     names = [n["name"] for n in nodes]
 
     t_all = time.perf_counter()
-
-    if args.depot_only:
-        staging = f"{depot}/pve-lab"
-        print(f"==> 使用公网 Depot: {staging}")
-        try:
-            urllib.request.urlopen(f"{staging}/install.sh", timeout=15)
-        except urllib.error.URLError as e:
-            sys.exit(f"Depot 不可达: {e}")
-    elif args.skip_sync or mirror_alive(env):
-        staging = mirror_url(env)
-        print(f"==> 使用已有 PVE 镜像: {staging}")
-    else:
-        t0 = time.perf_counter()
-        staging = sync_pve_mirror(env)
-        print(f"==> PVE 镜像已同步 {staging} ({time.perf_counter() - t0:.1f}s)")
+    print(f"==> Depot: {staging}")
+    verify_depot(staging)
 
     print(f"==> 并行安装 {len(nodes)} 台 (timeout={GUEST_TIMEOUT}s/台)")
     errors: list[str] = []
-    # qemu-guest-agent 并行 guest exec 易卡住，串行更稳（单台 ~20s，三台 ~1min）
     for n in nodes:
         try:
             name, elapsed, _ = install_one(env, n, staging, args.skip_reset)

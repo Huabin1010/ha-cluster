@@ -154,6 +154,9 @@ export const dataProvider = {
       if (f.field === "project_id" && f.value != null && String(f.value) !== "") {
         qs.set("project_id", String(f.value));
       }
+      if (f.field === "all" && f.value != null && String(f.value) !== "") {
+        qs.set("all", String(f.value));
+      }
     }
     const q = qs.toString();
     const json = await api<Record<string, unknown>>(`${collectionPath(resource)}${q ? `?${q}` : ""}`);

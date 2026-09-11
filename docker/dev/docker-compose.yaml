@@ -32,10 +32,14 @@ services:
       HA_API_ADDR: ":8080"
       DATABASE_URL: postgres://ha:ha@postgres:5432/ha?sslmode=disable
       HA_JWT_SECRET: ${HA_JWT_SECRET:-dev-insecure-change-me-please-32b}
-      HA_ADMIN_PASSWORD: ${HA_ADMIN_PASSWORD:-adminadmin}
+      HA_ADMIN_PASSWORD: ${HA_ADMIN_PASSWORD:-123456qq}
       HA_NODE_TOKEN: ${HA_NODE_TOKEN:-ha-test-node-token-2026}
       HA_INTERNAL_TOKEN: ${HA_INTERNAL_TOKEN:-internal-dev}
       HA_RUNTIME: ${HA_RUNTIME:-memory}
+      HA_AGENT_VIA_LAN: ${HA_AGENT_VIA_LAN:-0}
+      HA_BASTION_HOST: ${HA_BASTION_HOST:-127.0.0.1}
+      HA_BASTION_PORT: ${HA_BASTION_PORT:-8099}
+      HA_BASTION_DIRECT: ${HA_BASTION_DIRECT:-${HA_AGENT_VIA_LAN:-0}}
       HA_SEED: ${HA_SEED:-1}
     depends_on:
       postgres:
@@ -48,6 +52,7 @@ services:
       start_period: 120s
 
   mock-agents:
+    profiles: ["mock"]
     image: python:3.12-alpine
     restart: unless-stopped
     working_dir: /src/docker/dev
@@ -72,7 +77,7 @@ services:
     ports:
       - "${WEB_PORT:-5173}:5173"
     environment:
-      VITE_API_TARGET: http://api:8080
+      VITE_API_TARGET: ${VITE_API_TARGET:-http://api:8080}
     command: ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"]
     depends_on:
       api:
@@ -98,7 +103,7 @@ services:
     environment:
       HA_API_BASE: http://api:8080
       HA_ADMIN_USER: admin
-      HA_ADMIN_PASS: ${HA_ADMIN_PASSWORD:-adminadmin}
+      HA_ADMIN_PASS: ${HA_ADMIN_PASSWORD:-123456qq}
       HA_NODE_TOKEN: ${HA_NODE_TOKEN:-ha-test-node-token-2026}
       HA_EXPECT_NODES: ha-test-01,ha-test-02,ha-test-03
     command: ["python", "integration-test.py"]
@@ -116,7 +121,7 @@ services:
       - ../..:/src
     environment:
       HA_API_BASE: http://api:8080
-      HA_ADMIN_PASS: ${HA_ADMIN_PASSWORD:-adminadmin}
+      HA_ADMIN_PASS: ${HA_ADMIN_PASSWORD:-123456qq}
     command: ["python", "workflow-test.py"]
     depends_on:
       api:

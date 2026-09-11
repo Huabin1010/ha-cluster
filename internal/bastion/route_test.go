@@ -15,12 +15,25 @@ func mem(role, ssh string) *models.Membership {
 }
 
 func TestResolvePrefersFabric(t *testing.T) {
+	t.Setenv("HA_AGENT_VIA_LAN", "0")
 	ownerID := uuid.New()
 	actor := models.User{ID: ownerID}
 	w := models.Workspace{Status: models.WSRunning, SSHPort: 22001, Visibility: models.VisShared, OwnerUserID: ownerID}
 	n := models.Node{FabricIP: "10.129.129.10", LanIP: "192.168.1.10", BreakglassSSH: "vps:8092"}
 	tg, err := Resolve(w, n, actor, mem(models.RoleDeveloper, models.SSHAccessGranted))
 	if err != nil || tg.Via != "fabric" || tg.Host != "10.129.129.10" {
+		t.Fatalf("%+v %v", tg, err)
+	}
+}
+
+func TestResolvePrefersLanWhenAgentViaLAN(t *testing.T) {
+	t.Setenv("HA_AGENT_VIA_LAN", "1")
+	ownerID := uuid.New()
+	actor := models.User{ID: ownerID}
+	w := models.Workspace{Status: models.WSRunning, SSHPort: 22001, Visibility: models.VisShared, OwnerUserID: ownerID}
+	n := models.Node{FabricIP: "10.129.129.10", LanIP: "192.168.1.82"}
+	tg, err := Resolve(w, n, actor, mem(models.RoleDeveloper, models.SSHAccessGranted))
+	if err != nil || tg.Via != "lan" || tg.Host != "192.168.1.82" {
 		t.Fatalf("%+v %v", tg, err)
 	}
 }

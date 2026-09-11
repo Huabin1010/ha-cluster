@@ -1,10 +1,10 @@
 import { FormEvent, ReactNode, useState } from "react";
-import { api, friendlyError } from "../../providers";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Textarea } from "../../components/ui/textarea";
-import { Field } from "../../components/ui/field";
-import { Alert, AlertDescription } from "../../components/ui/alert";
+import { api, friendlyError } from "@/providers";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Field } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../components/ui/dialog";
+} from "@/components/ui/dialog";
 
 type Props = {
   trigger: ReactNode;
@@ -62,7 +62,7 @@ export function ImportKeyDialog({ trigger, onImported }: Props) {
       }}
     >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent>
+      <DialogContent size="lg" className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>导入 SSH 公钥</DialogTitle>
           <DialogDescription>
@@ -71,23 +71,22 @@ export function ImportKeyDialog({ trigger, onImported }: Props) {
           </DialogDescription>
         </DialogHeader>
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
-          <DialogBody className="grid gap-4">
-            <Field label="名称">
+          <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
+            <Field label="公钥备注名称">
               <Input
                 data-testid="ws-keys-name"
-                placeholder="例如：笔记本"
+                placeholder="例如：开发机 MacBook"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                autoComplete="off"
               />
             </Field>
-            <Field label="公钥">
+            <Field label="公钥内容 (id_ed25519.pub / id_rsa.pub)">
               <Textarea
                 data-testid="ws-keys-pubkey"
-                placeholder="ssh-ed25519 AAAA… comment"
+                placeholder="ssh-ed25519 AAAA… user@host"
                 value={publicKey}
                 onChange={(e) => setPublicKey(e.target.value)}
-                rows={3}
+                rows={4}
                 required
               />
             </Field>
@@ -101,8 +100,8 @@ export function ImportKeyDialog({ trigger, onImported }: Props) {
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               取消
             </Button>
-            <Button data-testid="ws-keys-add" disabled={busy || !publicKey.trim()} type="submit">
-              {busy ? "导入中…" : "导入"}
+            <Button data-testid="ws-keys-submit" disabled={busy || !publicKey.trim()} type="submit">
+              {busy ? "导入中…" : "导入公钥"}
             </Button>
           </DialogFooter>
         </form>

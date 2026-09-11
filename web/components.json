@@ -10,8 +10,13 @@
     "cssVariables": true
   },
   "aliases": {
-    "components": "src/components",
-    "utils": "src/lib/utils",
-    "ui": "src/components/ui"
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "registries": {
+    "@fluid": "https://www.fluidfunctionalism.com/r/{name}.json"
   }
 }

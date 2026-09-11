@@ -1,8 +1,8 @@
 import { PropsWithChildren } from "react";
 import { X } from "lucide-react";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import { Button } from "../components/ui/button";
-import { cn } from "../lib/utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export type BannerKind = "error" | "info" | "success";
 

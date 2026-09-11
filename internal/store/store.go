@@ -51,6 +51,7 @@ type Store interface {
 	GetNode(ctx context.Context, id uuid.UUID) (*models.Node, error)
 	GetNodeByName(ctx context.Context, name string) (*models.Node, error)
 	ListNodes(ctx context.Context) ([]models.Node, error)
+	DeleteNode(ctx context.Context, id uuid.UUID) error
 
 	// ReserveOnNode is atomic: lock node capacity, insert allocation reserved, bump used.
 	ReserveOnNode(ctx context.Context, nodeID uuid.UUID, a *models.Allocation) error
@@ -83,4 +84,12 @@ type Store interface {
 	ListIngress(ctx context.Context, workspaceID *uuid.UUID) ([]models.IngressRoute, error)
 	UpdateIngress(ctx context.Context, r *models.IngressRoute) error
 	DeleteIngress(ctx context.Context, id uuid.UUID) error
+
+	CreateDockerRegistry(ctx context.Context, r *models.DockerRegistry) error
+	GetDockerRegistry(ctx context.Context, id uuid.UUID) (*models.DockerRegistry, error)
+	GetDockerRegistryByServer(ctx context.Context, server string) (*models.DockerRegistry, error)
+	ListDockerRegistries(ctx context.Context) ([]models.DockerRegistry, error)
+	UpdateDockerRegistry(ctx context.Context, r *models.DockerRegistry) error
+	DeleteDockerRegistry(ctx context.Context, id uuid.UUID) error
+	ListAutoInjectDockerRegistries(ctx context.Context) ([]models.DockerRegistry, error)
 }

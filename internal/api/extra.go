@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -254,21 +253,24 @@ func (s *Server) sshConnection(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	ws, _, err := s.App.SSHTarget(r.Context(), *userFrom(r), id)
+	ws, n, err := s.App.SSHTarget(r.Context(), *userFrom(r), id)
 	if err != nil {
 		writeErr(w, http.StatusForbidden, err)
 		return
 	}
 	u := userFrom(r)
-	port := bastionSSHPort()
-	host := "bastion.mnnumath.vip"
-	cmd := "ssh " + u.Username + "@" + host + " -p " + strconv.Itoa(port) + " -t " + ws.ID.String()
-	scp := "scp -P " + strconv.Itoa(port) + " -o RequestTTY=force -o RemoteCommand=" + ws.ID.String() + " ./local-file " + u.Username + "@" + host + ":/root/"
+	var mem *models.Membership
+	if m, err := s.App.Store.GetMembership(r.Context(), ws.ProjectID, u.ID); err == nil {
+		mem = m
+	}
+	info := buildSSHConnection(ws, n, u, mem)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"host": host, "port": port, "user": u.Username,
-		"workspace_id": ws.ID, "command": cmd, "scp_example": scp,
+		"host": info.Host, "port": info.Port, "user": info.User,
+		"workspace_id": ws.ID, "command": info.Command, "scp_example": info.SCPExample,
 		"fingerprint": ws.HostKeyFP,
-		"note":        "每台机器是独立隔离环境（独立进程/文件系统/网络）。添加自己的 SSH 公钥后即可连接跳板；可用 scp 上传文件，主机内已预装 Docker，允许自行拉取镜像。",
+		"mode":        info.Mode,
+		"via":         info.Via,
+		"note":        info.Note,
 	})
 }
 

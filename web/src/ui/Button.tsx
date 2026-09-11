@@ -1,5 +1,5 @@
 import { ButtonHTMLAttributes } from "react";
-import { Button as ShadcnButton, type ButtonProps as ShadcnButtonProps } from "../components/ui/button";
+import { Button as ShadcnButton, type ButtonProps as ShadcnButtonProps } from "@/components/ui/button";
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "ghost" | ShadcnButtonProps["variant"];

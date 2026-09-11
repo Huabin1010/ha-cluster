@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
 import { Users, CheckCircle2, XCircle, Sparkles, RefreshCw } from "lucide-react";
-import { api, friendlyError } from "../../providers";
+import { api, friendlyError } from "@/providers";
 import { ASSIGNABLE_ROLES, roleLabel } from "./roles";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Textarea } from "../../components/ui/textarea";
-import { SelectBox } from "../../components/ui/select";
-import { Field } from "../../components/ui/field";
-import { Badge } from "../../components/ui/badge";
-import { Alert, AlertDescription } from "../../components/ui/alert";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { SelectBox } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
   DialogBody,
@@ -18,7 +18,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
+} from "@/components/ui/dialog";
 
 export type ParsedUser = {
   username: string;
@@ -188,7 +188,7 @@ export function BatchCreateUsersDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl" data-testid="batch-create-dialog">
+      <DialogContent size="xl" className="sm:max-w-2xl" data-testid="batch-create-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
@@ -266,7 +266,7 @@ export function BatchCreateUsersDialog({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-            <DialogBody className="grid gap-4">
+            <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
