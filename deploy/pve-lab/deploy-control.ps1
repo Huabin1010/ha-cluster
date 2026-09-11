@@ -9,7 +9,9 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $Pve = if ($env:PVE_HOST) { $env:PVE_HOST } else { "192.168.1.8" }
-$StatusFile = Join-Path $PSScriptRoot "control-vm.status.json"
+$StatusFile = Join-Path $Root "tmp\pve-lab\control-vm.status.json"
+$LegacyStatus = Join-Path $PSScriptRoot "control-vm.status.json"
+if (-not (Test-Path $StatusFile) -and (Test-Path $LegacyStatus)) { $StatusFile = $LegacyStatus }
 $RemoteTar = "/tmp/ha-cluster-stack.tar.gz"
 $Vmid = 113
 

@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 
 LAB = Path(__file__).resolve().parent
+ROOT = LAB.parent.parent
+CONTROL_VM_STATUS = ROOT / "tmp" / "pve-lab" / "control-vm.status.json"
 PVE = "192.168.1.8"
 VMID = 113
 
@@ -82,7 +84,8 @@ EOF
         sys.exit(f"cannot detect LAN IP: {o}")
 
     meta = {"vmid": VMID, "name": "ha-control-lab", "lan_ip": lan, "fabric_ip": "10.129.129.1"}
-    (LAB / "control-vm.status.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    CONTROL_VM_STATUS.parent.mkdir(parents=True, exist_ok=True)
+    CONTROL_VM_STATUS.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     print(f"==> ha-control-lab LAN={lan}")
     return 0
 

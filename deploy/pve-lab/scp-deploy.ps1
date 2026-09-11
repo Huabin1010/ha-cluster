@@ -5,7 +5,9 @@
 $ErrorActionPreference = "Stop"
 $Root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 # 默认走专用控制面 VM（113）；勿部署到 shuangyuan 等业务机
-$StatusFile = Join-Path $PSScriptRoot "control-vm.status.json"
+$StatusFile = Join-Path $Root "tmp\pve-lab\control-vm.status.json"
+$LegacyStatus = Join-Path $PSScriptRoot "control-vm.status.json"
+if (-not (Test-Path $StatusFile) -and (Test-Path $LegacyStatus)) { $StatusFile = $LegacyStatus }
 if ($env:STACK_HOST) {
   $StackHost = $env:STACK_HOST
 } elseif (Test-Path $StatusFile) {
