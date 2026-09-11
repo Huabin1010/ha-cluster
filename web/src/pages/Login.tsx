@@ -14,6 +14,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Elevated } from "@/lib/elevated";
 import { spring } from "@/lib/springs";
 import { LoginHeroArt } from "./login-hero";
+import { HaLogo } from "@/components/brand/HaLogo";
 
 const OPEN_REGISTER = true;
 
@@ -106,11 +107,9 @@ export function LoginPage() {
         <LoginHeroArt />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#04090e]/95 via-transparent to-[#04090e]/30" />
         <div className="relative z-10 flex h-full flex-col justify-end p-8 lg:p-12 text-white">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex size-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-            <p className="text-xs font-semibold tracking-[0.24em] text-white/70 uppercase">
-              ha-cluster
-            </p>
+          <div className="flex items-center gap-2.5">
+            <HaLogo size={22} tone="brand" />
+            <p className="text-xs font-semibold tracking-[0.24em] text-white/80 uppercase">ha-cluster</p>
           </div>
           <h1 className="mt-3 max-w-md text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-4xl">
             把散落的算力织成一台集群
@@ -136,7 +135,7 @@ export function LoginPage() {
           {/* Mobile-only compact brand header */}
           <div className="mb-5 flex flex-col items-center text-center lg:hidden">
             <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-2/90 px-3 py-1 shadow-sm backdrop-blur-md">
-              <span className="inline-flex size-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              <HaLogo size={16} className="text-foreground" />
               <span className="text-[11px] font-semibold tracking-[0.2em] text-foreground/80 uppercase">
                 ha-cluster
               </span>

@@ -34,6 +34,7 @@ import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hove
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { ProjectSubSidebar } from "@/pages/projects/ProjectSubSidebar";
 import { WorkspaceSubSidebar } from "@/pages/workspaces/WorkspaceSubSidebar";
+import { HaBrand, HaLogo } from "@/components/brand/HaLogo";
 
 const ENV_LABEL = import.meta.env.PROD ? "prod" : "dev";
 const SIDEBAR_COLLAPSED_KEY = "ha_sidebar_collapsed";
@@ -262,11 +263,16 @@ export function Layout({ children }: PropsWithChildren) {
           rail ? "gap-4 md:items-center md:px-0 md:py-3" : "gap-3 md:w-60",
         )}
       >
-        <div className={cn("flex w-full items-center gap-2", rail ? "justify-center" : "justify-between px-1")}>
-          <div className={cn("min-w-0 font-bold tracking-tight text-foreground flex items-center gap-2", rail && "hidden")}>
-            <span className="inline-block size-2 rounded-full bg-primary" />
-            <span>ha-cluster</span>
-          </div>
+        <div className={cn("flex w-full items-center gap-2", rail ? "flex-col" : "justify-between px-1")}>
+          {rail ? (
+            <Hint label="ha-cluster" side="right">
+              <span data-testid="brand-logo" className="inline-flex">
+                <HaLogo size={28} className="text-foreground" />
+              </span>
+            </Hint>
+          ) : (
+            <HaBrand />
+          )}
           <div className="flex shrink-0 items-center gap-1">
             <Badge variant="outline" className={cn("hidden uppercase text-[10px] tracking-wider py-0 px-1.5 font-mono", !rail && "md:inline-flex")} data-testid="env-badge">
               {ENV_LABEL}
@@ -391,7 +397,7 @@ export function Layout({ children }: PropsWithChildren) {
             <Menu className="h-4 w-4" />
             菜单
           </Button>
-          <span className="flex-1 font-semibold">ha-cluster</span>
+          <HaBrand className="flex-1" />
           <ThemeToggle />
           <Hint label="运行环境">
             <span className="inline-flex">

@@ -27,6 +27,7 @@
 - 项目切换 Combobox（有项目时）
 - 主题切换、退出
 - 窄屏：顶栏「菜单」打开侧栏
+- 品牌标志：六边形集群 SVG（侧栏 / 窄屏顶栏 / 登录页）
 
 ### 快捷键
 
@@ -48,6 +49,7 @@
 | 当前项目切换 | `nav-project-switch` | 已登录且有项目 |
 | 收起侧栏 | `sidebar-collapse` | 桌面 |
 | 窄屏打开菜单 | `nav-toggle` | 窄屏 |
+| 品牌 Logo | `brand-logo` | 已登录（侧栏 / 窄屏顶栏） |
 | 环境徽章 | `env-badge` | 已登录 |
 | 当前用户名 | `current-user` | 已登录 |
 | 退出 | `logout-button` | 已登录 |
