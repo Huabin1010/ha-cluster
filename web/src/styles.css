@@ -5,7 +5,7 @@
   --line: #d7dee7;
   --line-strong: #b8c3d1;
   --text: #12202e;
-  --muted: #5b6b7c;
+  --muted: #e7edf3;
   --accent: #2b7bb8;
   --danger: #d64550;
   --ok: #3d8b57;
@@ -32,7 +32,7 @@
   --foreground: #12202e;
   --background: #ffffff;
   --border: var(--line);
-  --muted-foreground: var(--muted);
+  --muted-foreground: #5b6b7c;
 
   /* Fluid Functionalism Surfaces & Interaction Tokens */
   --surface-1: #FAFAFA;
@@ -70,7 +70,7 @@
   --line: #2a3542;
   --line-strong: #3b4b5e;
   --text: #e7eef6;
-  --muted: #8aa0b5;
+  --muted: #243040;
   --accent: #5b9fd4;
   --danger: #e06c75;
   --ok: #98c379;
@@ -97,7 +97,7 @@
   --foreground: #f8fafc;
   --background: #0f1419;
   --border: var(--line);
-  --muted-foreground: var(--muted);
+  --muted-foreground: #8aa0b5;
 
   /* Fluid Functionalism Dark Surfaces & Tokens */
   --surface-1: #171717;

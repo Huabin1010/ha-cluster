@@ -37,6 +37,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Hint } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
 import { Empty, PageBody, PageHeader } from "@/ui";
@@ -143,7 +144,7 @@ function ResourceMeter({
             {fmtBytes(meter.used)} / {fmtBytes(meter.total)}
           </span>
         </span>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/80">
           <div
             className={cn(
               "h-full rounded-full transition-all duration-300",
@@ -218,36 +219,29 @@ export function NodesPage() {
   return (
     <PageFrame
       header={
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
-                <Cpu className="size-4.5" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">节点 / Fabric</h2>
-                  <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                    {rows.length} 台
-                  </Badge>
-                  {readyCount > 0 && (
-                    <Badge variant="ok" className="px-2 py-0.5 text-xs font-normal">
-                      {readyCount} 在线
-                    </Badge>
-                  )}
-                  {offlineCount > 0 && (
-                    <Badge variant="danger" className="px-2 py-0.5 text-xs font-normal">
-                      {offlineCount} 离线
-                    </Badge>
-                  )}
-                </div>
-                <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                  在线与离线 worker 一并列出；离线行会标红，方便对账和排障。
-                </p>
-              </div>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-background p-1 shadow-xs">
+        <PageHeading
+          icon={Cpu}
+          title="节点 / Fabric"
+          badges={
+            <>
+              <Badge variant="outline" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+                {rows.length} 台
+              </Badge>
+              {readyCount > 0 && (
+                <Badge variant="ok" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-normal">
+                  {readyCount} 在线
+                </Badge>
+              )}
+              {offlineCount > 0 && (
+                <Badge variant="danger" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-normal">
+                  {offlineCount} 离线
+                </Badge>
+              )}
+            </>
+          }
+          description="在线与离线 worker 一并列出；离线行会标红，方便对账和排障。"
+          actions={
+            <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-background p-1 shadow-xs w-full sm:w-auto">
               <Button
                 type="button"
                 variant="ghost"
@@ -372,7 +366,8 @@ export function NodesPage() {
                 </Button>
               )}
             </div>
-          </div>
+          }
+        >
 
           {/* 指标卡片条 */}
           {rows.length > 0 && (
@@ -438,7 +433,7 @@ export function NodesPage() {
               </Elevated>
             </div>
           )}
-        </div>
+        </PageHeading>
       }
       footer={
         <Paginator
@@ -471,47 +466,47 @@ export function NodesPage() {
             </Elevated>
           </div>
         ) : (
-          <div className="w-full overflow-x-auto rounded-xl border border-border bg-background shadow-xs">
+          <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
             <Table className="min-w-[960px]">
-              <TableHeader className="bg-muted/50 border-b border-border select-none">
-                <TableRow className="border-b border-border hover:bg-transparent">
-                  <TableHead className="py-2.5">
+              <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
+                <TableRow className="border-b border-border/60 hover:bg-transparent">
+                  <TableHead className="py-2.5 text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <Server className="size-3.5 opacity-60 shrink-0" />
                       节点主机名
                     </span>
                   </TableHead>
-                  <TableHead className="w-[110px] py-2.5">
+                  <TableHead className="w-[110px] py-2.5 text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <Cpu className="size-3.5 opacity-60 shrink-0" />
                       架构
                     </span>
                   </TableHead>
-                  <TableHead className="w-[130px] py-2.5">
+                  <TableHead className="w-[130px] py-2.5 text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <HeartPulse className="size-3.5 opacity-60 shrink-0" />
                       健康状态
                     </span>
                   </TableHead>
-                  <TableHead className="w-[150px] py-2.5">
+                  <TableHead className="w-[150px] py-2.5 text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <Globe className="size-3.5 opacity-60 shrink-0" />
                       Fabric 虚 IP
                     </span>
                   </TableHead>
-                  <TableHead className="w-[110px] py-2.5">
+                  <TableHead className="w-[110px] py-2.5 text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <Gauge className="size-3.5 opacity-60 shrink-0" />
                       CPU 使用率
                     </span>
                   </TableHead>
-                  <TableHead className="w-[240px] py-2.5">
+                  <TableHead className="w-[240px] py-2.5 text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <MemoryStick className="size-3.5 opacity-60 shrink-0" />
                       内存 / 硬盘
                     </span>
                   </TableHead>
-                  <TableHead className="w-[110px] py-2.5 pr-4 text-right">
+                  <TableHead className="w-[110px] py-2.5 pr-4 text-right text-muted-foreground">
                     <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
                       <Activity className="size-3.5 opacity-60 shrink-0" />
                       延迟 (RTT)

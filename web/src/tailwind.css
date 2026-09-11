@@ -11,7 +11,7 @@
   --color-popover: var(--panel);
   --color-popover-foreground: var(--text);
   --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--line);
   --color-input: var(--line-strong);
   --color-primary: var(--accent);
