@@ -994,13 +994,13 @@ export function MachinePage() {
               ) : (
                 <div className="w-full overflow-x-auto rounded-xl border border-border/80">
                   <Table data-testid="ing-table" className="min-w-[640px]">
-                    <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
+                    <TableHeader className="sticky top-0 z-20 bg-surface-2/80 backdrop-blur-xs">
                       <TableRow>
                         <TableHead className="min-w-0">域名</TableHead>
                         <TableHead className="w-[90px] whitespace-nowrap">端口</TableHead>
                         <TableHead className="w-[120px] whitespace-nowrap">预设</TableHead>
                         <TableHead className="w-[110px] whitespace-nowrap">状态</TableHead>
-                        <TableHead className="w-[180px] whitespace-nowrap text-right">操作</TableHead>
+                        <TableHead stickyEnd className="w-[180px] whitespace-nowrap text-right">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1038,7 +1038,7 @@ export function MachinePage() {
                                 <Hint label={rt.status}>{ingressStatusLabel(rt.status)}</Hint>
                               </Badge>
                             </TableCell>
-                            <TableCell className="whitespace-nowrap text-right">
+                            <TableCell stickyEnd className="whitespace-nowrap text-right">
                               <div className="inline-flex items-center justify-end gap-1 shrink-0">
                                 {rt.status === "pending_approval" && (
                                   <>

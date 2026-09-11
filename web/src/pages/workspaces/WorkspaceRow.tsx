@@ -224,7 +224,7 @@ export function WorkspaceRow({
       <TableCell className="py-2.5 whitespace-nowrap text-xs text-muted-foreground">
         {ws.created_at ? formatTime(ws.created_at) : "—"}
       </TableCell>
-      <TableCell className="py-2.5 text-right w-[320px] pr-4">
+      <TableCell stickyEnd className="py-2.5 text-right w-[320px] pr-4">
         <div className="flex items-center justify-end flex-wrap gap-1 whitespace-nowrap">
           {isCreateRequested && canApprove && (
             <Button
