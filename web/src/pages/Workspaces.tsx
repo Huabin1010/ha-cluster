@@ -373,7 +373,7 @@ export function WorkspacesPage() {
                   onBusy={setBusyId}
                   onRefresh={() => {
                     kickPoll();
-                    void refetch();
+                    return refetch();
                   }}
                   onToast={(m) => toast.show(m, "success")}
                   onError={(e) => showError(e)}

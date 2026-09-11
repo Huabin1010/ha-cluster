@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy, Download, KeyRound, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock, ShieldAlert } from "lucide-react";
+import { Check, Copy, Download, KeyRound, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock } from "lucide-react";
 import { api, apiText, friendlyError } from "@/providers";
 import { formatTime, copyText } from "@/ui/format";
 import { canSSH } from "@/lib/permissions";
@@ -13,6 +13,8 @@ import {
   isDestroyRequested,
   statusLabel,
   workspaceStatusVariant,
+  workspaceStatusDotClass,
+  workspaceStatusInFlight,
   Workspace,
   workspaceSpec,
 } from "./types";
@@ -45,7 +47,7 @@ type Props = {
   mySshAccess?: string;
   projectId?: string;
   onBusy: (id: string | null) => void;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<unknown>;
   onToast: (msg: string) => void;
   onError: (msg: string) => void;
 };
@@ -58,27 +60,6 @@ async function downloadSSHConfig(id: string): Promise<void> {
   a.download = `ha-${id.slice(0, 8)}.config`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-
-function statusDotClass(status: string) {
-  switch (status) {
-    case "running":
-      return "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
-    case "fabric_degraded":
-      return "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.45)]";
-    case "requested":
-    case "provisioning":
-    case "destroy_requested":
-      return "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.45)]";
-    case "failed":
-    case "rejected":
-    case "node_lost":
-      return "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]";
-    case "stopped":
-    case "suspended":
-    default:
-      return "bg-muted-foreground/40";
-  }
 }
 
 export function WorkspaceRow({
@@ -99,7 +80,9 @@ export function WorkspaceRow({
   const [copiedSsh, setCopiedSsh] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [manualSsh, setManualSsh] = useState("");
-  const busy = busyId === ws.id;
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
+  const busy = busyId === ws.id || pendingAction !== null;
   const isCreateRequested = ws.status === "requested";
   const destroyPending = isDestroyPending(ws);
   const destroyRequested = isDestroyRequested(ws);
@@ -107,8 +90,13 @@ export function WorkspaceRow({
   const isPlatformAdmin = platformRole === "platform_admin";
   const destroyNow = isPlatformAdmin;
   const skipProjectReview = Boolean(canApprove) && !destroyNow;
-  const canStart = ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended";
-  const canStop = ws.status === "running" || ws.status === "fabric_degraded";
+  const displayStatus = optimisticStatus ?? (pendingAction === "destroy" && destroyNow ? "destroying" : ws.status);
+  const statusBusy = workspaceStatusInFlight(displayStatus) || pendingAction === "destroy" || pendingAction === "destroy-force";
+  const canStart =
+    displayStatus !== "destroying" &&
+    (ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended");
+  const canStop =
+    displayStatus !== "destroying" && (ws.status === "running" || ws.status === "fabric_degraded");
   const canRequestDestroy =
     !destroyPending &&
     ws.status !== "destroyed" &&
@@ -116,31 +104,67 @@ export function WorkspaceRow({
     ws.status !== "requested";
   const wsRunning = ws.status === "running" || ws.status === "fabric_degraded" || ws.status === "suspended";
   const sshGranted = canSSH(myRole, mySshAccess, platformRole);
-  const showSSH = wsRunning && sshGranted;
-  const showSSHRequest = wsRunning && !sshGranted && myRole === "developer";
+  const showSSH = wsRunning && sshGranted && displayStatus !== "destroying";
+  const showSSHRequest = wsRunning && !sshGranted && myRole === "developer" && displayStatus !== "destroying";
   const spec = workspaceSpec(ws);
   const pendingResize = pendingSpec(ws);
   const resizePending = hasPendingResize(ws);
-  const canResize = !isCreateRequested && !resizePending && (ws.status === "running" || ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended");
+  const canResize =
+    !isCreateRequested &&
+    !resizePending &&
+    displayStatus !== "destroying" &&
+    (ws.status === "running" || ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended");
 
-  async function run(action: () => Promise<void>) {
+  useEffect(() => {
+    if (!optimisticStatus) return;
+    if (ws.status === optimisticStatus || ws.status === "destroyed" || ws.status === "destroying") {
+      setOptimisticStatus(null);
+    }
+  }, [ws.status, optimisticStatus]);
+
+  async function run(action: () => Promise<void>, kind = "work") {
+    setPendingAction(kind);
+    if ((kind === "destroy" && destroyNow) || kind === "destroy-force") {
+      setOptimisticStatus("destroying");
+    }
     onBusy(ws.id);
     onError("");
     try {
       await action();
-      onRefresh();
+      await onRefresh();
     } catch (e) {
+      setOptimisticStatus(null);
       onError(friendlyError(e));
     } finally {
+      setPendingAction(null);
       onBusy(null);
     }
   }
 
+  function closeDialogUnlessBusy(open: boolean) {
+    if (!open && pendingAction) return;
+    setDestroyOpen(open);
+  }
+
   return (
-    <TableRow data-testid="ws-row" data-status={ws.status} className={ws.status === "failed" ? "bg-rose-500/5 hover:bg-rose-500/10" : undefined}>
+    <TableRow
+      data-testid="ws-row"
+      data-status={displayStatus}
+      aria-busy={busy || statusBusy}
+      className={cn(
+        ws.status === "failed" || displayStatus === "destroying" ? "bg-rose-500/5 hover:bg-rose-500/10" : undefined,
+        (busy || statusBusy) && "opacity-90",
+      )}
+    >
       <TableCell className="py-2.5 whitespace-nowrap font-medium text-foreground">
         <div className="flex items-center gap-2">
-          <span className={cn("size-2 rounded-full shrink-0 transition-all", statusDotClass(ws.status))} />
+          <span
+            className={cn(
+              "size-2 rounded-full shrink-0 transition-all",
+              workspaceStatusDotClass(displayStatus),
+              statusBusy && "animate-pulse",
+            )}
+          />
           <span className="truncate max-w-[180px] sm:max-w-xs">{ws.name}</span>
           {ws.visibility === "private" ? (
             <Hint label="私有">
@@ -155,10 +179,11 @@ export function WorkspaceRow({
       </TableCell>
       <TableCell className="py-2.5 whitespace-nowrap">
         <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <Hint label={`原始代码: ${ws.status}`} className="font-mono">
+          <Hint label={`原始代码: ${displayStatus}`} className="font-mono">
             <span className="inline-flex">
-              <Badge variant={workspaceStatusVariant(ws.status)} className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-                {statusLabel(ws.status)}
+              <Badge variant={workspaceStatusVariant(displayStatus)} className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                {statusBusy && <Loader2 className="size-3 shrink-0 animate-spin" />}
+                {statusLabel(displayStatus)}
               </Badge>
             </span>
           </Hint>
@@ -322,12 +347,13 @@ export function WorkspaceRow({
               size="compact"
               data-testid="ws-start"
               disabled={busy}
+              loading={pendingAction === "start"}
               className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/start`, { method: "POST" });
                   onToast("已启动");
-                })
+                }, "start")
               }
             >
               <Play className="size-3.5 shrink-0 text-emerald-500" />
@@ -341,12 +367,13 @@ export function WorkspaceRow({
               size="compact"
               data-testid="ws-stop"
               disabled={busy}
+              loading={pendingAction === "stop"}
               className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/stop`, { method: "POST" });
                   onToast("已停止（仍占配额）：销毁后才会释放资源");
-                })
+                }, "stop")
               }
             >
               <Square className="size-3.5 shrink-0 text-amber-500" />
@@ -367,7 +394,7 @@ export function WorkspaceRow({
                 <X className="size-3.5 shrink-0" />
                 撤销申请
               </Button>
-              <AlertDialog open={destroyOpen} onOpenChange={setDestroyOpen}>
+              <AlertDialog open={destroyOpen} onOpenChange={closeDialogUnlessBusy}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>撤销开通申请</AlertDialogTitle>
@@ -376,18 +403,20 @@ export function WorkspaceRow({
                     <AlertDialogDescription>确认撤销「{ws.name}」的开通申请？不会占用配额。</AlertDialogDescription>
                   </AlertDialogBody>
                   <AlertDialogFooter>
-                    <AlertDialogCancel data-testid="confirm-cancel">取消</AlertDialogCancel>
+                    <AlertDialogCancel data-testid="confirm-cancel" disabled={busy}>取消</AlertDialogCancel>
                     <AlertDialogAction
                       data-testid="confirm-ok"
-                      onClick={() => {
-                        setDestroyOpen(false);
+                      loading={pendingAction === "cancel-request"}
+                      onClick={(e) => {
+                        e.preventDefault();
                         void run(async () => {
                           await api(`/workspaces/${ws.id}/reject`, {
                             method: "POST",
                             body: JSON.stringify({ reason: "cancelled" }),
                           });
                           onToast("已撤销申请");
-                        });
+                          setDestroyOpen(false);
+                        }, "cancel-request");
                       }}
                     >
                       确定撤销
@@ -404,33 +433,36 @@ export function WorkspaceRow({
               size="compact"
               data-testid="ws-destroy-approve-project"
               disabled={busy}
+              loading={pendingAction === "destroy-approve"}
               className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/destroy-request/approve`, { method: "POST", body: "{}" });
                   onToast("已通过项目初审，等待平台终审");
-                })
+                }, "destroy-approve")
               }
             >
               <Trash2 className="size-3.5 shrink-0" />
               销毁初审
             </Button>
           )}
-          {canRequestDestroy && (
-            <>
-              <Button
-                type="button"
-                variant="destructive"
-                size="compact"
-                data-testid="ws-destroy"
-                disabled={busy}
-                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
-                onClick={() => setDestroyOpen(true)}
-              >
-                <Trash2 className="size-3.5 shrink-0" />
-                {destroyNow ? "销毁" : skipProjectReview ? "销毁" : "申请销毁"}
-              </Button>
-              <AlertDialog open={destroyOpen} onOpenChange={setDestroyOpen}>
+          {canRequestDestroy && displayStatus !== "destroying" && (
+            <Button
+              type="button"
+              variant="destructive"
+              size="compact"
+              data-testid="ws-destroy"
+              disabled={busy}
+              loading={pendingAction === "destroy"}
+              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+              onClick={() => setDestroyOpen(true)}
+            >
+              <Trash2 className="size-3.5 shrink-0" />
+              {destroyNow ? "销毁" : skipProjectReview ? "销毁" : "申请销毁"}
+            </Button>
+          )}
+          {(canRequestDestroy || destroyOpen) && (
+              <AlertDialog open={destroyOpen} onOpenChange={closeDialogUnlessBusy}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>{destroyNow || skipProjectReview ? "销毁服务器" : "申请销毁服务器"}</AlertDialogTitle>
@@ -445,11 +477,13 @@ export function WorkspaceRow({
                     </AlertDialogDescription>
                   </AlertDialogBody>
                   <AlertDialogFooter>
-                    <AlertDialogCancel data-testid="confirm-cancel">取消</AlertDialogCancel>
+                    <AlertDialogCancel data-testid="confirm-cancel" disabled={busy}>取消</AlertDialogCancel>
                     <AlertDialogAction
+                      variant="destructive"
                       data-testid="confirm-ok"
-                      onClick={() => {
-                        setDestroyOpen(false);
+                      loading={pendingAction === "destroy"}
+                      onClick={(e) => {
+                        e.preventDefault();
                         void run(async () => {
                           const out = await api<{ status?: string }>(`/workspaces/${ws.id}/destroy-request`, { method: "POST", body: "{}" });
                           if (out?.status === "destroyed" || out?.status === "destroying") {
@@ -459,7 +493,8 @@ export function WorkspaceRow({
                           } else {
                             onToast("已提交销毁申请");
                           }
-                        });
+                          setDestroyOpen(false);
+                        }, "destroy");
                       }}
                     >
                       {destroyNow ? "确认销毁" : skipProjectReview ? "提交平台终审" : "提交申请"}
@@ -467,21 +502,27 @@ export function WorkspaceRow({
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-            </>
           )}
-          {destroyAwaitPlatform && isPlatformAdmin && (
+          {displayStatus === "destroying" && !destroyOpen && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 whitespace-nowrap shrink-0">
+              <Loader2 className="size-3.5 shrink-0 animate-spin" />
+              正在销毁
+            </span>
+          )}
+          {destroyAwaitPlatform && isPlatformAdmin && displayStatus !== "destroying" && (
             <Button
               type="button"
               variant="destructive"
               size="compact"
               data-testid="ws-destroy-force"
               disabled={busy}
+              loading={pendingAction === "destroy-force"}
               className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
                   await api(`/admin/dangerous-approvals/${ws.id}/approve`, { method: "POST", body: "{}" });
                   onToast("平台终审通过，已销毁");
-                })
+                }, "destroy-force")
               }
             >
               <Trash2 className="size-3.5 shrink-0" />

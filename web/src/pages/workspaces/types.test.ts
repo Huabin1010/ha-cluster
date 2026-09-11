@@ -10,6 +10,7 @@ import {
   canApproveRole,
   workspaceStatusVariant,
   workspaceStatusDotClass,
+  workspaceStatusInFlight,
   workspaceNeedsPoll,
   workspacePollInterval,
   workspaceListQueryPollInterval,
@@ -44,6 +45,8 @@ describe("workspace statusLabel", () => {
     expect(statusLabel("destroy_requested")).toBe("待销毁审批");
     expect(statusLabel("destroy_pending_platform")).toBe("待平台终审");
     expect(statusLabel("failed")).toBe("失败");
+    expect(statusLabel("destroying")).toBe("销毁中");
+    expect(statusLabel("provisioning")).toBe("开通中");
   });
 
   it("falls back to raw status", () => {
@@ -56,6 +59,7 @@ describe("workspace statusLabel", () => {
     expect(workspaceStatusVariant("fabric_degraded")).toBe("warn");
     expect(workspaceStatusVariant("failed")).toBe("danger");
     expect(workspaceStatusVariant("rejected")).toBe("danger");
+    expect(workspaceStatusVariant("destroying")).toBe("danger");
     expect(workspaceStatusVariant("stopped")).toBe("outline");
   });
 
@@ -63,8 +67,17 @@ describe("workspace statusLabel", () => {
     expect(workspaceStatusDotClass("running")).toContain("bg-emerald-500");
     expect(workspaceStatusDotClass("failed")).toContain("bg-rose-500");
     expect(workspaceStatusDotClass("failed")).not.toContain("bg-emerald-500");
+    expect(workspaceStatusDotClass("destroying")).toContain("bg-rose-500");
+    expect(workspaceStatusDotClass("destroying")).not.toContain("bg-emerald-500");
     expect(workspaceStatusDotClass("requested")).toContain("bg-amber-500");
     expect(workspaceStatusDotClass("stopped")).toContain("bg-muted-foreground");
+  });
+
+  it("marks provisioning and destroying as in-flight", () => {
+    expect(workspaceStatusInFlight("provisioning")).toBe(true);
+    expect(workspaceStatusInFlight("destroying")).toBe(true);
+    expect(workspaceStatusInFlight("running")).toBe(false);
+    expect(workspaceStatusInFlight("requested")).toBe(false);
   });
 });
 

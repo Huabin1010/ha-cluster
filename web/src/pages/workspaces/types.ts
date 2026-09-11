@@ -208,7 +208,7 @@ export function workspaceStatusVariant(status: string): WorkspaceBadgeVariant {
   ) {
     return "warn";
   }
-  if (status === "rejected" || status === "failed" || status === "node_lost") {
+  if (status === "rejected" || status === "failed" || status === "node_lost" || status === "destroying") {
     return "danger";
   }
   return "outline";
@@ -227,10 +227,15 @@ export function workspaceStatusDotClass(status: string): string {
   ) {
     return "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]";
   }
-  if (status === "rejected" || status === "failed" || status === "node_lost") {
+  if (status === "rejected" || status === "failed" || status === "node_lost" || status === "destroying") {
     return "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.45)]";
   }
   return "bg-muted-foreground/40";
+}
+
+/** 后台仍在推进、状态徽章应带旋转指示 */
+export function workspaceStatusInFlight(status: string): boolean {
+  return status === "provisioning" || status === "destroying";
 }
 
 export const badgeVariant = workspaceStatusVariant;

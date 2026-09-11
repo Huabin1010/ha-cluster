@@ -883,8 +883,8 @@ export function ProjectDetailPage() {
                           onBusy={setBusyWsId}
                           onRefresh={() => {
                             wsPollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
-                            void refetchWs();
                             void loadUsage();
+                            return refetchWs();
                           }}
                           onToast={(m) => {
                             setWsToast(m);

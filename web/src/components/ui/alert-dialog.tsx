@@ -72,10 +72,10 @@ AlertDialogDescription.displayName = AlertDialogPrimitive.Description.displayNam
 
 export const AlertDialogAction = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Action>,
-  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & Pick<ButtonProps, "variant">
->(({ className, variant = "primary", ...props }, ref) => (
-  <Button asChild variant={variant} className={className}>
-    <AlertDialogPrimitive.Action ref={ref} {...props} />
+  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & Pick<ButtonProps, "variant" | "loading">
+>(({ className, variant = "primary", loading, disabled, ...props }, ref) => (
+  <Button asChild variant={variant} loading={loading} disabled={!!disabled || !!loading} className={className}>
+    <AlertDialogPrimitive.Action ref={ref} disabled={disabled || loading} {...props} />
   </Button>
 ));
 AlertDialogAction.displayName = AlertDialogPrimitive.Action.displayName;
