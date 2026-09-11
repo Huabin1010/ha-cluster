@@ -13,6 +13,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"ha-cluster/internal/models"
+	"ha-cluster/internal/requestmeta"
 	"ha-cluster/internal/store"
 )
 
@@ -764,30 +765,67 @@ func (s *Store) UpdateWorkspace(ctx context.Context, w *models.Workspace) error 
 }
 
 func (s *Store) AddAudit(ctx context.Context, l models.AuditLog) error {
+	if l.IP == "" {
+		l.IP = requestmeta.ClientIP(ctx)
+	}
 	meta, _ := json.Marshal(l.Meta)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO audit_logs (actor_user_id,action,resource_type,resource_id,ip,meta,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		l.ActorUserID, l.Action, l.ResourceType, l.ResourceID, l.IP, meta, time.Now())
 	return err
 }
 
-func (s *Store) ListAudit(ctx context.Context, limit int) ([]models.AuditLog, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,actor_user_id,action,resource_type,resource_id,ip,created_at FROM audit_logs ORDER BY id DESC LIMIT $1`, limit)
-	if err != nil {
-		return nil, err
-	}
+func scanAuditRows(rows *sql.Rows) ([]models.AuditLog, error) {
 	defer rows.Close()
 	var out []models.AuditLog
 	for rows.Next() {
 		var l models.AuditLog
-		if err := rows.Scan(&l.ID, &l.ActorUserID, &l.Action, &l.ResourceType, &l.ResourceID, &l.IP, &l.CreatedAt); err != nil {
+		var metaRaw []byte
+		if err := rows.Scan(&l.ID, &l.ActorUserID, &l.Action, &l.ResourceType, &l.ResourceID, &l.IP, &l.CreatedAt, &l.ActorUsername, &metaRaw); err != nil {
 			return nil, err
+		}
+		if len(metaRaw) > 0 && string(metaRaw) != "null" {
+			_ = json.Unmarshal(metaRaw, &l.Meta)
 		}
 		out = append(out, l)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) ListAudit(ctx context.Context, limit int) ([]models.AuditLog, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT a.id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.ip, a.created_at, COALESCE(u.username, ''), a.meta
+FROM audit_logs a
+LEFT JOIN users u ON u.id = a.actor_user_id
+ORDER BY a.id DESC
+LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scanAuditRows(rows)
+}
+
+func (s *Store) ListAuditByResource(ctx context.Context, resourceID string, limit int) ([]models.AuditLog, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT a.id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.ip, a.created_at, COALESCE(u.username, ''), a.meta
+FROM audit_logs a
+LEFT JOIN users u ON u.id = a.actor_user_id
+WHERE a.resource_id = $1
+   OR COALESCE(a.meta->>'workspace', '') = $1
+ORDER BY a.id DESC
+LIMIT $2`, resourceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scanAuditRows(rows)
 }
 
 func (s *Store) ListAllocations(ctx context.Context) ([]models.Allocation, error) {

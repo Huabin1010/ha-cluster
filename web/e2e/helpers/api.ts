@@ -254,7 +254,7 @@ export const api = {
   /** Full destroy approval chain (project owner + platform admin tokens). */
   async destroyWorkspace(ownerToken: string, id: string, platformAdminToken?: string) {
     await request("/workspaces/" + id + "/destroy-request", { method: "POST", body: "{}" }, ownerToken);
-    await request("/workspaces/" + id + "/destroy-request/approve", { method: "POST", body: "{}" }, ownerToken);
+    await request("/workspaces/" + id + "/destroy-request/approve", { method: "POST", body: "{}" }, ownerToken).catch(() => undefined);
     let adminTok = platformAdminToken;
     if (!adminTok) {
       const creds = await request<AuthTokens>("/auth/login", {

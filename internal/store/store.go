@@ -69,6 +69,7 @@ type Store interface {
 
 	AddAudit(ctx context.Context, l models.AuditLog) error
 	ListAudit(ctx context.Context, limit int) ([]models.AuditLog, error)
+	ListAuditByResource(ctx context.Context, resourceID string, limit int) ([]models.AuditLog, error)
 
 	ListAllocations(ctx context.Context) ([]models.Allocation, error)
 	CreateInvitation(ctx context.Context, inv *models.Invitation) error

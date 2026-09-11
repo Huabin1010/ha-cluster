@@ -132,7 +132,7 @@ COMMIT;
 | 套餐 | CPU | 内存 | 磁盘 | 默认 arch |
 |------|-----|------|------|-----------|
 | nano | 500m | 256Mi | 5Gi | any（能放下的节点） |
-| small | 1 | 512Mi | 10Gi | any |
+| small | 1 | 512Mi | 5Gi | any |
 | medium | 2 | 1Gi | 15Gi | 用户选 |
 | large | 4 | 2Gi | 20Gi | 用户选；phone1 常拒 |
 | xlarge | 6 | 3Gi | 30Gi | 倾向 amd64-mains |

@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, Download, KeyRound, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock, ShieldAlert } from "lucide-react";
 import { api, apiText, friendlyError } from "@/providers";
-import { formatTime } from "@/ui/format";
+import { formatTime, copyText } from "@/ui/format";
 import { canSSH } from "@/lib/permissions";
 import {
   formatPlanSpec,
   hasPendingResize,
+  pendingSpec,
   isDestroyPending,
   isDestroyPendingPlatform,
   isDestroyRequested,
@@ -21,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Hint } from "@/components/ui/tooltip";
 import { ImportKeyDialog } from "./ImportKeyDialog";
 import { ResizeDialog } from "./ResizeDialog";
+import { WorkspaceTerminalDialog } from "./WorkspaceTerminalDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,12 +97,16 @@ export function WorkspaceRow({
   const [destroyOpen, setDestroyOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [copiedSsh, setCopiedSsh] = useState(false);
+  const [termOpen, setTermOpen] = useState(false);
+  const [manualSsh, setManualSsh] = useState("");
   const busy = busyId === ws.id;
-  const pending = ws.status === "requested";
+  const isCreateRequested = ws.status === "requested";
   const destroyPending = isDestroyPending(ws);
   const destroyRequested = isDestroyRequested(ws);
   const destroyAwaitPlatform = isDestroyPendingPlatform(ws);
   const isPlatformAdmin = platformRole === "platform_admin";
+  const destroyNow = isPlatformAdmin;
+  const skipProjectReview = Boolean(canApprove) && !destroyNow;
   const canStart = ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended";
   const canStop = ws.status === "running" || ws.status === "fabric_degraded";
   const canRequestDestroy =
@@ -113,8 +119,9 @@ export function WorkspaceRow({
   const showSSH = wsRunning && sshGranted;
   const showSSHRequest = wsRunning && !sshGranted && myRole === "developer";
   const spec = workspaceSpec(ws);
+  const pendingResize = pendingSpec(ws);
   const resizePending = hasPendingResize(ws);
-  const canResize = !pending && !resizePending && (ws.status === "running" || ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended");
+  const canResize = !isCreateRequested && !resizePending && (ws.status === "running" || ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended");
 
   async function run(action: () => Promise<void>) {
     onBusy(ws.id);
@@ -158,7 +165,7 @@ export function WorkspaceRow({
           {resizePending && (
             <Badge variant="warn" data-testid="ws-resize-pending" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
               <Clock className="size-3 text-amber-500 shrink-0" />
-              扩容待审
+              {ws.resize_kind === "downgrade" ? "降配待审" : "升配待审"}
             </Badge>
           )}
         </div>
@@ -167,7 +174,18 @@ export function WorkspaceRow({
         <div className="inline-flex items-center gap-1.5 text-xs">
           <Cpu className="size-3 text-muted-foreground opacity-70 shrink-0" />
           <span className="font-medium text-foreground">{ws.plan}</span>
-          {spec && <span className="text-muted-foreground">({formatPlanSpec(spec)})</span>}
+          {spec && (
+            <span className="text-muted-foreground">
+              ({formatPlanSpec(spec)}
+              {pendingResize && (
+                <>
+                  <span className="mx-1">→</span>
+                  <span className="text-amber-500">{formatPlanSpec(pendingResize)}</span>
+                </>
+              )}
+              )
+            </span>
+          )}
           <span className="mono font-mono text-muted-foreground">{ws.arch}</span>
         </div>
       </TableCell>
@@ -183,7 +201,7 @@ export function WorkspaceRow({
       </TableCell>
       <TableCell className="py-2.5 text-right w-[320px] pr-4">
         <div className="flex items-center justify-end flex-wrap gap-1 whitespace-nowrap">
-          {pending && canApprove && (
+          {isCreateRequested && canApprove && (
             <Button
               type="button"
               size="compact"
@@ -201,7 +219,7 @@ export function WorkspaceRow({
               批准开通
             </Button>
           )}
-          {pending && canApprove && (
+          {isCreateRequested && canApprove && (
             <>
               <Button
                 type="button"
@@ -289,8 +307,9 @@ export function WorkspaceRow({
             <ResizeDialog
               ws={ws}
               disabled={busy}
-              onSubmitted={() => {
-                onToast("已提交扩容申请，等待管理员审批");
+              canApprove={canApprove}
+              onSubmitted={(applied) => {
+                onToast(applied ? "已完成升配" : "已提交申请，等待管理员审批");
                 onRefresh();
               }}
               onError={onError}
@@ -334,7 +353,7 @@ export function WorkspaceRow({
               停止
             </Button>
           )}
-          {pending && (
+          {isCreateRequested && (
             <>
               <Button
                 type="button"
@@ -409,16 +428,20 @@ export function WorkspaceRow({
                 onClick={() => setDestroyOpen(true)}
               >
                 <Trash2 className="size-3.5 shrink-0" />
-                申请销毁
+                {destroyNow ? "销毁" : skipProjectReview ? "销毁" : "申请销毁"}
               </Button>
               <AlertDialog open={destroyOpen} onOpenChange={setDestroyOpen}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>申请销毁服务器</AlertDialogTitle>
+                    <AlertDialogTitle>{destroyNow || skipProjectReview ? "销毁服务器" : "申请销毁服务器"}</AlertDialogTitle>
                   </AlertDialogHeader>
                   <AlertDialogBody>
                     <AlertDialogDescription>
-                      提交后需项目管理员初审，再由平台超级管理员终审。通过后配额归还，隔离环境不可恢复。
+                      {destroyNow
+                        ? "你已是平台管理员，确认后将立即销毁，无需再走申请与审核。配额立刻归还，隔离环境不可恢复。"
+                        : skipProjectReview
+                          ? "你已是项目管理员，确认后直接提交平台终审，无需再申请项目初审。通过后配额归还，隔离环境不可恢复。"
+                          : "提交后需项目管理员初审，再由平台超级管理员终审。通过后配额归还，隔离环境不可恢复。"}
                     </AlertDialogDescription>
                   </AlertDialogBody>
                   <AlertDialogFooter>
@@ -428,12 +451,18 @@ export function WorkspaceRow({
                       onClick={() => {
                         setDestroyOpen(false);
                         void run(async () => {
-                          await api(`/workspaces/${ws.id}/destroy-request`, { method: "POST", body: "{}" });
-                          onToast("已提交销毁申请");
+                          const out = await api<{ status?: string }>(`/workspaces/${ws.id}/destroy-request`, { method: "POST", body: "{}" });
+                          if (out?.status === "destroyed" || out?.status === "destroying") {
+                            onToast("已销毁");
+                          } else if (out?.status === "destroy_pending_platform") {
+                            onToast("已提交平台终审");
+                          } else {
+                            onToast("已提交销毁申请");
+                          }
                         });
                       }}
                     >
-                      提交申请
+                      {destroyNow ? "确认销毁" : skipProjectReview ? "提交平台终审" : "提交申请"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -469,9 +498,24 @@ export function WorkspaceRow({
           )}
           {showSSH && (
             <>
+              <Button
+                type="button"
+                size="compact"
+                data-testid="ws-web-terminal"
+                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                onClick={() => setTermOpen(true)}
+              >
+                <Terminal className="size-3.5 shrink-0" />
+                打开终端
+              </Button>
+              <WorkspaceTerminalDialog
+                workspaceId={ws.id}
+                workspaceName={ws.name}
+                open={termOpen}
+                onOpenChange={setTermOpen}
+              />
               <Button variant="outline" size="compact" asChild className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs">
                 <Link data-testid="ws-manage" to={`/workspaces/${ws.id}`}>
-                  <Terminal className="size-3.5 shrink-0" />
                   连接 / 详情
                 </Link>
               </Button>
@@ -489,10 +533,14 @@ export function WorkspaceRow({
                   onClick={() =>
                     run(async () => {
                       const info = await api<{ command: string }>(`/workspaces/${ws.id}/connection`);
-                      await navigator.clipboard.writeText(info.command);
-                      setCopiedSsh(true);
-                      setTimeout(() => setCopiedSsh(false), 2000);
-                      onToast("已复制 SSH 连接命令");
+                      const ok = await copyText(info.command);
+                      if (ok) {
+                        setCopiedSsh(true);
+                        setTimeout(() => setCopiedSsh(false), 2000);
+                        onToast("已复制 SSH 连接命令");
+                        return;
+                      }
+                      setManualSsh(info.command);
                     })
                   }
                 >
@@ -537,6 +585,45 @@ export function WorkspaceRow({
                   onRefresh();
                 }}
               />
+              <AlertDialog open={Boolean(manualSsh)} onOpenChange={(open) => { if (!open) setManualSsh(""); }}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>手动复制 SSH 命令</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      当前页面不是 HTTPS，浏览器不允许直接写入剪贴板。点选下方命令复制，或再点一次「复制」。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogBody>
+                    <textarea
+                      readOnly
+                      autoFocus
+                      data-testid="ws-copy-ssh-fallback"
+                      className="w-full min-h-20 rounded-md border border-(--line-strong) bg-(--input-bg) p-2 font-mono text-xs"
+                      value={manualSsh}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                  </AlertDialogBody>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>关闭</AlertDialogCancel>
+                    <Button
+                      type="button"
+                      data-testid="ws-copy-ssh-fallback-confirm"
+                      onClick={() => {
+                        void (async () => {
+                          const ok = await copyText(manualSsh);
+                          if (!ok) return;
+                          setCopiedSsh(true);
+                          setTimeout(() => setCopiedSsh(false), 2000);
+                          onToast("已复制 SSH 连接命令");
+                          setManualSsh("");
+                        })();
+                      }}
+                    >
+                      复制
+                    </Button>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </>
           )}
         </div>

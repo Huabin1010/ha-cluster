@@ -22,6 +22,10 @@ func TestPlansHaveLarge(t *testing.T) {
 	if !ok || p.CPUMilli != 4000 || p.MemBytes != 2*1024*1024*1024 {
 		t.Fatalf("%+v", p)
 	}
+	small, ok := Plans()["small"]
+	if !ok || small.CPUMilli != 1000 || small.MemBytes != 512*1024*1024 || small.DiskBytes != 5*1024*1024*1024 {
+		t.Fatalf("small %+v", small)
+	}
 	p2, ok := Plans()["2c2g"]
 	if !ok || p2.CPUMilli != 2000 || p2.MemBytes != 2*1024*1024*1024 || p2.DiskBytes != 5*1024*1024*1024 {
 		t.Fatalf("2c2g %+v", p2)

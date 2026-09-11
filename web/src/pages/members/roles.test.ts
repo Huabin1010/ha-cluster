@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASSIGNABLE_ROLES, ROLE_HELP, roleLabel } from "./roles";
+import { ASSIGNABLE_ROLES, ROLE_HELP, roleChipLabel, roleLabel } from "./roles";
 
 describe("member roles", () => {
   it("does not allow assigning owner via form roles", () => {
@@ -18,5 +18,10 @@ describe("member roles", () => {
     expect(roleLabel("viewer")).toContain("只读");
     expect(roleLabel("owner")).toContain("所有者");
     expect(roleLabel("custom")).toBe("custom");
+  });
+
+  it("uses short chip labels in the member table", () => {
+    expect(roleChipLabel("developer")).toBe("开发者 (DEV)");
+    expect(roleChipLabel("admin")).toBe("管理员 (ADMIN)");
   });
 });

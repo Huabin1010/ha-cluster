@@ -9,7 +9,8 @@ alwaysApply: true
 
 - 用户在 **个人设置** 登记 SSH 公钥；至少一把公钥才能过 Bastion。
 - **非项目成员看不见该项目**（列表无、直链 404）。
-- 工作区 `running` 且有权时，控制台提供 **一键 SSH**；经 Bastion → EasyTier → worker。
+- 工作区 `running` 且有权时，控制台提供 **网页终端** 与 **一键 SSH**；网页终端走 JWT + WebSocket，不要求本机私钥。
+- 无 SSH 连接权时只显示申请入口，不开放终端。
 
 ## 谁能连（须全部满足）
 

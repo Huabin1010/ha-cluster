@@ -73,6 +73,7 @@ ha_incus_install_worker() {
     ha_incus_install_online
     ha_incus_init
     ha_incus_ensure_profile
+    ha_incus_ensure_quota_pool
     ha_incus_network_fixup
     ha_incus_network_persist
     ha_incus_fetch_workspace_assets "${bundle_dir}"

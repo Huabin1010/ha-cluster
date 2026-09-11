@@ -136,6 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_workspaces_project_id ON workspaces (project_id);
 CREATE INDEX IF NOT EXISTS idx_workspaces_node_id ON workspaces (node_id);
 CREATE INDEX IF NOT EXISTS idx_workspaces_owner_user_id ON workspaces (owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_created ON audit_logs (actor_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_resource_id ON audit_logs (resource_id);
 CREATE INDEX IF NOT EXISTS idx_invitations_project_id ON invitations (project_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_sessions_user_id ON refresh_sessions (user_id);
 

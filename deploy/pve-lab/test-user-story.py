@@ -78,9 +78,13 @@ def wait_ws(c: Client, ws_id: str, want=("running",), timeout=180) -> dict:
 
 
 def destroy_ws(owner: Client, admin: Client, ws_id: str) -> None:
-    owner.req("POST", f"/workspaces/{ws_id}/destroy-request", {})
-    owner.req("POST", f"/workspaces/{ws_id}/destroy-request/approve", {})
-    admin.req("POST", f"/admin/dangerous-approvals/{ws_id}/approve", {})
+    code, body = owner.req("POST", f"/workspaces/{ws_id}/destroy-request", {})
+    status = (body or {}).get("status")
+    if status == "destroy_requested":
+        owner.req("POST", f"/workspaces/{ws_id}/destroy-request/approve", {})
+        status = "destroy_pending_platform"
+    if status != "destroyed":
+        admin.req("POST", f"/admin/dangerous-approvals/{ws_id}/approve", {})
 
 
 def member_by_user(members: list, user_id: str) -> dict | None:

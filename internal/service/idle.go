@@ -89,14 +89,8 @@ func (a *App) WakeWorkspaceIfSuspended(ctx context.Context, w *models.Workspace)
 	return a.Store.UpdateWorkspace(ctx, w)
 }
 
-// ApplyResizeImmediately applies a resize without approval for platform admins.
+// ApplyResizeImmediately is the HTTP entry for resize. Admins apply upgrades
+// immediately inside RequestResize; downgrades and member requests stay pending.
 func (a *App) ApplyResizeImmediately(ctx context.Context, actor models.User, id uuid.UUID, cpu, mem, disk int64) (*models.Workspace, error) {
-	w, err := a.RequestResize(ctx, actor, id, cpu, mem, disk)
-	if err != nil {
-		return nil, err
-	}
-	if actor.PlatformRole == models.RolePlatformAdmin {
-		return a.ApproveResize(ctx, actor, id)
-	}
-	return w, nil
+	return a.RequestResize(ctx, actor, id, cpu, mem, disk)
 }

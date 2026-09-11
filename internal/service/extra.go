@@ -380,9 +380,37 @@ func (a *App) TransferOwnership(ctx context.Context, actor models.User, projectI
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "project.transfer_ownership",
 		ResourceType: "project", ResourceID: projectID.String(),
-		Meta: map[string]any{"new_owner": newOwnerUserID.String()},
+		Meta: map[string]any{
+			"new_owner":     newOwnerUserID.String(),
+			"from_username": actor.Username,
+			"to_username":   a.usernameOf(ctx, newOwnerUserID),
+		},
 	})
 	return nil
+}
+
+func (a *App) usernameOf(ctx context.Context, id uuid.UUID) string {
+	u, err := a.Store.GetUserByID(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return u.Username
+}
+
+func (a *App) membershipChangeMeta(ctx context.Context, projectID, userID uuid.UUID, before, after models.Membership) map[string]any {
+	meta := map[string]any{
+		"project_id":      projectID.String(),
+		"from_role":       before.Role,
+		"to_role":         after.Role,
+		"from_ssh_access": before.SSHAccess,
+		"to_ssh_access":   after.SSHAccess,
+		"from_ssh_mode":   before.SSHMode,
+		"to_ssh_mode":     after.SSHMode,
+	}
+	if name := a.usernameOf(ctx, userID); name != "" {
+		meta["target_username"] = name
+	}
+	return meta
 }
 
 type PatchMemberInput struct {
@@ -399,6 +427,7 @@ func (a *App) PatchMember(ctx context.Context, actor models.User, projectID, use
 	if err != nil {
 		return nil, err
 	}
+	before := *m
 	if in.Role != nil {
 		if models.RoleRank(*in.Role) == 0 {
 			return nil, store.ErrInvalidInput
@@ -424,7 +453,7 @@ func (a *App) PatchMember(ctx context.Context, actor models.User, projectID, use
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "membership.update",
 		ResourceType: "membership", ResourceID: userID.String(),
-		Meta: map[string]any{"project_id": projectID.String()},
+		Meta: a.membershipChangeMeta(ctx, projectID, userID, before, *m),
 	})
 	if in.SSHAccess != nil && *in.SSHAccess == models.SSHAccessGranted {
 		go func() { _ = a.syncProjectWorkspaceKeys(context.Background(), projectID) }()
@@ -444,6 +473,7 @@ func (a *App) RequestSSHAccess(ctx context.Context, actor models.User, projectID
 	if m.SSHAccess == models.SSHAccessGranted {
 		return m, nil
 	}
+	before := *m
 	m.SSHAccess = models.SSHAccessPending
 	models.NormalizeMembershipSSH(m)
 	if err := a.Store.UpdateMembership(ctx, *m); err != nil {
@@ -451,7 +481,8 @@ func (a *App) RequestSSHAccess(ctx context.Context, actor models.User, projectID
 	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "ssh_access.request",
-		ResourceType: "project", ResourceID: projectID.String(),
+		ResourceType: "membership", ResourceID: actor.ID.String(),
+		Meta: a.membershipChangeMeta(ctx, projectID, actor.ID, before, *m),
 	})
 	return m, nil
 }
@@ -471,6 +502,7 @@ func (a *App) ApproveSSHAccess(ctx context.Context, actor models.User, projectID
 		}
 		return nil, store.ErrInvalidInput
 	}
+	before := *m
 	m.SSHAccess = models.SSHAccessGranted
 	if m.SSHMode == "" {
 		m.SSHMode = models.SSHModeReadWrite
@@ -482,7 +514,7 @@ func (a *App) ApproveSSHAccess(ctx context.Context, actor models.User, projectID
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "ssh_access.grant",
 		ResourceType: "membership", ResourceID: userID.String(),
-		Meta: map[string]any{"project_id": projectID.String()},
+		Meta: a.membershipChangeMeta(ctx, projectID, userID, before, *m),
 	})
 	go func() { _ = a.syncProjectWorkspaceKeys(context.Background(), projectID) }()
 	return m, nil
@@ -521,26 +553,31 @@ func (a *App) ListDangerousDestroyPending(ctx context.Context, actor models.User
 }
 
 func (a *App) SyncUserKeys(ctx context.Context, userID uuid.UUID) error {
-	keys, err := a.Store.ListSSHKeys(ctx, userID)
-	if err != nil {
-		return err
-	}
-	pubs := make([]string, 0, len(keys))
-	for _, k := range keys {
-		if strings.TrimSpace(k.PublicKey) != "" {
-			pubs = append(pubs, strings.TrimSpace(k.PublicKey))
-		}
-	}
 	wss, err := a.Store.ListWorkspaces(ctx, nil)
 	if err != nil {
 		return err
 	}
 	var lastErr error
 	for _, ws := range wss {
-		if ws.OwnerUserID == userID && (ws.Status == models.WSRunning || ws.Status == models.WSDegraded) {
-			if err := a.Runtime.SyncKeys(ctx, ws.ID, pubs); err != nil {
-				lastErr = err
+		switch ws.Status {
+		case models.WSRunning, models.WSDegraded, models.WSSuspended:
+		default:
+			continue
+		}
+		members, _ := a.Store.ListMemberships(ctx, ws.ProjectID)
+		ids := authz.CollectWorkspaceSSHUserIDs(members, ws.OwnerUserID, ws.Visibility)
+		affects := false
+		for _, id := range ids {
+			if id == userID {
+				affects = true
+				break
 			}
+		}
+		if !affects {
+			continue
+		}
+		if err := a.Runtime.SyncKeys(ctx, ws.ID, a.collectWorkspacePubkeys(ctx, ws)); err != nil {
+			lastErr = err
 		}
 	}
 	return lastErr

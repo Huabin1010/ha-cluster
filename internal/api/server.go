@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -21,6 +22,7 @@ import (
 	"ha-cluster/internal/authz"
 	"ha-cluster/internal/bastion"
 	"ha-cluster/internal/models"
+	"ha-cluster/internal/requestmeta"
 	"ha-cluster/internal/service"
 	"ha-cluster/internal/store"
 )
@@ -34,6 +36,7 @@ func New(app *service.App) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
+	r.Use(clientIPMiddleware)
 	r.Use(middleware.Recoverer)
 	r.Use(metricsMiddleware)
 	r.Use(cors.Handler(cors.Options{
@@ -49,7 +52,9 @@ func New(app *service.App) http.Handler {
 	if webDir != "" {
 		if fi, err := os.Stat(webDir); err == nil && fi.IsDir() {
 			spa = spaFileServer(webDir)
-			// 优先拦截所有浏览器 HTML 页面请求回退至 SPA index.html
+			// 优先拦截浏览器 HTML 页面请求回退至 SPA index.html。
+			// /assets 等带后缀静态文件绝不能走这段，否则缺失分包会被回成 text/html，
+			// 浏览器按 module script 加载时直接 MIME 报错。
 			r.Use(func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 					if req.Method == http.MethodGet &&
@@ -57,6 +62,7 @@ func New(app *service.App) http.Handler {
 						!strings.HasPrefix(req.URL.Path, "/healthz") &&
 						!strings.HasPrefix(req.URL.Path, "/readyz") &&
 						!strings.HasPrefix(req.URL.Path, "/internal") &&
+						!isStaticAssetPath(req.URL.Path) &&
 						strings.Contains(req.Header.Get("Accept"), "text/html") {
 						spa(w, req)
 						return
@@ -86,6 +92,20 @@ func New(app *service.App) http.Handler {
 	}
 
 	return r
+}
+
+func clientIPMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(requestmeta.WithClientIP(r.Context(), clientIP(r))))
+	})
+}
+
+func clientIP(r *http.Request) string {
+	addr := strings.TrimSpace(r.RemoteAddr)
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
 }
 
 func registerAPIRoutes(r chi.Router, s *Server) {
@@ -159,8 +179,10 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/workspaces/{id}/ssh-target", s.sshTarget)
 		r.Get("/workspaces/{id}/ssh-config", s.sshConfig)
 		r.Get("/workspaces/{id}/connection", s.sshConnection)
+		r.Get("/workspaces/{id}/terminal", s.workspaceTerminal)
 		r.Get("/workspaces/{id}/ingress", s.listIngress)
 		r.Post("/workspaces/{id}/ingress", s.createIngress)
+		r.Get("/workspaces/{id}/audit", s.listWorkspaceAudit)
 		r.Delete("/ingress/{id}", s.deleteIngress)
 		r.Post("/ingress/{id}/approve", s.approveIngress)
 		r.Post("/ingress/{id}/reject", s.rejectIngress)
@@ -178,6 +200,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 
 func spaFileServer(webDir string) http.HandlerFunc {
 	fs := http.Dir(webDir)
+	fileServer := http.FileServer(fs)
 	return func(w http.ResponseWriter, r *http.Request) {
 		// API 路径未匹配命中时返回 404 JSON，避免吞掉错误的 API 请求
 		if strings.HasPrefix(r.URL.Path, "/api") {
@@ -191,14 +214,45 @@ func spaFileServer(webDir string) http.HandlerFunc {
 			defer f.Close()
 			stat, err := f.Stat()
 			if err == nil && !stat.IsDir() {
-				http.FileServer(fs).ServeHTTP(w, r)
+				setStaticCacheHeaders(w, rel)
+				fileServer.ServeHTTP(w, r)
 				return
 			}
 		}
 
+		// 指纹化静态资源缺失必须 404，禁止回退 index.html
+		if isStaticAssetPath(rel) {
+			http.NotFound(w, r)
+			return
+		}
+
 		// 前端 HTML5 History 客户端路由回退至 index.html
 		indexPath := filepath.Join(webDir, "index.html")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		http.ServeFile(w, r, indexPath)
+	}
+}
+
+func isStaticAssetPath(p string) bool {
+	rel := path.Clean("/" + strings.TrimPrefix(p, "/"))
+	if strings.HasPrefix(rel, "/assets/") {
+		return true
+	}
+	switch strings.ToLower(path.Ext(rel)) {
+	case ".js", ".mjs", ".css", ".map", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf":
+		return true
+	default:
+		return false
+	}
+}
+
+func setStaticCacheHeaders(w http.ResponseWriter, rel string) {
+	if rel == "/index.html" {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		return
+	}
+	if strings.HasPrefix(rel, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	}
 }
 
@@ -208,12 +262,12 @@ const userKey ctxKey = 1
 
 func (s *Server) authn(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if !strings.HasPrefix(h, "Bearer ") {
+		raw := accessTokenFromRequest(r)
+		if raw == "" {
 			writeErr(w, http.StatusUnauthorized, store.ErrUnauthorized)
 			return
 		}
-		c, err := auth.ParseAccess(s.App.JWT, strings.TrimPrefix(h, "Bearer "))
+		c, err := auth.ParseAccess(s.App.JWT, raw)
 		if err != nil {
 			writeErr(w, http.StatusUnauthorized, store.ErrUnauthorized)
 			return
@@ -841,16 +895,6 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []models.Node{}
 	}
-	includeAll := r.URL.Query().Get("all") == "1"
-	if !includeAll {
-		filtered := make([]models.Node, 0, len(items))
-		for _, n := range items {
-			if n.Ready && n.HealthStatus != models.NodeOffline {
-				filtered = append(filtered, n)
-			}
-		}
-		items = filtered
-	}
 	listEnvelope(w, items, len(items))
 }
 
@@ -899,6 +943,32 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, _ := s.App.Store.ListAudit(r.Context(), 200)
+	listEnvelope(w, items, len(items))
+}
+
+func (s *Server) listWorkspaceAudit(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	ws, err := s.App.Store.GetWorkspace(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err)
+		return
+	}
+	if _, err := s.App.RequireMembership(r.Context(), *userFrom(r), ws.ProjectID, models.RoleViewer); err != nil {
+		writeErr(w, http.StatusForbidden, err)
+		return
+	}
+	items, err := s.App.Store.ListAuditByResource(r.Context(), id.String(), 200)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	if items == nil {
+		items = []models.AuditLog{}
+	}
 	listEnvelope(w, items, len(items))
 }
 

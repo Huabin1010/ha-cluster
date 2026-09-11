@@ -19,3 +19,14 @@ export function roleLabel(role: string): string {
   };
   return map[role] ?? role;
 }
+
+/** 列表/下拉短标签，与角色徽章文案一致 */
+export function roleChipLabel(role: string): string {
+  const map: Record<string, string> = {
+    viewer: "观察者 (VIEWER)",
+    developer: "开发者 (DEV)",
+    admin: "管理员 (ADMIN)",
+    owner: "所有者 (OWNER)",
+  };
+  return map[role] ?? role;
+}

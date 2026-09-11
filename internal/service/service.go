@@ -18,6 +18,7 @@ import (
 	"ha-cluster/internal/ledger"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
+	"ha-cluster/internal/webshell"
 	"ha-cluster/internal/workspace"
 )
 
@@ -189,7 +190,10 @@ func (a *App) requestWorkspace(ctx context.Context, in CreateWorkspaceInput, spe
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: in.Actor.ID, Action: "workspace.request",
 		ResourceType: "workspace", ResourceID: w.ID.String(),
-		Meta: map[string]any{"plan": spec.Name, "arch": in.Arch, "cpu_milli": spec.CPUMilli, "mem_bytes": spec.MemBytes, "disk_bytes": spec.DiskBytes},
+		Meta: map[string]any{
+			"workspace_name": in.Name, "plan": spec.Name, "arch": in.Arch,
+			"cpu_milli": spec.CPUMilli, "mem_bytes": spec.MemBytes, "disk_bytes": spec.DiskBytes,
+		},
 	})
 	return w, nil
 }
@@ -235,7 +239,16 @@ func (a *App) collectWorkspacePubkeys(ctx context.Context, w models.Workspace) [
 			pubs = append(pubs, p)
 		}
 	}
+	if k := strings.TrimSpace(webshell.AuthorizedKey()); k != "" {
+		if _, ok := seen[k]; !ok {
+			pubs = append(pubs, k)
+		}
+	}
 	return pubs
+}
+
+func (a *App) WorkspaceSSHKeys(ctx context.Context, w models.Workspace) []string {
+	return a.collectWorkspacePubkeys(ctx, w)
 }
 
 func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node models.Node, allocID, actorID uuid.UUID, action string) (*models.Workspace, error) {
@@ -269,7 +282,7 @@ func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node mod
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actorID, Action: action,
 		ResourceType: "workspace", ResourceID: w.ID.String(),
-		Meta: map[string]any{"plan": w.Plan, "node": node.Name},
+		Meta: map[string]any{"workspace_name": w.Name, "plan": w.Plan, "node": node.Name},
 	})
 	return w, nil
 }
@@ -385,9 +398,19 @@ func (a *App) RequestResize(ctx context.Context, actor models.User, id uuid.UUID
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "workspace.resize.request",
 		ResourceType: "workspace", ResourceID: w.ID.String(),
-		Meta: map[string]any{"cpu_milli": target.CPUMilli, "mem_bytes": target.MemBytes, "disk_bytes": target.DiskBytes},
+		Meta: resizeAuditMeta(w, cur, target, kind),
 	})
+	// Upgrade may apply immediately for project/platform admins.
+	// Downgrade always stays pending so shrinking compute goes through review.
+	if kind == models.ResizeUpgrade && a.actorCanApproveResize(ctx, actor, w.ProjectID) {
+		return a.ApproveResize(ctx, actor, id)
+	}
 	return w, nil
+}
+
+func (a *App) actorCanApproveResize(ctx context.Context, actor models.User, projectID uuid.UUID) bool {
+	_, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin)
+	return err == nil
 }
 
 func (a *App) ApproveResize(ctx context.Context, actor models.User, id uuid.UUID) (*models.Workspace, error) {
@@ -451,7 +474,7 @@ func (a *App) ApproveResize(ctx context.Context, actor models.User, id uuid.UUID
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "workspace.resize.approve",
 		ResourceType: "workspace", ResourceID: w.ID.String(),
-		Meta: map[string]any{"cpu_milli": target.CPUMilli, "mem_bytes": target.MemBytes, "disk_bytes": target.DiskBytes},
+		Meta: resizeAuditMeta(w, cur, target, kind),
 	})
 	return &resized, nil
 }
@@ -467,6 +490,9 @@ func (a *App) RejectResize(ctx context.Context, actor models.User, id uuid.UUID,
 	if !w.HasPendingResize() {
 		return store.ErrInvalidInput
 	}
+	from := w.Spec()
+	to := models.Plan{Name: w.Plan, CPUMilli: w.PendingCPUMilli, MemBytes: w.PendingMemBytes, DiskBytes: w.PendingDiskBytes}
+	kind := w.ResizeKind
 	w.PendingCPUMilli = 0
 	w.PendingMemBytes = 0
 	w.PendingDiskBytes = 0
@@ -475,32 +501,59 @@ func (a *App) RejectResize(ctx context.Context, actor models.User, id uuid.UUID,
 	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
 		return err
 	}
+	meta := resizeAuditMeta(w, from, to, kind)
+	if r := strings.TrimSpace(reason); r != "" {
+		meta["reason"] = r
+	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "workspace.resize.reject",
 		ResourceType: "workspace", ResourceID: w.ID.String(),
-		Meta: map[string]any{"reason": strings.TrimSpace(reason)},
+		Meta: meta,
 	})
 	return nil
 }
 
-// RequestDestroyWorkspace submits destroy for approval (developer+).
+// RequestDestroyWorkspace starts destroy. Developers need project then platform
+// approval; project owner/admin skip the request queue and go to platform
+// review; platform admins destroy immediately.
 func (a *App) RequestDestroyWorkspace(ctx context.Context, actor models.User, id uuid.UUID) error {
 	w, err := a.Store.GetWorkspace(ctx, id)
 	if err != nil {
 		return err
 	}
-	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
+	mem, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper)
+	if err != nil {
 		return err
 	}
 	if w.Visibility == models.VisPrivate && w.OwnerUserID != actor.ID && actor.PlatformRole != models.RolePlatformAdmin {
-		m, _ := a.Store.GetMembership(ctx, w.ProjectID, actor.ID)
-		if m == nil || models.RoleRank(m.Role) < models.RoleRank(models.RoleAdmin) {
+		if mem == nil || models.RoleRank(mem.Role) < models.RoleRank(models.RoleAdmin) {
 			return store.ErrForbidden
 		}
 	}
 	switch w.Status {
 	case models.WSDestroyRequested, models.WSDestroyPendingPlatform, models.WSDestroying, models.WSDestroyed:
 		return store.ErrConflict
+	}
+	if authz.CanApproveDangerousOps(actor) {
+		return a.executeDestroy(ctx, actor, w)
+	}
+	if models.CanApproveWorkspace(mem.Role) {
+		w.Status = models.WSDestroyPendingPlatform
+		w.UpdatedAt = time.Now()
+		if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+			return err
+		}
+		_ = a.Store.AddAudit(ctx, models.AuditLog{
+			ActorUserID: actor.ID, Action: "workspace.destroy.request",
+			ResourceType: "workspace", ResourceID: id.String(),
+			Meta: map[string]any{"skip_project_review": true},
+		})
+		_ = a.Store.AddAudit(ctx, models.AuditLog{
+			ActorUserID: actor.ID, Action: "workspace.destroy.approve_project",
+			ResourceType: "workspace", ResourceID: id.String(),
+			Meta: map[string]any{"auto": true},
+		})
+		return nil
 	}
 	w.Status = models.WSDestroyRequested
 	w.UpdatedAt = time.Now()
@@ -519,6 +572,9 @@ func (a *App) ApproveDestroyProject(ctx context.Context, actor models.User, id u
 	}
 	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
 		return err
+	}
+	if w.Status == models.WSDestroyPendingPlatform {
+		return nil
 	}
 	if w.Status != models.WSDestroyRequested {
 		return store.ErrInvalidInput
@@ -600,7 +656,14 @@ func (a *App) StopWorkspace(ctx context.Context, actor models.User, id uuid.UUID
 	}
 	w.Status = models.WSStopped
 	w.UpdatedAt = time.Now()
-	return a.Store.UpdateWorkspace(ctx, w)
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		return err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "workspace.stop",
+		ResourceType: "workspace", ResourceID: id.String(),
+	})
+	return nil
 }
 
 func (a *App) StartWorkspace(ctx context.Context, actor models.User, id uuid.UUID) error {
@@ -625,7 +688,14 @@ func (a *App) StartWorkspace(ctx context.Context, actor models.User, id uuid.UUI
 	now := time.Now()
 	w.LastActivityAt = now
 	w.UpdatedAt = now
-	return a.Store.UpdateWorkspace(ctx, w)
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		return err
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "workspace.start",
+		ResourceType: "workspace", ResourceID: id.String(),
+	})
+	return nil
 }
 
 func SSHFingerprint(pub string) string {
@@ -692,6 +762,22 @@ func (a *App) Heartbeat(ctx context.Context, n models.Node) (*models.Node, error
 	}
 	out, err := a.Store.GetNodeByName(ctx, n.Name)
 	return out, err
+}
+
+func resizeAuditMeta(w *models.Workspace, from, to models.Plan, kind string) map[string]any {
+	meta := map[string]any{
+		"kind":            kind,
+		"from_cpu_milli":  from.CPUMilli,
+		"from_mem_bytes":  from.MemBytes,
+		"from_disk_bytes": from.DiskBytes,
+		"to_cpu_milli":    to.CPUMilli,
+		"to_mem_bytes":    to.MemBytes,
+		"to_disk_bytes":   to.DiskBytes,
+	}
+	if w != nil && w.Name != "" {
+		meta["workspace_name"] = w.Name
+	}
+	return meta
 }
 
 func classifyResize(cur, target models.Plan) (string, error) {

@@ -84,6 +84,8 @@ devices:
     type: disk
 ```
 
+`dir` 存储池上即使写了 `size`，容器里 `df` 仍显示宿主机磁盘。工作区根盘必须落在 **LVM/ZFS** 池（默认 `ha-disk`）上，套餐容量才会在 `df -h` 里可见。
+
 必须与 Allocation 字段一致；禁止编排器「临时加内存」。
 
 ### 4.2 cloud-init / 首次启动

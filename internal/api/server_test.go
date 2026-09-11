@@ -2,13 +2,16 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/models"
@@ -80,6 +83,86 @@ func TestHealthz(t *testing.T) {
 	rr := doJSON(t, h, http.MethodGet, "/healthz", "", nil)
 	if rr.Code != 200 {
 		t.Fatal(rr.Code)
+	}
+}
+
+func TestAuditActorUsernameAndIP(t *testing.T) {
+	h := testServer(t)
+	tok := registerLogin(t, h, "auditadmin", "auditadmin@x.com")
+	rr := doJSON(t, h, http.MethodGet, "/audit-logs", tok, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	var out struct {
+		Data []models.AuditLog `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	var login *models.AuditLog
+	for i := range out.Data {
+		if out.Data[i].Action == "user.login" {
+			login = &out.Data[i]
+			break
+		}
+	}
+	if login == nil {
+		t.Fatalf("no user.login in %#v", out.Data)
+	}
+	if login.ActorUsername != "auditadmin" {
+		t.Fatalf("actor_username=%q", login.ActorUsername)
+	}
+	if login.IP != "192.0.2.1" {
+		t.Fatalf("ip=%q", login.IP)
+	}
+}
+
+func TestWorkspaceAuditHTTP(t *testing.T) {
+	h := testServer(t)
+	tok := registerLogin(t, h, "wsaudit", "wsaudit@x.com")
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "wa", "slug": "wa"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", tok, map[string]string{
+		"name": "wa-ws", "plan": "nano", "arch": "amd64",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	var ws models.Workspace
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/audit", tok, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	var out struct {
+		Data []models.AuditLog `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, l := range out.Data {
+		if l.Action == "workspace.create" || l.Action == "workspace.request" {
+			found = true
+			if l.ActorUsername != "wsaudit" {
+				t.Fatalf("actor_username=%q", l.ActorUsername)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no workspace create/request in %#v", out.Data)
+	}
+
+	stranger := registerLogin(t, h, "stranger", "stranger@x.com")
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/audit", stranger, nil)
+	if rr.Code != http.StatusForbidden && rr.Code != http.StatusNotFound {
+		t.Fatalf("want 403/404 got %d %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -652,12 +735,42 @@ func TestApiPrefixAndSPAFallback(t *testing.T) {
 		t.Fatalf("expected 200 and static content for /assets/test.js, got %d %s", recAsset.Code, recAsset.Body.String())
 	}
 
+	// 3b. Accept: text/html 也不能把已有 JS 变成 HTML
+	reqAssetHTML := httptest.NewRequest(http.MethodGet, "/assets/test.js", nil)
+	reqAssetHTML.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+	recAssetHTML := httptest.NewRecorder()
+	h.ServeHTTP(recAssetHTML, reqAssetHTML)
+	if recAssetHTML.Code != http.StatusOK || !strings.Contains(recAssetHTML.Body.String(), "ha-web") {
+		t.Fatalf("expected JS for /assets/test.js even with Accept HTML, got %d %s", recAssetHTML.Code, recAssetHTML.Body.String())
+	}
+
+	// 3c. 缺失的指纹分包必须 404，禁止回退 index.html（否则 MIME 变成 text/html）
+	reqMissing := httptest.NewRequest(http.MethodGet, "/assets/Members-missing.js", nil)
+	reqMissing.Header.Set("Accept", "text/html,application/javascript,*/*")
+	recMissing := httptest.NewRecorder()
+	h.ServeHTTP(recMissing, reqMissing)
+	if recMissing.Code != http.StatusNotFound || strings.Contains(recMissing.Body.String(), "HA Web App") {
+		t.Fatalf("expected 404 for missing asset, got %d %s", recMissing.Code, recMissing.Body.String())
+	}
+
 	// 4. 测试 SPA 路由回退至 index.html
 	reqSPA := httptest.NewRequest(http.MethodGet, "/projects/123/workspaces", nil)
+	reqSPA.Header.Set("Accept", "text/html")
 	recSPA := httptest.NewRecorder()
 	h.ServeHTTP(recSPA, reqSPA)
 	if recSPA.Code != http.StatusOK || !strings.Contains(recSPA.Body.String(), "HA Web App") {
 		t.Fatalf("expected 200 and index.html for SPA route, got %d %s", recSPA.Code, recSPA.Body.String())
+	}
+	if cc := recSPA.Header().Get("Cache-Control"); !strings.Contains(cc, "no-cache") {
+		t.Fatalf("expected no-cache on SPA index.html, got %q", cc)
+	}
+
+	reqMembers := httptest.NewRequest(http.MethodGet, "/members", nil)
+	reqMembers.Header.Set("Accept", "text/html")
+	recMembers := httptest.NewRecorder()
+	h.ServeHTTP(recMembers, reqMembers)
+	if recMembers.Code != http.StatusOK || !strings.Contains(recMembers.Body.String(), "HA Web App") {
+		t.Fatalf("expected 200 and index.html for /members, got %d %s", recMembers.Code, recMembers.Body.String())
 	}
 
 	// 5. 测试未知 API 路由依然返回 404 JSON 而不是 index.html
@@ -811,3 +924,93 @@ func TestBatchCreateUsersAPI(t *testing.T) {
 	_ = adminTok
 }
 
+func TestWorkspaceTerminalAuthAndEcho(t *testing.T) {
+	h := testServer(t)
+	tok := registerLogin(t, h, "term-owner", "term-owner@x.com")
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "term-p", "slug": "term-p"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", tok, map[string]string{
+		"name": "term-ws", "plan": "nano", "arch": "amd64",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var ws models.Workspace
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+	if ws.Status == models.WSRequested {
+		rr = doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/approve", tok, map[string]string{})
+		if rr.Code != http.StatusOK {
+			t.Fatal(rr.Body.String())
+		}
+		_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+	}
+
+	denied := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/terminal", "", nil)
+	if denied.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 got %d %s", denied.Code, denied.Body.String())
+	}
+
+	viewerTok := registerLogin(t, h, "term-view", "term-view@x.com")
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", tok, map[string]string{
+		"username": "term-view", "role": "viewer",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	forbid := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/terminal", viewerTok, nil)
+	if forbid.Code != http.StatusForbidden {
+		t.Fatalf("want 403 got %d %s", forbid.Code, forbid.Body.String())
+	}
+
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/workspaces/" + ws.ID.String() + "/terminal?access_token=" + tok
+	c, _, err := websocket.Dial(ctx, u, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	_, data, err := c.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "已连接") {
+		t.Fatalf("banner %q", data)
+	}
+	if err := c.Write(ctx, websocket.MessageBinary, []byte("hi")); err != nil {
+		t.Fatal(err)
+	}
+	_, echo, err := c.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(echo) != "hi" {
+		t.Fatalf("echo %q", echo)
+	}
+}
+
+func TestAccessTokenQueryOnlyOnTerminal(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/workspaces/x/terminal?access_token=abc", nil)
+	if got := accessTokenFromRequest(req); got != "abc" {
+		t.Fatalf("terminal query token %q", got)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/workspaces/x/terminal?access_token=abc", nil)
+	if got := accessTokenFromRequest(req); got != "abc" {
+		t.Fatalf("api terminal query token %q", got)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/workspaces/x/connection?access_token=abc", nil)
+	if got := accessTokenFromRequest(req); got != "" {
+		t.Fatalf("connection must not take query token, got %q", got)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/workspaces/x/terminal", nil)
+	req.Header.Set("Authorization", "Bearer hdr")
+	if got := accessTokenFromRequest(req); got != "hdr" {
+		t.Fatalf("bearer %q", got)
+	}
+}

@@ -204,3 +204,48 @@ func TestSuspend(t *testing.T) {
 	}
 	_ = uuid.Nil
 }
+
+func TestPatchMemberAuditMeta(t *testing.T) {
+	app, owner := setupApp(t)
+	ctx := context.Background()
+	p, err := app.CreateProject(ctx, owner.ID, "mem", "mem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev, err := app.Register(ctx, "bobmem", "bobmem@x.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Store.AddMembership(ctx, models.Membership{
+		ProjectID: p.ID, UserID: dev.ID, Role: models.RoleViewer, SSHAccess: models.SSHAccessNone,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	role := models.RoleDeveloper
+	ssh := models.SSHAccessGranted
+	if _, err := app.PatchMember(ctx, *owner, p.ID, dev.ID, PatchMemberInput{Role: &role, SSHAccess: &ssh}); err != nil {
+		t.Fatal(err)
+	}
+	logs, err := app.Store.ListAudit(ctx, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *models.AuditLog
+	for i := range logs {
+		if logs[i].Action == "membership.update" {
+			found = &logs[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("missing membership.update audit")
+	}
+	if found.Meta["from_role"] != models.RoleViewer || found.Meta["to_role"] != models.RoleDeveloper {
+		t.Fatalf("role meta=%#v", found.Meta)
+	}
+	if found.Meta["from_ssh_access"] != models.SSHAccessNone || found.Meta["to_ssh_access"] != models.SSHAccessGranted {
+		t.Fatalf("ssh meta=%#v", found.Meta)
+	}
+	if found.Meta["target_username"] != "bobmem" {
+		t.Fatalf("username=%v", found.Meta["target_username"])
+	}
+}

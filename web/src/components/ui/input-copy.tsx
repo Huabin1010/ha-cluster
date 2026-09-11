@@ -9,6 +9,7 @@ import { useShape } from "@/lib/shape-context";
 import { useSize, type SizeVariant } from "@/lib/size-context";
 import { spring } from "@/lib/springs";
 import { Tooltip } from "@/components/ui/tooltip";
+import { copyText } from "@/ui/format";
 
 type InputCopyVariant = "icon" | "button";
 type InputCopyAlign = "right" | "left";
@@ -60,35 +61,9 @@ const InputCopy = forwardRef<HTMLDivElement, InputCopyProps>(
       (tooltipWasVisibleRef as any).current = tooltipVisibleRef.current;
     }, []);
 
-    // execCommand fallback for when the async Clipboard API is unavailable or
-    // denied (insecure context, permissions policy) — copies via a temporary
-    // off-screen textarea.
-    const copyViaExecCommand = useCallback(() => {
-      const textarea = document.createElement("textarea");
-      textarea.value = value;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      let ok = false;
-      try {
-        ok = document.execCommand("copy");
-      } catch {
-        ok = false;
-      }
-      document.body.removeChild(textarea);
-      return ok;
-    }, [value]);
-
     const handleCopy = useCallback(async () => {
       if (disabled) return;
-      let ok = true;
-      try {
-        await navigator.clipboard.writeText(value);
-      } catch {
-        ok = copyViaExecCommand();
-      }
+      const ok = await copyText(value);
       setStatus(ok ? "copied" : "error");
       setCopyCount((c) => c + 1);
       setTooltipState(tooltipWasVisibleRef.current ? "copied" : "suppressed");
@@ -98,7 +73,7 @@ const InputCopy = forwardRef<HTMLDivElement, InputCopyProps>(
         setStatus("idle");
         setTooltipState("suppressed");
       }, 2000);
-    }, [value, disabled, onCopy, copyViaExecCommand]);
+    }, [value, disabled, onCopy]);
 
     const handleTooltipOpenChange = useCallback((open: boolean) => {
       (tooltipVisibleRef as any).current = open;

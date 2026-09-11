@@ -1,9 +1,9 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy, ExternalLink, Hash, Mail, Plus, Shield, SlidersHorizontal, Terminal, Trash2, User, Users, Clock } from "lucide-react";
+import { Check, Copy, ExternalLink, Eye, Hash, Mail, Plus, Shield, Terminal, Trash2, User, Users, Clock } from "lucide-react";
 import { useGetIdentity } from "@refinedev/core";
 import { api, friendlyError, type AuthUser } from "@/providers";
-import { ASSIGNABLE_ROLES, ROLE_HELP, roleLabel } from "./roles";
+import { ASSIGNABLE_ROLES, ROLE_HELP, roleChipLabel, roleLabel } from "./roles";
 import { canManageMembers, canSSH } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Loading } from "@/ui";
+import { copyText as writeClipboard } from "@/ui/format";
 import { useClientPager } from "@/lib/use-client-pager";
 import { BatchCreateUsersDialog } from "./BatchCreateUsersDialog";
 
@@ -51,6 +52,23 @@ export type Member = {
 };
 
 type UserItem = { id: string; username: string; email?: string };
+
+const ROLE_SELECT_OPTIONS = [
+  { value: "viewer", label: roleChipLabel("viewer"), icon: Eye },
+  { value: "developer", label: roleChipLabel("developer"), icon: User },
+  { value: "admin", label: roleChipLabel("admin"), icon: Shield },
+] as const;
+
+function roleSelectClass(role: string): string {
+  switch (role) {
+    case "admin":
+      return "min-w-[168px] max-w-[200px] border-blue-500/35 bg-blue-500/10 text-blue-600 [&_svg]:text-blue-500";
+    case "developer":
+      return "min-w-[168px] max-w-[200px] border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 [&_svg]:text-emerald-500";
+    default:
+      return "min-w-[168px] max-w-[200px] border-border/80 bg-surface-2/50 text-foreground [&_svg]:text-muted-foreground";
+  }
+}
 
 type Props = {
   projectId: string;
@@ -72,8 +90,6 @@ export function MemberList({ projectId, projectName }: Props) {
   const [inviteToken, setInviteToken] = useState("");
   const [copied, setCopied] = useState<"token" | "link" | "">("");
   const [removeId, setRemoveId] = useState<string | null>(null);
-  const [editTarget, setEditTarget] = useState<Member | null>(null);
-  const [editRole, setEditRole] = useState<string>("developer");
   const [batchOpen, setBatchOpen] = useState(false);
   const pager = useClientPager(rows, projectId);
 
@@ -139,23 +155,32 @@ export function MemberList({ projectId, projectName }: Props) {
     }
   }
 
-  async function saveRole(e: FormEvent) {
-    e.preventDefault();
-    if (!editTarget) return;
+  async function patchMember(userId: string, body: Record<string, string>) {
     setErr("");
     setBusy(true);
     try {
-      await api(`/projects/${projectId}/members/${editTarget.user_id}`, {
+      await api(`/projects/${projectId}/members/${userId}`, {
         method: "PUT",
-        body: JSON.stringify({ role: editRole }),
+        body: JSON.stringify(body),
       });
-      setEditTarget(null);
       await load();
     } catch (e) {
       setErr(friendlyError(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function changeRole(m: Member, role: string) {
+    if (role === m.role) return;
+    const body: Record<string, string> = { role };
+    if (role === "admin") body.ssh_access = "granted";
+    await patchMember(m.user_id, body);
+  }
+
+  async function toggleSSH(m: Member) {
+    const next = m.ssh_access === "granted" ? "revoked" : "granted";
+    await patchMember(m.user_id, { ssh_access: next });
   }
 
   async function requestSSH() {
@@ -169,24 +194,6 @@ export function MemberList({ projectId, projectName }: Props) {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function approveSSH(userId: string) {
-    setErr("");
-    setBusy(true);
-    try {
-      await api(`/projects/${projectId}/members/${userId}/ssh-access/approve`, { method: "POST" });
-      await load();
-    } catch (e) {
-      setErr(friendlyError(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function onOpenEdit(m: Member) {
-    setEditTarget(m);
-    setEditRole(m.role === "owner" ? "admin" : m.role);
   }
 
   async function remove(userId: string, role: string) {
@@ -236,13 +243,13 @@ export function MemberList({ projectId, projectName }: Props) {
     ? `/invitations/accept?token=${encodeURIComponent(inviteToken)}`
     : "/invitations/accept";
 
-  async function copyText(kind: "token" | "link", value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(kind);
-    } catch {
+  async function copyInvite(kind: "token" | "link", value: string) {
+    const ok = await writeClipboard(value);
+    if (!ok) {
       setErr("复制失败，请手动选中文本");
+      return;
     }
+    setCopied(kind);
   }
 
   if (!projectId) {
@@ -252,31 +259,31 @@ export function MemberList({ projectId, projectName }: Props) {
   function renderRoleBadge(role: string) {
     if (role === "owner") {
       return (
-        <Badge variant="default" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
-          <Shield className="size-3 text-primary-foreground shrink-0" />
+        <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap border-amber-500/35 text-amber-700 bg-amber-500/10 dark:text-amber-400">
+          <Shield className="size-3.5 text-amber-500 shrink-0" />
           所有者 (OWNER)
         </Badge>
       );
     }
     if (role === "admin") {
       return (
-        <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap border-blue-500/30 text-blue-500 bg-blue-500/10">
-          <Shield className="size-3 text-blue-500 shrink-0" />
+        <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap border-blue-500/35 text-blue-600 bg-blue-500/10 dark:text-blue-400">
+          <Shield className="size-3.5 text-blue-500 shrink-0" />
           管理员 (ADMIN)
         </Badge>
       );
     }
     if (role === "developer") {
       return (
-        <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap border-emerald-500/30 text-emerald-500 bg-emerald-500/10">
-          <User className="size-3 text-emerald-500 shrink-0" />
+        <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap border-emerald-500/35 text-emerald-700 bg-emerald-500/10 dark:text-emerald-400">
+          <User className="size-3.5 text-emerald-500 shrink-0" />
           开发者 (DEV)
         </Badge>
       );
     }
     return (
-      <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-muted-foreground">
-        <User className="size-3 opacity-60 shrink-0" />
+      <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap border-border/80 text-foreground bg-surface-2/50">
+        <Eye className="size-3.5 text-muted-foreground shrink-0" />
         观察者 (VIEWER)
       </Badge>
     );
@@ -299,6 +306,13 @@ export function MemberList({ projectId, projectName }: Props) {
         </Badge>
       );
     }
+    if (access === "revoked") {
+      return (
+        <Badge variant="danger" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
+          已撤销
+        </Badge>
+      );
+    }
     return (
       <Badge variant="outline" className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap text-muted-foreground opacity-60">
         未开通
@@ -318,7 +332,7 @@ export function MemberList({ projectId, projectName }: Props) {
             size="compact"
             data-testid="invite-copy"
             className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 h-7 text-xs"
-            onClick={() => void copyText("token", inviteToken)}
+            onClick={() => void copyInvite("token", inviteToken)}
           >
             {copied === "token" ? <Check className="size-3 text-emerald-500 shrink-0" /> : <Copy className="size-3 opacity-70 shrink-0" />}
             {copied === "token" ? "已复制" : "复制 Token"}
@@ -334,7 +348,7 @@ export function MemberList({ projectId, projectName }: Props) {
             variant="ghost"
             size="compact"
             className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 h-7 text-xs"
-            onClick={() => void copyText("link", `${window.location.origin}${acceptPath}`)}
+            onClick={() => void copyInvite("link", `${window.location.origin}${acceptPath}`)}
           >
             {copied === "link" ? <Check className="size-3 text-emerald-500 shrink-0" /> : <Copy className="size-3 opacity-70 shrink-0" />}
             {copied === "link" ? "已复制链接" : "复制邀请链接"}
@@ -555,21 +569,20 @@ export function MemberList({ projectId, projectName }: Props) {
                         用户 ID
                       </span>
                     </TableHead>
-                    <TableHead className="w-[150px] py-2.5">
+                    <TableHead className="w-[190px] py-2.5">
                       <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                         <Shield className="size-3.5 opacity-60 shrink-0" />
                         项目角色
                       </span>
                     </TableHead>
-                    <TableHead className="w-[130px] py-2.5">
+                    <TableHead className="w-[140px] py-2.5">
                       <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                         <Terminal className="size-3.5 opacity-60 shrink-0" />
                         SSH 权限
                       </span>
                     </TableHead>
-                    <TableHead className="w-[200px] text-right py-2.5 pr-4">
+                    <TableHead className="w-[110px] text-right py-2.5 pr-4">
                       <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
-                        <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
                         操作
                       </span>
                     </TableHead>
@@ -594,54 +607,58 @@ export function MemberList({ projectId, projectName }: Props) {
                           </Hint>
                         </TableCell>
                         <TableCell className="py-2.5 whitespace-nowrap">
-                          {renderRoleBadge(m.role)}
+                          {m.role === "owner" || !canManage ? (
+                            renderRoleBadge(m.role)
+                          ) : (
+                            <SelectBox
+                              size="compact"
+                              testId="member-role-select"
+                              aria-label="项目角色"
+                              value={m.role}
+                              disabled={busy}
+                              className={roleSelectClass(m.role)}
+                              onValueChange={(role) => void changeRole(m, role)}
+                              options={ROLE_SELECT_OPTIONS.map((r) => ({
+                                value: r.value,
+                                label: r.label,
+                                icon: r.icon,
+                              }))}
+                            />
+                          )}
                         </TableCell>
                         <TableCell className="py-2.5 whitespace-nowrap">
-                          {renderSshBadge(m.ssh_access, m.ssh_mode)}
+                          {canManage && m.role !== "owner" && m.role !== "admin" ? (
+                            <Hint label={m.ssh_access === "granted" ? "点击取消授权" : "点击授权"}>
+                              <button
+                                type="button"
+                                data-testid="member-ssh-toggle"
+                                disabled={busy}
+                                aria-label={m.ssh_access === "granted" ? "取消 SSH 授权" : "授予 SSH 授权"}
+                                onClick={() => void toggleSSH(m)}
+                                className="inline-flex cursor-pointer items-center rounded-md transition-opacity duration-80 hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)] disabled:opacity-50"
+                              >
+                                {renderSshBadge(m.ssh_access, m.ssh_mode)}
+                              </button>
+                            </Hint>
+                          ) : (
+                            renderSshBadge(m.ssh_access, m.ssh_mode)
+                          )}
                         </TableCell>
-                        <TableCell className="text-right py-2.5 w-[200px] pr-4">
+                        <TableCell className="text-right py-2.5 w-[110px] pr-4">
                           <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             {m.role !== "owner" && canManage && (
-                              <>
-                                {m.ssh_access === "pending" && (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="compact"
-                                    data-testid="member-approve-ssh"
-                                    disabled={busy}
-                                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
-                                    onClick={() => void approveSSH(m.user_id)}
-                                  >
-                                    <Check className="size-3.5 text-emerald-500 shrink-0" />
-                                    批准 SSH
-                                  </Button>
-                                )}
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="compact"
-                                  data-testid="member-edit-role"
-                                  disabled={busy}
-                                  className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
-                                  onClick={() => onOpenEdit(m)}
-                                >
-                                  <Shield className="size-3.5 opacity-70 shrink-0" />
-                                  修改角色
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="destructive"
-                                  size="compact"
-                                  data-testid="member-remove"
-                                  disabled={busy}
-                                  className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
-                                  onClick={() => void remove(m.user_id, m.role)}
-                                >
-                                  <Trash2 className="size-3.5 shrink-0" />
-                                  移除
-                                </Button>
-                              </>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="compact"
+                                data-testid="member-remove"
+                                disabled={busy}
+                                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                                onClick={() => void remove(m.user_id, m.role)}
+                              >
+                                <Trash2 className="size-3.5 shrink-0" />
+                                移除
+                              </Button>
                             )}
                           </div>
                         </TableCell>
@@ -654,37 +671,6 @@ export function MemberList({ projectId, projectName }: Props) {
           )}
         </div>
       </PageFrame>
-
-      <Dialog open={!!editTarget} onOpenChange={(v) => !v && setEditTarget(null)}>
-        <DialogContent size="lg" className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>修改成员角色</DialogTitle>
-            <DialogDescription>更新该成员在当前项目中的权限级别。</DialogDescription>
-          </DialogHeader>
-          {editTarget && (
-            <form className="flex min-h-0 flex-1 flex-col" onSubmit={saveRole} data-testid="member-edit-form">
-              <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
-                <Field label="新角色">
-                  <SelectBox
-                    testId="member-edit-role-select"
-                    value={editRole}
-                    onValueChange={setEditRole}
-                    options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
-                  />
-                </Field>
-              </DialogBody>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditTarget(null)}>
-                  取消
-                </Button>
-                <Button data-testid="member-save-role" type="submit" disabled={busy}>
-                  保存角色
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={!!removeId} onOpenChange={(v) => !v && setRemoveId(null)}>
         <AlertDialogContent>

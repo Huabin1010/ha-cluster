@@ -83,6 +83,12 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 		"--config", "limits.processes=512",
 		"--config", "security.nesting=true",
 	}
+	if pool := r.ensureQuotaPool(ctx); pool != "" {
+		args = append(args, "--storage", pool)
+	}
+	if size := diskSizeArg(spec.DiskBytes); size != "" {
+		args = append(args, "-d", "root,size="+size)
+	}
 	out, err := r.cmd(ctx, args...).CombinedOutput()
 	if err != nil {
 		return Instance{}, fmt.Errorf("incus launch: %w: %s", err, out)
@@ -99,16 +105,9 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 		_ = r.Destroy(context.Background(), w.ID)
 		return Instance{}, fmt.Errorf("container network: %w", err)
 	}
-	if spec.DiskBytes > 0 {
-		gi := spec.DiskBytes / (1024 * 1024 * 1024)
-		if gi < 1 {
-			gi = 1
-		}
-		size := fmt.Sprintf("%dGiB", gi)
-		if out, err := r.cmd(ctx, "config", "device", "override", name, "root", "size="+size).CombinedOutput(); err != nil {
-			_ = r.Destroy(context.Background(), w.ID)
-			return Instance{}, fmt.Errorf("incus root resize: %w: %s", err, out)
-		}
+	if err := r.applyRootSize(ctx, name, diskSizeArg(spec.DiskBytes)); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, err
 	}
 
 	hostPort, err := allocateHostPort(22001, 23999)
@@ -469,12 +468,8 @@ func (r *IncusRuntime) Resize(ctx context.Context, w models.Workspace) error {
 	).CombinedOutput(); err != nil {
 		return fmt.Errorf("incus resize cpu/mem: %w: %s", err, out)
 	}
-	gi := spec.DiskBytes / (1024 * 1024 * 1024)
-	if gi < 1 {
-		gi = 1
-	}
-	if out, err := r.cmd(ctx, "config", "device", "set", name, "root", fmt.Sprintf("size=%dGiB", gi)).CombinedOutput(); err != nil {
-		return fmt.Errorf("incus resize disk: %w: %s", err, out)
+	if err := r.applyRootSize(ctx, name, diskSizeArg(spec.DiskBytes)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -562,13 +557,13 @@ type brokenRuntime struct {
 func (b *brokenRuntime) Launch(context.Context, models.Workspace, models.Node, []string) (Instance, error) {
 	return Instance{}, b.err
 }
-func (b *brokenRuntime) Stop(context.Context, uuid.UUID) error { return b.err }
-func (b *brokenRuntime) Start(context.Context, uuid.UUID) error { return b.err }
-func (b *brokenRuntime) Destroy(context.Context, uuid.UUID) error { return b.err }
-func (b *brokenRuntime) Resize(context.Context, models.Workspace) error { return b.err }
+func (b *brokenRuntime) Stop(context.Context, uuid.UUID) error           { return b.err }
+func (b *brokenRuntime) Start(context.Context, uuid.UUID) error          { return b.err }
+func (b *brokenRuntime) Destroy(context.Context, uuid.UUID) error        { return b.err }
+func (b *brokenRuntime) Resize(context.Context, models.Workspace) error  { return b.err }
 func (b *brokenRuntime) Get(context.Context, uuid.UUID) (Instance, bool) { return Instance{}, false }
 func (b *brokenRuntime) ExposePort(context.Context, uuid.UUID, uuid.UUID, int) (int, error) {
 	return 0, b.err
 }
 func (b *brokenRuntime) UnexposePort(context.Context, uuid.UUID, uuid.UUID) error { return b.err }
-func (b *brokenRuntime) SyncKeys(context.Context, uuid.UUID, []string) error { return b.err }
+func (b *brokenRuntime) SyncKeys(context.Context, uuid.UUID, []string) error      { return b.err }

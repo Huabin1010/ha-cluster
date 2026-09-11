@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/models"
+	"ha-cluster/internal/requestmeta"
 	"ha-cluster/internal/store"
 )
 
@@ -78,40 +79,40 @@ func snapshotToUser(u *snapshotUser) *models.User {
 }
 
 type Store struct {
-	mu           sync.Mutex
-	snapshotPath string
-	users        map[uuid.UUID]*models.User
-	userByName   map[string]uuid.UUID
-	userByEmail  map[string]uuid.UUID
-	sshKeys      map[uuid.UUID]*models.SSHKey
-	projects     map[uuid.UUID]*models.Project
-	memberships  map[string]models.Membership // projectID|userID
-	nodes        map[uuid.UUID]*models.Node
-	nodeByName   map[string]uuid.UUID
-	allocs       map[uuid.UUID]*models.Allocation
-	workspaces   map[uuid.UUID]*models.Workspace
-	audit        []models.AuditLog
-	auditSeq     int64
-	invites      map[string]*models.Invitation
-	refresh      map[string]models.RefreshSession
+	mu               sync.Mutex
+	snapshotPath     string
+	users            map[uuid.UUID]*models.User
+	userByName       map[string]uuid.UUID
+	userByEmail      map[string]uuid.UUID
+	sshKeys          map[uuid.UUID]*models.SSHKey
+	projects         map[uuid.UUID]*models.Project
+	memberships      map[string]models.Membership // projectID|userID
+	nodes            map[uuid.UUID]*models.Node
+	nodeByName       map[string]uuid.UUID
+	allocs           map[uuid.UUID]*models.Allocation
+	workspaces       map[uuid.UUID]*models.Workspace
+	audit            []models.AuditLog
+	auditSeq         int64
+	invites          map[string]*models.Invitation
+	refresh          map[string]models.RefreshSession
 	ingress          map[uuid.UUID]*models.IngressRoute
 	dockerRegistries map[uuid.UUID]*models.DockerRegistry
 }
 
 func New() *Store {
 	return &Store{
-		users:       map[uuid.UUID]*models.User{},
-		userByName:  map[string]uuid.UUID{},
-		userByEmail: map[string]uuid.UUID{},
-		sshKeys:     map[uuid.UUID]*models.SSHKey{},
-		projects:    map[uuid.UUID]*models.Project{},
-		memberships: map[string]models.Membership{},
-		nodes:       map[uuid.UUID]*models.Node{},
-		nodeByName:  map[string]uuid.UUID{},
-		allocs:      map[uuid.UUID]*models.Allocation{},
-		workspaces:  map[uuid.UUID]*models.Workspace{},
-		invites:     map[string]*models.Invitation{},
-		refresh:     map[string]models.RefreshSession{},
+		users:            map[uuid.UUID]*models.User{},
+		userByName:       map[string]uuid.UUID{},
+		userByEmail:      map[string]uuid.UUID{},
+		sshKeys:          map[uuid.UUID]*models.SSHKey{},
+		projects:         map[uuid.UUID]*models.Project{},
+		memberships:      map[string]models.Membership{},
+		nodes:            map[uuid.UUID]*models.Node{},
+		nodeByName:       map[string]uuid.UUID{},
+		allocs:           map[uuid.UUID]*models.Allocation{},
+		workspaces:       map[uuid.UUID]*models.Workspace{},
+		invites:          map[string]*models.Invitation{},
+		refresh:          map[string]models.RefreshSession{},
 		ingress:          map[uuid.UUID]*models.IngressRoute{},
 		dockerRegistries: map[uuid.UUID]*models.DockerRegistry{},
 	}
@@ -733,7 +734,10 @@ func (s *Store) UpdateWorkspace(_ context.Context, w *models.Workspace) error {
 	return nil
 }
 
-func (s *Store) AddAudit(_ context.Context, l models.AuditLog) error {
+func (s *Store) AddAudit(ctx context.Context, l models.AuditLog) error {
+	if l.IP == "" {
+		l.IP = requestmeta.ClientIP(ctx)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.auditSeq++
@@ -758,6 +762,37 @@ func (s *Store) ListAudit(_ context.Context, limit int) ([]models.AuditLog, erro
 	}
 	out := make([]models.AuditLog, limit)
 	copy(out, s.audit[start:])
+	for i := range out {
+		if u := s.users[out[i].ActorUserID]; u != nil {
+			out[i].ActorUsername = u.Username
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) ListAuditByResource(_ context.Context, resourceID string, limit int) ([]models.AuditLog, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	out := make([]models.AuditLog, 0)
+	for i := len(s.audit) - 1; i >= 0 && len(out) < limit; i-- {
+		l := s.audit[i]
+		if l.ResourceID != resourceID {
+			wsID, _ := l.Meta["workspace"].(string)
+			if wsID != resourceID {
+				continue
+			}
+		}
+		if u := s.users[l.ActorUserID]; u != nil {
+			l.ActorUsername = u.Username
+		}
+		out = append(out, l)
+	}
 	return out, nil
 }
 
@@ -1026,4 +1061,3 @@ func (s *Store) LoadSnapshot(filePath string) error {
 	}
 	return nil
 }
-

@@ -18,6 +18,7 @@ export type Workspace = {
   pending_mem_bytes?: number;
   pending_disk_bytes?: number;
   resize_status?: string;
+  resize_kind?: string;
 };
 
 export type ProjectOption = {
@@ -38,10 +39,13 @@ export type ProjectUsage = {
 
 export const PLANS = ["nano", "small", "2c2g", "medium", "large", "xlarge"] as const;
 export const ARCHES = ["amd64", "arm64"] as const;
+export const CUSTOM_PLAN = "custom";
+export const GiB = 1024 * 1024 * 1024;
+const MiB = 1024 * 1024;
 
 export const PLAN_SPECS: Record<string, string> = {
   nano: "0.5核 / 256MiB / 5GiB",
-  small: "1核 / 512MiB / 10GiB",
+  small: "1核 / 512MiB / 5GiB",
   "2c2g": "2核 / 2GiB / 5GiB",
   medium: "2核 / 1GiB / 15GiB",
   large: "4核 / 2GiB / 20GiB",
@@ -55,13 +59,37 @@ export type PlanItem = {
   disk_bytes: number;
 };
 
+/** Fallback catalog when GET /plans is unavailable. */
+export const PLAN_CATALOG: PlanItem[] = [
+  { name: "nano", cpu_milli: 500, mem_bytes: 256 * MiB, disk_bytes: 5 * GiB },
+  { name: "small", cpu_milli: 1000, mem_bytes: 512 * MiB, disk_bytes: 5 * GiB },
+  { name: "2c2g", cpu_milli: 2000, mem_bytes: 2 * GiB, disk_bytes: 5 * GiB },
+  { name: "medium", cpu_milli: 2000, mem_bytes: 1 * GiB, disk_bytes: 15 * GiB },
+  { name: "large", cpu_milli: 4000, mem_bytes: 2 * GiB, disk_bytes: 20 * GiB },
+  { name: "xlarge", cpu_milli: 6000, mem_bytes: 3 * GiB, disk_bytes: 30 * GiB },
+];
+
+export function formatCpuCores(cpuMilli: number): string {
+  return (cpuMilli / 1000).toFixed(1).replace(/\.0$/, "") + "核";
+}
+
+export function formatMemSize(bytes: number): string {
+  const mib = bytes / MiB;
+  return mib >= 1024 ? `${(mib / 1024).toFixed(1).replace(/\.0$/, "")}GiB` : `${Math.round(mib)}MiB`;
+}
+
+export function formatDiskSize(bytes: number): string {
+  const gib = bytes / GiB;
+  return gib >= 1024 ? `${(gib / 1024).toFixed(1).replace(/\.0$/, "")}TiB` : `${Math.round(gib)}GiB`;
+}
+
 export function formatPlanSpec(plan: PlanItem): string {
-  const cpu = (plan.cpu_milli / 1000).toFixed(1).replace(/\.0$/, "") + "核";
-  const mib = plan.mem_bytes / (1024 * 1024);
-  const mem = mib >= 1024 ? `${(mib / 1024).toFixed(1).replace(/\.0$/, "")}GiB` : `${Math.round(mib)}MiB`;
-  const gib = plan.disk_bytes / (1024 * 1024 * 1024);
-  const disk = gib >= 1024 ? `${(gib / 1024).toFixed(1).replace(/\.0$/, "")}TiB` : `${Math.round(gib)}GiB`;
-  return `${cpu} / ${mem} / ${disk}`;
+  return `${formatCpuCores(plan.cpu_milli)} / ${formatMemSize(plan.mem_bytes)} / ${formatDiskSize(plan.disk_bytes)}`;
+}
+
+export function formatSpecNumber(n: number): string {
+  if (!Number.isFinite(n)) return "";
+  return String(Number(n.toFixed(4)));
 }
 
 export function workspaceSpec(ws: Workspace): PlanItem | null {
@@ -71,8 +99,66 @@ export function workspaceSpec(ws: Workspace): PlanItem | null {
   return null;
 }
 
+export function pendingSpec(ws: Workspace): PlanItem | null {
+  if (!hasPendingResize(ws) || !ws.pending_cpu_milli || !ws.pending_mem_bytes || !ws.pending_disk_bytes) {
+    return null;
+  }
+  return {
+    name: ws.plan,
+    cpu_milli: ws.pending_cpu_milli,
+    mem_bytes: ws.pending_mem_bytes,
+    disk_bytes: ws.pending_disk_bytes,
+  };
+}
+
 export function hasPendingResize(ws: Workspace): boolean {
   return ws.resize_status === "pending";
+}
+
+export function matchCatalogPlan(plans: PlanItem[], spec: Pick<PlanItem, "cpu_milli" | "mem_bytes" | "disk_bytes">): PlanItem | undefined {
+  return plans.find(
+    (p) => p.cpu_milli === spec.cpu_milli && p.mem_bytes === spec.mem_bytes && p.disk_bytes === spec.disk_bytes,
+  );
+}
+
+export function defaultResizePlan(plans: PlanItem[], spec: PlanItem): string {
+  const exact = matchCatalogPlan(plans, spec);
+  if (exact) return exact.name;
+  if (spec.name && plans.some((p) => p.name === spec.name)) return spec.name;
+  return CUSTOM_PLAN;
+}
+
+export type ResizeDeltaKind = "up" | "down" | "same";
+export type ResizePreviewKind = "upgrade" | "downgrade" | "unchanged" | "mixed" | "disk_shrink";
+
+export type ResizePreview = {
+  kind: ResizePreviewKind;
+  cpu: ResizeDeltaKind;
+  mem: ResizeDeltaKind;
+  disk: ResizeDeltaKind;
+};
+
+function dimDelta(cur: number, next: number): ResizeDeltaKind {
+  if (next > cur) return "up";
+  if (next < cur) return "down";
+  return "same";
+}
+
+export function classifyResizePreview(cur: PlanItem, target: PlanItem): ResizePreview {
+  const cpu = dimDelta(cur.cpu_milli, target.cpu_milli);
+  const mem = dimDelta(cur.mem_bytes, target.mem_bytes);
+  const disk = dimDelta(cur.disk_bytes, target.disk_bytes);
+  if (disk === "down") return { kind: "disk_shrink", cpu, mem, disk };
+  const up = cpu === "up" || mem === "up" || disk === "up";
+  const down = cpu === "down" || mem === "down";
+  if (!up && !down) return { kind: "unchanged", cpu, mem, disk };
+  if (up && down) return { kind: "mixed", cpu, mem, disk };
+  if (up) return { kind: "upgrade", cpu, mem, disk };
+  return { kind: "downgrade", cpu, mem, disk };
+}
+
+export function resizePreviewValid(kind: ResizePreviewKind): boolean {
+  return kind === "upgrade" || kind === "downgrade";
 }
 
 export function isDestroyPending(ws: Workspace): boolean {
@@ -86,8 +172,6 @@ export function isDestroyRequested(ws: Workspace): boolean {
 export function isDestroyPendingPlatform(ws: Workspace): boolean {
   return ws.status === "destroy_pending_platform";
 }
-
-export const GiB = 1024 * 1024 * 1024;
 
 /** 状态中文映射（U4 验收） */
 export const STATUS_LABEL: Record<string, string> = {

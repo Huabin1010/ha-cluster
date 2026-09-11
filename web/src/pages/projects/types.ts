@@ -5,6 +5,7 @@ export type Project = {
   owner_id?: string;
   status?: string;
   my_role?: string;
+  my_ssh_access?: string;
   budget_cpu_milli?: number;
   budget_mem_bytes?: number;
   budget_disk_bytes?: number;

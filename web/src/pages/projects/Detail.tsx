@@ -862,7 +862,7 @@ export function ProjectDetailPage() {
                           canApprove={canApproveRole(project.my_role, me?.platform_role)}
                           platformRole={me?.platform_role}
                           myRole={project.my_role}
-                          mySshAccess={project.my_role === "owner" || project.my_role === "admin" ? "granted" : "none"}
+                          mySshAccess={project.my_ssh_access}
                           projectId={id}
                           onBusy={setBusyWsId}
                           onRefresh={() => {

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyResizePreview,
+  CUSTOM_PLAN,
+  defaultResizePlan,
   formatPlanSpec,
+  matchCatalogPlan,
+  PLAN_CATALOG,
   statusLabel,
   canApproveRole,
   workspaceStatusVariant,
@@ -65,6 +70,54 @@ describe("canApproveRole", () => {
     expect(canApproveRole("developer", "platform_admin")).toBe(true);
     expect(canApproveRole("developer")).toBe(false);
     expect(canApproveRole("viewer")).toBe(false);
+  });
+});
+
+describe("resize plan matching", () => {
+  const Gi = 1024 * 1024 * 1024;
+  const Mi = 1024 * 1024;
+  const nano = PLAN_CATALOG.find((p) => p.name === "nano")!;
+
+  it("matches catalog plan by cpu/mem/disk", () => {
+    expect(matchCatalogPlan(PLAN_CATALOG, nano)?.name).toBe("nano");
+    expect(
+      matchCatalogPlan(PLAN_CATALOG, { cpu_milli: 1000, mem_bytes: 512 * Mi, disk_bytes: 10 * Gi }),
+    ).toBeUndefined();
+  });
+
+  it("defaults to matching catalog name when disk no longer matches", () => {
+    expect(
+      defaultResizePlan(PLAN_CATALOG, {
+        name: "small",
+        cpu_milli: 1000,
+        mem_bytes: 512 * Mi,
+        disk_bytes: 10 * Gi,
+      }),
+    ).toBe("small");
+    expect(defaultResizePlan(PLAN_CATALOG, nano)).toBe("nano");
+    expect(
+      defaultResizePlan(PLAN_CATALOG, {
+        name: "legacy",
+        cpu_milli: 3000,
+        mem_bytes: 3 * Gi,
+        disk_bytes: 12 * Gi,
+      }),
+    ).toBe(CUSTOM_PLAN);
+  });
+});
+
+describe("classifyResizePreview", () => {
+  const Gi = 1024 * 1024 * 1024;
+  const cur = { name: "nano", cpu_milli: 500, mem_bytes: 256 * 1024 * 1024, disk_bytes: 5 * Gi };
+
+  it("classifies upgrade, downgrade, mixed, unchanged and disk shrink", () => {
+    expect(
+      classifyResizePreview(cur, { ...cur, cpu_milli: 1000, mem_bytes: Gi, disk_bytes: 6 * Gi }).kind,
+    ).toBe("upgrade");
+    expect(classifyResizePreview(cur, { ...cur, cpu_milli: 250 }).kind).toBe("downgrade");
+    expect(classifyResizePreview(cur, { ...cur, cpu_milli: 1000, mem_bytes: 128 * 1024 * 1024 }).kind).toBe("mixed");
+    expect(classifyResizePreview(cur, { ...cur }).kind).toBe("unchanged");
+    expect(classifyResizePreview(cur, { ...cur, disk_bytes: 4 * Gi }).kind).toBe("disk_shrink");
   });
 });
 

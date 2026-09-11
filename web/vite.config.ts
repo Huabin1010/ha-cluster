@@ -18,6 +18,7 @@ export default defineConfig({
       "/api": {
         target: process.env.VITE_API_TARGET || "http://127.0.0.1:8080",
         changeOrigin: true,
+        ws: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
     },
@@ -28,6 +29,8 @@ export default defineConfig({
         manualChunks: {
           "vendor-react": ["react", "react-dom", "react-router-dom"],
           "vendor-refine": ["@refinedev/core", "@refinedev/react-router-v6", "@tanstack/react-query"],
+          "vendor-xterm": ["@xterm/xterm", "@xterm/addon-fit"],
+          "vendor-icons": ["lucide-react"],
         },
       },
     },

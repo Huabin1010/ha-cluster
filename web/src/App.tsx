@@ -99,6 +99,10 @@ function RefineApp() {
           <Route path="/projects/:id/settings" element={<ProjectDetailPage />} />
           <Route path="/workspaces" element={<WorkspacesPage />} />
           <Route path="/workspaces/:id" element={<MachinePage />} />
+          <Route path="/workspaces/:id/overview" element={<MachinePage />} />
+          <Route path="/workspaces/:id/connect" element={<MachinePage />} />
+          <Route path="/workspaces/:id/ingress" element={<MachinePage />} />
+          <Route path="/workspaces/:id/history" element={<MachinePage />} />
           <Route path="/members" element={<MembersPage />} />
           <Route path="/invitations/accept" element={<AcceptInvitePage />} />
           <Route path="/nodes" element={<NodesPage />} />

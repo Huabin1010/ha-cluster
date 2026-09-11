@@ -10,17 +10,19 @@ import { Elevated } from "@/lib/elevated";
 import { ApiError, friendlyError } from "@/providers";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
-import { actionLabel, fmtTime, resourceLabel, shortId } from "./format";
+import { actionLabel, auditChangeSummary, auditResourceName, fmtTime, resourceTypeLabel, shortId } from "./format";
 import { useClientPager } from "@/lib/use-client-pager";
 import { cn } from "@/lib/utils";
 
 type AuditLog = {
   id: number;
   actor_user_id: string;
+  actor_username?: string;
   action: string;
   resource_type: string;
   resource_id: string;
   ip?: string;
+  meta?: Record<string, unknown>;
   created_at: string;
 };
 
@@ -48,11 +50,12 @@ function Forbidden() {
           offset={1}
           shadowLevel={2}
           className="rounded-2xl border border-destructive/30 bg-destructive/5 p-8 max-w-md w-full text-center flex flex-col items-center gap-3"
+          data-testid="audit-forbidden"
         >
           <Shield className="size-10 text-destructive" />
           <h3 className="m-0 text-base font-semibold text-foreground">无权访问审计日志</h3>
           <p className="m-0 text-xs text-muted-foreground leading-relaxed">
-            仅 platform_admin 或 platform_ops 等平台运维管理角色可查阅安全审计记录。
+            没有权限查看审计日志。仅 platform_admin 或 platform_ops 等平台运维管理角色可查阅安全审计记录。
           </p>
         </Elevated>
       </div>
@@ -71,6 +74,25 @@ function actionVariant(action: string): "default" | "outline" | "ok" | "warn" | 
     return "warn";
   }
   return "outline";
+}
+
+function AuditTargetCell({ log }: { log: AuditLog }) {
+  const change = auditChangeSummary(log.action, log.meta);
+  return (
+    <Hint label={log.resource_id} className="font-mono">
+      <div className="flex flex-col gap-0.5 min-w-0 cursor-help">
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap min-w-0">
+          <span className="text-muted-foreground shrink-0">{resourceTypeLabel(log.resource_type)}</span>
+          <span className="font-medium text-foreground truncate">
+            {auditResourceName(log.resource_type, log.resource_id, log.meta)}
+          </span>
+        </span>
+        {change ? (
+          <span className="text-foreground break-words min-w-0 leading-snug">{change}</span>
+        ) : null}
+      </div>
+    </Hint>
+  );
 }
 
 function AuditList() {
@@ -199,7 +221,7 @@ function AuditList() {
         </div>
       ) : (
         <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-          <Table className="min-w-[850px]">
+          <Table data-testid="audit-table" className="min-w-[850px]">
             <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
               <TableRow className="border-b border-border/60 hover:bg-transparent">
                 <TableHead className="w-[80px] py-2.5">
@@ -217,13 +239,13 @@ function AuditList() {
                 <TableHead className="w-[160px] py-2.5">
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                     <User className="size-3.5 opacity-60 shrink-0" />
-                    操作人 (actor)
+                    操作人
                   </span>
                 </TableHead>
                 <TableHead className="w-[160px] py-2.5">
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                     <Activity className="size-3.5 opacity-60 shrink-0" />
-                    安全动作 (action)
+                    安全动作
                   </span>
                 </TableHead>
                 <TableHead className="py-2.5">
@@ -249,10 +271,14 @@ function AuditList() {
                   <TableCell className="mono font-mono text-xs py-2.5 whitespace-nowrap text-muted-foreground">
                     {fmtTime(l.created_at)}
                   </TableCell>
-                  <TableCell className="mono font-mono text-xs py-2.5 whitespace-nowrap">
-                    <Hint label={l.actor_user_id}>
-                      <span className="cursor-help bg-muted/40 px-1.5 py-0.5 rounded border border-border/50 text-foreground">
-                        {shortId(l.actor_user_id)}
+                  <TableCell className="py-2.5 whitespace-nowrap">
+                    <Hint label={l.actor_user_id} className="font-mono">
+                      <span
+                        data-testid="audit-actor"
+                        className="cursor-help inline-flex items-center gap-1.5 font-medium text-foreground"
+                      >
+                        <User className="size-3 opacity-60 shrink-0" />
+                        {l.actor_username?.trim() || shortId(l.actor_user_id)}
                       </span>
                     </Hint>
                   </TableCell>
@@ -263,18 +289,11 @@ function AuditList() {
                       </Badge>
                     </Hint>
                   </TableCell>
-                  <TableCell className="py-2.5 whitespace-nowrap text-xs">
-                    <div className="inline-flex items-center gap-1.5 font-mono">
-                      <span className="text-muted-foreground">{resourceLabel(l.resource_type)}:</span>
-                      <Hint label={l.resource_id}>
-                        <span className="text-foreground cursor-help underline decoration-dotted decoration-muted-foreground/60">
-                          {shortId(l.resource_id)}
-                        </span>
-                      </Hint>
-                    </div>
+                  <TableCell className="py-2.5 text-xs min-w-[220px] max-w-[420px]">
+                    <AuditTargetCell log={l} />
                   </TableCell>
-                  <TableCell className="mono font-mono text-xs py-2.5 text-right pr-4 whitespace-nowrap text-muted-foreground">
-                    {l.ip || "—"}
+                  <TableCell className="mono font-mono text-xs py-2.5 text-right pr-4 whitespace-nowrap text-foreground">
+                    {l.ip?.trim() ? l.ip : "—"}
                   </TableCell>
                 </TableRow>
               ))}

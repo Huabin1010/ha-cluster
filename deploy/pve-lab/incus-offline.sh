@@ -38,6 +38,29 @@ ha_incus_ensure_profile() {
   fi
 }
 
+# dir 池上 root size= 只是账本/软限额，容器里 df 仍显示宿主机磁盘。
+# LVM/ZFS 才会做成真实卷，df 与套餐（如 10GiB）一致。
+ha_incus_ensure_quota_pool() {
+  local pool="${HA_INCUS_STORAGE:-ha-disk}"
+  local size="${HA_INCUS_POOL_SIZE:-20GiB}"
+  if incus storage list -c n --format csv 2>/dev/null | grep -qx "${pool}"; then
+    return 0
+  fi
+  if ! command -v lvm >/dev/null 2>&1; then
+    apt-get update -qq >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y lvm2 thin-provisioning-tools >/dev/null 2>&1 || true
+  fi
+  if ! command -v lvm >/dev/null 2>&1; then
+    echo "warn: lvm2 missing; workspace df will show the host disk" >&2
+    return 0
+  fi
+  echo "==> incus storage ${pool} lvm size=${size} (workspace disk quota visible in df)"
+  if ! incus storage create "${pool}" lvm "size=${size}"; then
+    echo "warn: failed to create ${pool}; falling back to dir" >&2
+    return 0
+  fi
+}
+
 ha_incus_init() {
   if incus info >/dev/null 2>&1 && ha_incus_profile_ok; then
     return 0
@@ -472,6 +495,7 @@ ha_incus_offline_install() {
   ha_incus_install_debs "${bundle_dir}"
   ha_incus_init
   ha_incus_ensure_profile
+  ha_incus_ensure_quota_pool
   ha_incus_network_fixup
   ha_incus_network_persist
   ha_incus_install_workspace_debs_host "${bundle_dir}"

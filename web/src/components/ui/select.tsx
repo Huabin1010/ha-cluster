@@ -846,32 +846,37 @@ export function SelectBox({
   disabled,
   className,
   testId,
+  size,
   "aria-label": ariaLabel,
 }: {
   value?: string;
   onValueChange?: (val: string) => void;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; icon?: IconComponent }>;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
   testId?: string;
+  size?: SizeVariant;
   "aria-label"?: string;
 }) {
+  const selected = options.find((opt) => opt.value === value);
   return (
     <Select
       value={value}
       onValueChange={(val) => onValueChange?.(String(val))}
       disabled={disabled}
+      size={size}
     >
       <SelectTrigger
         placeholder={placeholder}
         className={className}
         data-testid={testId}
         aria-label={ariaLabel}
+        icon={selected?.icon}
       />
       <SelectContent>
         {options.map((opt, idx) => (
-          <SelectItem key={opt.value} value={opt.value} index={idx}>
+          <SelectItem key={opt.value} value={opt.value} index={idx} icon={opt.icon}>
             {opt.label}
           </SelectItem>
         ))}

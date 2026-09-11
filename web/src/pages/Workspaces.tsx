@@ -99,7 +99,7 @@ export function WorkspacesPage() {
                   )}
                 </div>
                 <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                  项目隔离的 Linux 计算环境。开通与扩缩容需管理员审批，销毁须项目初审与平台终审。
+                  项目隔离的 Linux 计算环境。升配：管理员直接生效，成员需审批。降配一律需审批。管理员销毁无需再走申请。
                 </p>
               </div>
             </div>
@@ -348,7 +348,7 @@ export function WorkspacesPage() {
                   canApprove={canApprove}
                   platformRole={me?.platform_role}
                   myRole={selected?.my_role}
-                  mySshAccess={selected?.my_role === "owner" || selected?.my_role === "admin" ? "granted" : "none"}
+                  mySshAccess={selected?.my_ssh_access}
                   projectId={projectFilter}
                   onBusy={setBusyId}
                   onRefresh={() => void refetch()}

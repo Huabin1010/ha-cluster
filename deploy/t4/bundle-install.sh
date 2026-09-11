@@ -152,6 +152,13 @@ EOF
   fi
 fi
 
+# Workspace root size is only visible in df on LVM/ZFS, not on dir pools.
+if ! incus storage list -c n --format csv 2>/dev/null | grep -qx 'ha-disk'; then
+  if command -v lvm >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y lvm2 thin-provisioning-tools >/dev/null 2>&1; then
+    incus storage create ha-disk lvm size="${HA_INCUS_POOL_SIZE:-20GiB}" || true
+  fi
+fi
+
 INCUS_ALIAS="${HA_INCUS_IMAGE:-ha-ubuntu-24.04}"
 
 import_incus_image() {

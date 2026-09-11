@@ -24,6 +24,7 @@ import { Elevated } from "@/lib/elevated";
 import { Hint } from "@/components/ui/tooltip";
 import { friendlyError } from "@/providers";
 import { Loading } from "@/ui";
+import { copyText } from "@/ui/format";
 import { fmtTime } from "./format";
 import {
   AlertDialog,
@@ -91,13 +92,13 @@ export function SSHKeysPage() {
   }
 
   async function copyKey(id: string, text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
-    } catch {
+    const ok = await copyText(text);
+    if (!ok) {
       setErr("复制失败，请手动选择");
+      return;
     }
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
   }
 
   function remove(id: string) {
@@ -219,9 +220,17 @@ export function SSHKeysPage() {
                   至少需要登记一把公钥才能通过平台 Bastion 跳板机接入。公钥变动将在 30 秒内向活跃容器热同步。
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                <span className="px-2 py-0.5 rounded bg-muted/60 text-foreground border border-border/50">Ed25519 推荐</span>
-                <span className="px-2 py-0.5 rounded bg-muted/60 text-foreground border border-border/50">RSA ≥ 2048</span>
+              <div className="flex items-center gap-1.5">
+                <Badge variant="ok" size="compact" className="font-mono font-normal">
+                  Ed25519 推荐
+                </Badge>
+                <Badge
+                  variant="outline"
+                  size="compact"
+                  className="font-mono font-normal text-foreground bg-(--token-box-bg)"
+                >
+                  RSA ≥ 2048
+                </Badge>
               </div>
             </Elevated>
           </div>
@@ -299,9 +308,9 @@ export function SSHKeysPage() {
                         <span className="text-foreground">{k.name || "未命名公钥"}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="mono font-mono text-xs py-2.5 whitespace-nowrap text-muted-foreground">
+                    <TableCell className="py-2.5 whitespace-nowrap">
                       <Hint label={k.fingerprint}>
-                        <span className="cursor-help bg-muted/40 px-1.5 py-0.5 rounded border border-border/50">
+                        <span className="cursor-help inline-flex items-center rounded-md border border-border bg-(--token-box-bg) px-1.5 py-0.5 font-mono text-xs text-foreground">
                           {k.fingerprint.length > 32 ? `${k.fingerprint.slice(0, 32)}…` : k.fingerprint}
                         </span>
                       </Hint>

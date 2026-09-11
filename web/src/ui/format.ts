@@ -69,14 +69,59 @@ export function formatTime(iso?: string): string {
 
 export const fmtTime = formatTime;
 
+function legacyCopy(text: string): boolean {
+  if (typeof document === "undefined") return false;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.setAttribute("aria-hidden", "true");
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "-9999px";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.padding = "0";
+  textarea.style.border = "none";
+  textarea.style.outline = "none";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+
+  const selection = document.getSelection();
+  const saved = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+
+  document.body.appendChild(textarea);
+  textarea.focus({ preventScroll: true });
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  } finally {
+    textarea.remove();
+    if (saved && selection) {
+      selection.removeAllRanges();
+      selection.addRange(saved);
+    }
+  }
+  return ok;
+}
+
 /**
- * Writes text to clipboard safely.
+ * Copy text on both HTTPS and plain HTTP (LAN IPs).
+ * `navigator.clipboard` is missing outside a secure context, so fall back to
+ * a hidden textarea + `document.execCommand("copy")`.
  */
 export async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
+  if (typeof window !== "undefined" && window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      /* permissions / unfocused tab — try the legacy path */
+    }
   }
+  return legacyCopy(text);
 }

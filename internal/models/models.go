@@ -186,14 +186,15 @@ type Workspace struct {
 }
 
 type AuditLog struct {
-	ID           int64          `json:"id"`
-	ActorUserID  uuid.UUID      `json:"actor_user_id"`
-	Action       string         `json:"action"`
-	ResourceType string         `json:"resource_type"`
-	ResourceID   string         `json:"resource_id"`
-	IP           string         `json:"ip,omitempty"`
-	Meta         map[string]any `json:"meta,omitempty"`
-	CreatedAt    time.Time      `json:"created_at"`
+	ID             int64          `json:"id"`
+	ActorUserID    uuid.UUID      `json:"actor_user_id"`
+	ActorUsername  string         `json:"actor_username,omitempty"`
+	Action         string         `json:"action"`
+	ResourceType   string         `json:"resource_type"`
+	ResourceID     string         `json:"resource_id"`
+	IP             string         `json:"ip,omitempty"`
+	Meta           map[string]any `json:"meta,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
 }
 
 type Plan struct {
@@ -208,7 +209,7 @@ func Plans() map[string]Plan {
 	const Gi = 1024 * Mi
 	return map[string]Plan{
 		"nano":   {Name: "nano", CPUMilli: 500, MemBytes: 256 * Mi, DiskBytes: 5 * Gi},
-		"small":  {Name: "small", CPUMilli: 1000, MemBytes: 512 * Mi, DiskBytes: 10 * Gi},
+		"small":  {Name: "small", CPUMilli: 1000, MemBytes: 512 * Mi, DiskBytes: 5 * Gi},
 		"2c2g":   {Name: "2c2g", CPUMilli: 2000, MemBytes: 2 * Gi, DiskBytes: 5 * Gi},
 		"medium": {Name: "medium", CPUMilli: 2000, MemBytes: 1 * Gi, DiskBytes: 15 * Gi},
 		"large":  {Name: "large", CPUMilli: 4000, MemBytes: 2 * Gi, DiskBytes: 20 * Gi},

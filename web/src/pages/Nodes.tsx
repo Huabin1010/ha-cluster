@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useCustomMutation, useGetIdentity, useList } from "@refinedev/core";
 import {
   Activity,
@@ -13,7 +13,6 @@ import {
   HeartPulse,
   KeyRound,
   MemoryStick,
-  Plus,
   RefreshCw,
   Server,
   WifiOff,
@@ -42,6 +41,7 @@ import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
 import { Empty, PageBody, PageHeader } from "@/ui";
 import { fmtBytes } from "@/pages/ops/format";
+import { copyText } from "@/ui/format";
 import { hostDiskMeter, hostMemMeter, isHostPressure } from "./node-resources";
 import { useClientPager } from "@/lib/use-client-pager";
 import { cn } from "@/lib/utils";
@@ -100,6 +100,23 @@ function usagePct(used: number, total: number): number {
   return Math.min(100, Math.round((used / total) * 100));
 }
 
+function nodeRank(n: Node): number {
+  if (n.health_status === "offline" || !n.ready) return 2;
+  if (n.health_status === "degraded") return 1;
+  return 0;
+}
+
+function nodeRowClass(n: Node): string | undefined {
+  const variant = healthVariant(n);
+  if (variant === "danger") {
+    return "danger-row bg-rose-50 hover:bg-rose-100/80 dark:bg-rose-500/10 dark:hover:bg-rose-500/15";
+  }
+  if (variant === "warn") {
+    return "warn-row bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-500/5 dark:hover:bg-amber-500/10";
+  }
+  return undefined;
+}
+
 function ResourceMeter({
   icon: Icon,
   meter,
@@ -126,11 +143,11 @@ function ResourceMeter({
             {fmtBytes(meter.used)} / {fmtBytes(meter.total)}
           </span>
         </span>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div
             className={cn(
               "h-full rounded-full transition-all duration-300",
-              warn || pct > 85 ? "bg-rose-500" : "bg-primary",
+              warn || pct > 85 ? "bg-rose-500" : "bg-accent",
             )}
             style={{ width: `${pct}%` }}
           />
@@ -141,15 +158,20 @@ function ResourceMeter({
 }
 
 export function NodesPage() {
-  const [showOffline, setShowOffline] = useState(false);
   const { data, isLoading, refetch } = useList<Node>({
     resource: "nodes",
     pagination: { mode: "off" },
-    filters: showOffline ? [{ field: "all", operator: "eq", value: "1" }] : [],
+    filters: [{ field: "all", operator: "eq", value: "1" }],
     queryOptions: { refetchInterval: 15_000 },
   });
   const { data: me } = useGetIdentity<Identity>();
-  const rows = data?.data ?? [];
+  const rows = useMemo(() => {
+    const list = data?.data ?? [];
+    return [...list].sort((a, b) => {
+      const d = nodeRank(a) - nodeRank(b);
+      return d !== 0 ? d : a.name.localeCompare(b.name, "en");
+    });
+  }, [data?.data]);
   const pager = useClientPager(rows);
   const { mutate: reconcile, isLoading: reconciling } = useCustomMutation<ReconcileResult>();
   const isAdmin = me?.platform_role === "platform_admin";
@@ -206,30 +228,29 @@ export function NodesPage() {
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">节点 / Fabric</h2>
                   <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                    {rows.length} 台在线
+                    {rows.length} 台
                   </Badge>
+                  {readyCount > 0 && (
+                    <Badge variant="ok" className="px-2 py-0.5 text-xs font-normal">
+                      {readyCount} 在线
+                    </Badge>
+                  )}
+                  {offlineCount > 0 && (
+                    <Badge variant="danger" className="px-2 py-0.5 text-xs font-normal">
+                      {offlineCount} 离线
+                    </Badge>
+                  )}
                 </div>
                 <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                  默认仅显示在线 worker；离线记录保留在库中，可切换查看。
+                  在线与离线 worker 一并列出；离线行会标红，方便对账和排障。
                 </p>
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-background p-1 shadow-xs">
               <Button
                 type="button"
-                variant={showOffline ? "secondary" : "outline"}
-                size="compact"
-                data-testid="nodes-show-offline"
-                className="h-8 px-3 text-xs gap-1.5 shrink-0"
-                onClick={() => setShowOffline((v) => !v)}
-              >
-                <WifiOff className="size-3.5 opacity-70 shrink-0" />
-                {showOffline ? "仅在线" : "含离线"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
+                variant="ghost"
                 size="compact"
                 onClick={() => void refetch()}
                 data-testid="nodes-refresh"
@@ -241,7 +262,7 @@ export function NodesPage() {
               {isAdmin && (
                 <Dialog open={joinOpen} onOpenChange={setJoinOpen}>
                   <DialogTrigger asChild>
-                    <Button type="button" size="compact" data-testid="nodes-join-token-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
+                    <Button type="button" variant="outline" size="compact" data-testid="nodes-join-token-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
                       <KeyRound className="size-3.5 shrink-0" />
                       生成 join token
                     </Button>
@@ -254,11 +275,12 @@ export function NodesPage() {
                     <form className="flex min-h-0 flex-1 flex-col" onSubmit={generateJoinToken}>
                       <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
                         <Field label="cluster">
-                          <Input value={cluster} onChange={(e) => setCluster(e.target.value)} required />
+                          <Input className="border-(--line-strong) bg-(--input-bg)" value={cluster} onChange={(e) => setCluster(e.target.value)} required />
                         </Field>
                         <Field label="secret（一次性随机串）">
                           <Input
                             data-testid="join-secret"
+                            className="border-(--line-strong) bg-(--input-bg)"
                             value={secret}
                             onChange={(e) => setSecret(e.target.value)}
                             placeholder="随机 secret"
@@ -291,7 +313,8 @@ export function NodesPage() {
                             data-testid="join-copy"
                             className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
                             onClick={async () => {
-                              await navigator.clipboard.writeText(joinCmd);
+                              const ok = await copyText(joinCmd);
+                              if (!ok) return;
                               setCopied(true);
                               setTimeout(() => setCopied(false), 2500);
                             }}
@@ -317,7 +340,7 @@ export function NodesPage() {
               {isAdmin && (
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="compact"
                   data-testid="nodes-reconcile"
                   disabled={reconciling}
@@ -357,7 +380,7 @@ export function NodesPage() {
               <Elevated
                 offset={1}
                 shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
+                className="rounded-xl border border-border bg-background p-3.5 shadow-xs flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span className="text-xs font-medium flex items-center gap-1.5">
@@ -372,7 +395,7 @@ export function NodesPage() {
               <Elevated
                 offset={1}
                 shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
+                className="rounded-xl border border-border bg-background p-3.5 shadow-xs flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span className="text-xs font-medium flex items-center gap-1.5">
@@ -387,7 +410,7 @@ export function NodesPage() {
               <Elevated
                 offset={1}
                 shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
+                className="rounded-xl border border-border bg-background p-3.5 shadow-xs flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span className="text-xs font-medium flex items-center gap-1.5">
@@ -402,7 +425,7 @@ export function NodesPage() {
               <Elevated
                 offset={1}
                 shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
+                className="rounded-xl border border-border bg-background p-3.5 shadow-xs flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span className="text-xs font-medium flex items-center gap-1.5">
@@ -434,7 +457,7 @@ export function NodesPage() {
             <Elevated
               offset={1}
               shadowLevel={2}
-              className="rounded-2xl border border-border/80 bg-surface-1 p-8 shadow-surface-2 text-center max-w-md w-full flex flex-col items-center gap-3"
+              className="rounded-2xl border border-border bg-background p-8 shadow-xs text-center max-w-md w-full flex flex-col items-center gap-3"
             >
               <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20 shadow-xs">
                 <Cpu className="size-6" />
@@ -448,10 +471,10 @@ export function NodesPage() {
             </Elevated>
           </div>
         ) : (
-          <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
+          <div className="w-full overflow-x-auto rounded-xl border border-border bg-background shadow-xs">
             <Table className="min-w-[960px]">
-              <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
-                <TableRow className="border-b border-border/60 hover:bg-transparent">
+              <TableHeader className="bg-muted/50 border-b border-border select-none">
+                <TableRow className="border-b border-border hover:bg-transparent">
                   <TableHead className="py-2.5">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                       <Server className="size-3.5 opacity-60 shrink-0" />
@@ -501,7 +524,7 @@ export function NodesPage() {
                   <TableRow
                     key={n.id}
                     data-testid="node-row"
-                    className={healthVariant(n) === "danger" ? "bg-rose-500/5 hover:bg-rose-500/10" : undefined}
+                    className={nodeRowClass(n)}
                   >
                     <TableCell className="py-2.5">
                       <span className="font-medium text-foreground whitespace-nowrap inline-flex items-center gap-2">

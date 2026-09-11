@@ -156,7 +156,7 @@
 ```go
 // 标准套餐预设列表
 "nano":   {CPU: 500m,   Mem: 256 MiB, Disk: 5 GiB}    // 适合小型网关或心跳探测
-"small":  {CPU: 1000m,  Mem: 512 MiB, Disk: 10 GiB}   // 适合 Go/Rust 单微服务
+"small":  {CPU: 1000m,  Mem: 512 MiB, Disk: 5 GiB}   // 适合 Go/Rust 单微服务
 "2c2g":   {CPU: 2000m,  Mem: 2048 MiB, Disk: 5 GiB}   // 适合通用开发容器
 "medium": {CPU: 2000m,  Mem: 1024 MiB, Disk: 15 GiB}  // 适合常规后端 API
 "large":  {CPU: 4000m,  Mem: 2048 MiB, Disk: 20 GiB}  // 适合并发测试环境

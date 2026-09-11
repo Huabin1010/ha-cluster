@@ -120,7 +120,11 @@ func (s *Server) requestDestroy(w http.ResponseWriter, r *http.Request) {
 		writeAPIErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": models.WSDestroyRequested})
+	status := models.WSDestroyRequested
+	if ws, err := s.App.Store.GetWorkspace(r.Context(), id); err == nil {
+		status = ws.Status
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 func (s *Server) approveDestroyProject(w http.ResponseWriter, r *http.Request) {

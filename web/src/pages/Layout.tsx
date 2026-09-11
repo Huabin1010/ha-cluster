@@ -33,6 +33,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hover";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { ProjectSubSidebar } from "@/pages/projects/ProjectSubSidebar";
+import { WorkspaceSubSidebar } from "@/pages/workspaces/WorkspaceSubSidebar";
 
 const ENV_LABEL = import.meta.env.PROD ? "prod" : "dev";
 const SIDEBAR_COLLAPSED_KEY = "ha_sidebar_collapsed";
@@ -165,11 +166,19 @@ export function Layout({ children }: PropsWithChildren) {
     [projects, activeProjectId]
   );
 
+  const workspaceMatch = location.pathname.match(/^\/workspaces\/([^/]+)/);
+  const isInWorkspaceContext = !!(
+    workspaceMatch &&
+    workspaceMatch[1] &&
+    workspaceMatch[1] !== "undefined"
+  );
+  const activeWorkspaceId = isInWorkspaceContext ? workspaceMatch[1] : "";
+
   const projectFromQuery = new URLSearchParams(location.search).get("project_id") || "";
   const currentProject = activeProjectId || projectFromQuery;
 
-  // 当进入项目二级上下文时，主侧栏在桌面端自动切换为极简 Icon Rail，为二级菜单留出空间
-  const effectiveRail = isMd && (collapsed || isInProjectContext);
+  // 进入项目或服务器详情时，主侧栏收成 Icon Rail，给二级菜单留出空间
+  const effectiveRail = isMd && (collapsed || isInProjectContext || isInWorkspaceContext);
   const rail = effectiveRail;
 
   const navRef = useRef<HTMLElement>(null);
@@ -363,6 +372,9 @@ export function Layout({ children }: PropsWithChildren) {
           projectName={activeProject?.name}
           projectSlug={activeProject?.slug}
         />
+      )}
+      {isMd && isInWorkspaceContext && (
+        <WorkspaceSubSidebar key={activeWorkspaceId} workspaceId={activeWorkspaceId} />
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">

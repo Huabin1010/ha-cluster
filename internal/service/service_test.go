@@ -9,6 +9,7 @@ import (
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
 	"ha-cluster/internal/store/memory"
+	"ha-cluster/internal/webshell"
 	"ha-cluster/internal/workspace"
 
 	"github.com/google/uuid"
@@ -74,11 +75,9 @@ func TestCreateWorkspaceOccupiesAndRelease(t *testing.T) {
 	if err := app.RequestDestroyWorkspace(ctx, *u, ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ApproveDestroyProject(ctx, *u, ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.ApproveDestroyPlatform(ctx, *u, ws.ID); err != nil {
-		t.Fatal(err)
+	got, _ := app.Store.GetWorkspace(ctx, ws.ID)
+	if got.Status != models.WSDestroyed {
+		t.Fatalf("platform admin should destroy immediately, got %s", got.Status)
 	}
 	nodes, _ = app.Store.ListNodes(ctx)
 	if nodes[0].UsedMem != 0 {
@@ -258,6 +257,28 @@ func TestResizeRequestApproveAndNoDiskShrink(t *testing.T) {
 	if down.ResizeKind != models.ResizeDowngrade {
 		t.Fatalf("want downgrade kind, got %s", down.ResizeKind)
 	}
+	logs, err := app.Store.ListAudit(ctx, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resizeLog *models.AuditLog
+	for i := range logs {
+		if logs[i].Action == "workspace.resize.request" {
+			resizeLog = &logs[i]
+		}
+	}
+	if resizeLog == nil {
+		t.Fatal("missing workspace.resize.request audit")
+	}
+	if resizeLog.Meta["kind"] != models.ResizeDowngrade {
+		t.Fatalf("kind=%v", resizeLog.Meta["kind"])
+	}
+	if resizeLog.Meta["from_disk_bytes"] != cur.DiskBytes || resizeLog.Meta["to_disk_bytes"] != Gi {
+		t.Fatalf("disk meta=%#v", resizeLog.Meta)
+	}
+	if resizeLog.Meta["workspace_name"] != "box" {
+		t.Fatalf("name=%v", resizeLog.Meta["workspace_name"])
+	}
 	if _, err := app.ApproveResize(ctx, *owner, ws.ID); err != nil {
 		t.Fatalf("approve downgrade: %v", err)
 	}
@@ -288,6 +309,63 @@ func TestResizeRequestApproveAndNoDiskShrink(t *testing.T) {
 	al, err := app.Store.GetAllocation(ctx, out.AllocationID)
 	if err != nil || al.CPUMilli != 2000 || al.MemBytes != 2*Gi {
 		t.Fatalf("allocation not expanded: %+v %v", al, err)
+	}
+}
+
+func TestRequestResizeSkipsApprovalForAdmins(t *testing.T) {
+	app, owner := setupApp(t)
+	ctx := context.Background()
+	p, _ := app.CreateProject(ctx, owner.ID, "p-rsz", "p-rsz")
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "admin-box", Plan: "nano", Arch: models.ArchAMD64, Actor: *owner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const Mi = int64(1024 * 1024)
+	const Gi = 1024 * Mi
+	out, err := app.RequestResize(ctx, *owner, ws.ID, 1000, 512*Mi, 5*Gi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.HasPendingResize() {
+		t.Fatal("project owner / platform admin must apply resize immediately")
+	}
+	if out.CPUMilli != 1000 || out.MemBytes != 512*Mi {
+		t.Fatalf("want applied spec, got %+v", out)
+	}
+
+	projOwner, err := app.Register(ctx, "rszown", "rszown@example.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := app.CreateProject(ctx, projOwner.ID, "p-own", "p-own")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws2, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p2.ID, Name: "own-box", Plan: "nano", Arch: models.ArchAMD64, Actor: *projOwner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	applied, err := app.RequestResize(ctx, *projOwner, ws2.ID, 1000, 512*Mi, 5*Gi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.HasPendingResize() || applied.CPUMilli != 1000 {
+		t.Fatalf("project owner want immediate apply, got %+v", applied)
+	}
+
+	down, err := app.RequestResize(ctx, *projOwner, ws2.ID, 500, 256*Mi, 5*Gi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !down.HasPendingResize() || down.ResizeKind != models.ResizeDowngrade {
+		t.Fatalf("downgrade must stay pending for approval, got %+v", down)
+	}
+	if down.CPUMilli != 1000 {
+		t.Fatalf("downgrade must not apply before approve, got %+v", down)
 	}
 }
 
@@ -365,8 +443,12 @@ func TestSSHKeySyncToWorkspaces(t *testing.T) {
 	}
 
 	keys := memRt.GetKeys(ws.ID)
-	if len(keys) != 1 || keys[0] != key1.PublicKey {
-		t.Fatalf("expected 1 key %q, got %+v", key1.PublicKey, keys)
+	webKey := webshell.AuthorizedKey()
+	if webKey == "" {
+		t.Fatal("web terminal key missing")
+	}
+	if !containsKey(keys, key1.PublicKey) || !containsKey(keys, webKey) {
+		t.Fatalf("expected user key %q and web terminal key, got %+v", key1.PublicKey, keys)
 	}
 
 	// 2. Add second SSH key
@@ -379,8 +461,8 @@ func TestSSHKeySyncToWorkspaces(t *testing.T) {
 	}
 
 	keys = memRt.GetKeys(ws.ID)
-	if len(keys) != 2 {
-		t.Fatalf("expected 2 keys, got %+v", keys)
+	if !containsKey(keys, key1.PublicKey) || !containsKey(keys, key2.PublicKey) || !containsKey(keys, webKey) {
+		t.Fatalf("expected key1, key2 and web terminal key, got %+v", keys)
 	}
 
 	// 3. Delete first SSH key
@@ -392,7 +474,89 @@ func TestSSHKeySyncToWorkspaces(t *testing.T) {
 	}
 
 	keys = memRt.GetKeys(ws.ID)
-	if len(keys) != 1 || keys[0] != key2.PublicKey {
-		t.Fatalf("expected only key2 %q, got %+v", key2.PublicKey, keys)
+	if containsKey(keys, key1.PublicKey) || !containsKey(keys, key2.PublicKey) || !containsKey(keys, webKey) {
+		t.Fatalf("expected only key2 %q plus web terminal key, got %+v", key2.PublicKey, keys)
 	}
+}
+
+func TestRequestDestroySkipsApprovalsForAdmins(t *testing.T) {
+	app, plat := setupApp(t)
+	ctx := context.Background()
+
+	pDev, err := app.CreateProject(ctx, plat.ID, "skip-dev", "skip-dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsDev, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: pDev.ID, Name: "dev-ws", Plan: "nano", Arch: models.ArchAMD64, Actor: *plat,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev, err := app.Register(ctx, "skipdev", "skipdev@example.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Store.AddMembership(ctx, models.Membership{ProjectID: pDev.ID, UserID: dev.ID, Role: models.RoleDeveloper}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RequestDestroyWorkspace(ctx, *dev, wsDev.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := app.Store.GetWorkspace(ctx, wsDev.ID)
+	if got.Status != models.WSDestroyRequested {
+		t.Fatalf("developer want destroy_requested, got %s", got.Status)
+	}
+
+	owner, err := app.Register(ctx, "skipown", "skipown@example.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pOwn, err := app.CreateProject(ctx, owner.ID, "skip-own", "skip-own")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsOwn, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: pOwn.ID, Name: "own-ws", Plan: "nano", Arch: models.ArchAMD64, Actor: *owner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RequestDestroyWorkspace(ctx, *owner, wsOwn.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = app.Store.GetWorkspace(ctx, wsOwn.ID)
+	if got.Status != models.WSDestroyPendingPlatform {
+		t.Fatalf("project owner want destroy_pending_platform, got %s", got.Status)
+	}
+	if err := app.ApproveDestroyProject(ctx, *owner, wsOwn.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	pPlat, err := app.CreateProject(ctx, plat.ID, "skip-plat", "skip-plat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsPlat, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: pPlat.ID, Name: "plat-ws", Plan: "nano", Arch: models.ArchAMD64, Actor: *plat,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RequestDestroyWorkspace(ctx, *plat, wsPlat.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = app.Store.GetWorkspace(ctx, wsPlat.ID)
+	if got.Status != models.WSDestroyed {
+		t.Fatalf("platform admin want destroyed, got %s", got.Status)
+	}
+}
+
+func containsKey(keys []string, want string) bool {
+	for _, k := range keys {
+		if k == want {
+			return true
+		}
+	}
+	return false
 }

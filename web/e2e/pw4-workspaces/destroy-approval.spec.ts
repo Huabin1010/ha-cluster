@@ -12,6 +12,6 @@ test.describe("PW-4 销毁双层审批", () => {
     await api.requestDestroyWorkspace(tokens.token, ws.id);
     await page.goto(`/workspaces?project_id=${p.id}`);
     const row = page.locator('[data-testid="ws-row"]', { hasText: "ws-dest-label" });
-    await expect(row).toContainText("待销毁审批");
+    await expect(row).toContainText("待平台终审");
   });
 });

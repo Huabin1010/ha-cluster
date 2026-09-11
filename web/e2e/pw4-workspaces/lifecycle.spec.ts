@@ -91,12 +91,10 @@ test.describe("PW-4 Workspace 生命周期", () => {
     const row = page.locator('[data-testid="ws-row"]', { hasText: "ws-to-dest" });
     await row.getByTestId("ws-destroy").click();
     await confirmAlert(page, true);
-    await expectToast(page, "销毁申请");
-
-    await expect(row).toHaveAttribute("data-status", "destroy_requested");
-    await row.getByTestId("ws-destroy-approve-project").click();
     await expectToast(page, "平台终审");
+
     await expect(row).toHaveAttribute("data-status", "destroy_pending_platform");
+    await expect(row.getByTestId("ws-destroy-approve-project")).toHaveCount(0);
 
     await api.approveDestroyPlatform(admin.tokens.token, ws.id);
     await page.reload();
