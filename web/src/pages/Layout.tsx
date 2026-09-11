@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
   ScrollText,
   Server,
+  UserCog,
   Users,
   Container,
   type LucideIcon,
@@ -28,7 +29,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { spring } from "@/lib/springs";
 import { writeCurrentProject } from "@/lib/current-project";
-import { canApproveDangerousOps, canManageNodes, canViewAudit, isPlatformAdmin } from "@/lib/permissions";
+import { canApproveDangerousOps, canManageNodes, canManageUsers, canViewAudit, isPlatformAdmin } from "@/lib/permissions";
 import { Combobox } from "@/components/ui/combobox";
 import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hover";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
@@ -42,6 +43,7 @@ const SIDEBAR_COLLAPSED_KEY = "ha_sidebar_collapsed";
 const NAV_ICONS: Record<string, LucideIcon> = {
   projects: FolderKanban,
   memberships: Users,
+  users: UserCog,
   workspaces: Box,
   nodes: Server,
   capacity: Gauge,
@@ -54,6 +56,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
 const NAV_TESTIDS: Record<string, string> = {
   projects: "nav-projects",
   memberships: "nav-members",
+  users: "nav-users",
   workspaces: "nav-workspaces",
   nodes: "nav-nodes",
   capacity: "nav-capacity",
@@ -188,6 +191,7 @@ export function Layout({ children }: PropsWithChildren) {
   const filteredMenuItems = useMemo(() => {
     return menuItems.filter((item) => {
       if (item.name === "nodes" || item.name === "capacity") return canManageNodes(me?.platform_role);
+      if (item.name === "users") return canManageUsers(me?.platform_role);
       if (item.name === "audit-logs") return canViewAudit(me?.platform_role);
       if (item.name === "dangerous-approvals") return canApproveDangerousOps(me?.platform_role);
       if (item.name === "docker-registries") return isPlatformAdmin(me?.platform_role);
@@ -384,12 +388,13 @@ export function Layout({ children }: PropsWithChildren) {
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="topbar flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2 md:hidden">
+        <header className="topbar flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2 md:hidden">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             data-testid="nav-toggle"
+            className="h-8 shrink-0 gap-1 px-2"
             aria-expanded={navOpen}
             aria-controls="app-sidebar"
             onClick={() => setNavOpen((v) => !v)}
@@ -397,7 +402,7 @@ export function Layout({ children }: PropsWithChildren) {
             <Menu className="h-4 w-4" />
             菜单
           </Button>
-          <HaBrand className="flex-1" />
+          <HaBrand className="min-w-0 flex-1" />
           <ThemeToggle />
           <Hint label="运行环境">
             <span className="inline-flex">
@@ -408,7 +413,7 @@ export function Layout({ children }: PropsWithChildren) {
           </Hint>
         </header>
 
-        <main className="main-pane relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-4 md:p-6">
+        <main className="main-pane relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-6">
           {showFetchHint && (
             <div className="fetch-hint mb-2 flex shrink-0 justify-end" aria-live="polite">
               <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">

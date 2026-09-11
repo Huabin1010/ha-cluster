@@ -163,6 +163,10 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		})
 		r.Patch("/nodes/{id}", s.patchNode)
 		r.Post("/users/{id}/suspend", s.suspend)
+		r.Post("/users/{id}/unsuspend", s.unsuspend)
+		r.Post("/users/{id}/reset-password", s.resetUserPassword)
+		r.Patch("/users/{id}", s.patchUser)
+		r.Delete("/users/{id}", s.deleteUser)
 
 		r.Get("/workspaces", s.listWorkspaces)
 		r.Get("/workspaces/{id}", s.getWorkspace)
@@ -989,13 +993,43 @@ func (s *Server) releaseAlloc(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "released"})
 }
 
+type userProjectRef struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+	Slug string    `json:"slug"`
+	Role string    `json:"role"`
+}
+
+type userListItem struct {
+	models.User
+	Projects []userProjectRef `json:"projects"`
+}
+
 func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	if userFrom(r).PlatformRole != models.RolePlatformAdmin {
 		writeErr(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
-	items, _ := s.App.Store.ListUsers(r.Context())
-	listEnvelope(w, items, len(items))
+	items, err := s.App.Store.ListUsers(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	out := make([]userListItem, 0, len(items))
+	ctx := r.Context()
+	for _, u := range items {
+		row := userListItem{User: u, Projects: []userProjectRef{}}
+		ps, _ := s.App.Store.ListProjectsForUser(ctx, u.ID)
+		for _, p := range ps {
+			ref := userProjectRef{ID: p.ID, Name: p.Name, Slug: p.Slug}
+			if m, memErr := s.App.Store.GetMembership(ctx, p.ID, u.ID); memErr == nil && m != nil {
+				ref.Role = m.Role
+			}
+			row.Projects = append(row.Projects, ref)
+		}
+		out = append(out, row)
+	}
+	listEnvelope(w, out, len(out))
 }
 
 func verifyNodeToken(r *http.Request) bool {

@@ -144,10 +144,73 @@ func (s *Server) suspend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.App.SuspendUser(r.Context(), *userFrom(r), id); err != nil {
-		writeErr(w, http.StatusForbidden, err)
+		writeAPIErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "suspended"})
+}
+
+func (s *Server) unsuspend(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	if err := s.App.UnsuspendUser(r.Context(), *userFrom(r), id); err != nil {
+		writeAPIErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "active"})
+}
+
+func (s *Server) resetUserPassword(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	var body service.ResetPasswordInput
+	if r.ContentLength > 0 {
+		_ = decodeJSON(r, &body)
+	}
+	plain, err := s.App.ResetUserPassword(r.Context(), *userFrom(r), id, body)
+	if err != nil {
+		writeAPIErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"password": plain})
+}
+
+func (s *Server) patchUser(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	var body service.PatchUserInput
+	if err := decodeJSON(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	u, err := s.App.PatchUser(r.Context(), *userFrom(r), id, body)
+	if err != nil {
+		writeAPIErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, u)
+}
+
+func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	if err := s.App.DeleteUser(r.Context(), *userFrom(r), id); err != nil {
+		writeAPIErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func constantTimeEqual(a, b string) bool {

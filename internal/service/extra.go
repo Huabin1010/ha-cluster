@@ -244,20 +244,6 @@ func (a *App) AcceptInvite(ctx context.Context, user models.User, token string) 
 	return inv.ProjectID, nil
 }
 
-func (a *App) SuspendUser(ctx context.Context, actor models.User, target uuid.UUID) error {
-	if actor.PlatformRole != models.RolePlatformAdmin {
-		return store.ErrForbidden
-	}
-	u, err := a.Store.GetUserByID(ctx, target)
-	if err != nil {
-		return err
-	}
-	u.Status = models.UserSuspended
-	u.TokenVersion++
-	u.UpdatedAt = time.Now()
-	return a.Store.UpdateUser(ctx, u)
-}
-
 func (a *App) Reconcile(ctx context.Context) (released int, staleNodes int, err error) {
 	allocs, err := a.Store.ListAllocations(ctx)
 	if err != nil {

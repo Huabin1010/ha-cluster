@@ -16,6 +16,7 @@ const ProjectDetailPage = lazy(() => import("@/pages/projects/Detail").then((m) 
 const WorkspacesPage = lazy(() => import("@/pages/Workspaces").then((m) => ({ default: m.WorkspacesPage })));
 const MachinePage = lazy(() => import("@/pages/workspaces/Machine").then((m) => ({ default: m.MachinePage })));
 const MembersPage = lazy(() => import("@/pages/Members").then((m) => ({ default: m.MembersPage })));
+const UsersPage = lazy(() => import("@/pages/Users").then((m) => ({ default: m.UsersPage })));
 const AcceptInvitePage = lazy(() => import("@/pages/AcceptInvite").then((m) => ({ default: m.AcceptInvitePage })));
 const NodesPage = lazy(() => import("@/pages/Nodes").then((m) => ({ default: m.NodesPage })));
 const CapacityPage = lazy(() => import("@/pages/ops/Capacity").then((m) => ({ default: m.CapacityPage })));
@@ -104,6 +105,7 @@ function RefineApp() {
           <Route path="/workspaces/:id/ingress" element={<MachinePage />} />
           <Route path="/workspaces/:id/history" element={<MachinePage />} />
           <Route path="/members" element={<MembersPage />} />
+          <Route path="/users" element={<UsersPage />} />
           <Route path="/invitations/accept" element={<AcceptInvitePage />} />
           <Route path="/nodes" element={<NodesPage />} />
           <Route path="/capacity" element={<CapacityPage />} />

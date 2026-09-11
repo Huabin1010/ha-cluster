@@ -924,6 +924,164 @@ func TestBatchCreateUsersAPI(t *testing.T) {
 	_ = adminTok
 }
 
+func TestListUsersAPI(t *testing.T) {
+	h := testServer(t)
+	adminTok := registerLogin(t, h, "admin_users", "admin_users@x.com")
+	devTok := registerLogin(t, h, "dev_users", "dev_users@x.com")
+
+	forbidden := doJSON(t, h, http.MethodGet, "/users", devTok, nil)
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-admin list users, got %d", forbidden.Code)
+	}
+
+	resProj := doJSON(t, h, http.MethodPost, "/projects", adminTok, map[string]string{"name": "UserList", "slug": "user-list"})
+	if resProj.Code != http.StatusCreated {
+		t.Fatal(resProj.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(resProj.Body.Bytes(), &p)
+
+	add := doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", adminTok, map[string]string{
+		"username": "dev_users", "role": "developer",
+	})
+	if add.Code != http.StatusCreated {
+		t.Fatalf("add member: %d %s", add.Code, add.Body.String())
+	}
+
+	listed := doJSON(t, h, http.MethodGet, "/users", adminTok, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d %s", listed.Code, listed.Body.String())
+	}
+	var envelope struct {
+		Data []struct {
+			Username string `json:"username"`
+			Projects []struct {
+				Name string `json:"name"`
+				Role string `json:"role"`
+			} `json:"projects"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Data) < 2 {
+		t.Fatalf("expected at least 2 users, got %d", len(envelope.Data))
+	}
+	var foundDev bool
+	for _, u := range envelope.Data {
+		if u.Username != "dev_users" {
+			continue
+		}
+		foundDev = true
+		if len(u.Projects) != 1 || u.Projects[0].Name != "UserList" || u.Projects[0].Role != "developer" {
+			t.Fatalf("expected dev_users in UserList as developer, got %+v", u.Projects)
+		}
+	}
+	if !foundDev {
+		t.Fatal("dev_users missing from user list")
+	}
+}
+
+func TestManageUsersAPI(t *testing.T) {
+	h := testServer(t)
+	adminTok := registerLogin(t, h, "admin_mgmt", "admin_mgmt@x.com")
+	devTok := registerLogin(t, h, "dev_mgmt", "dev_mgmt@x.com")
+
+	listed := doJSON(t, h, http.MethodGet, "/users", adminTok, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatal(listed.Body.String())
+	}
+	var envelope struct {
+		Data []struct {
+			ID       string `json:"id"`
+			Username string `json:"username"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	var adminID, devID string
+	for _, u := range envelope.Data {
+		switch u.Username {
+		case "admin_mgmt":
+			adminID = u.ID
+		case "dev_mgmt":
+			devID = u.ID
+		}
+	}
+	if adminID == "" || devID == "" {
+		t.Fatal("missing users")
+	}
+
+	forbidden := doJSON(t, h, http.MethodPost, "/users/"+devID+"/suspend", devTok, nil)
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d %s", forbidden.Code, forbidden.Body.String())
+	}
+
+	self := doJSON(t, h, http.MethodDelete, "/users/"+adminID, adminTok, nil)
+	if self.Code == http.StatusNoContent {
+		t.Fatal("should not delete last/self admin")
+	}
+
+	reset := doJSON(t, h, http.MethodPost, "/users/"+devID+"/reset-password", adminTok, map[string]string{})
+	if reset.Code != http.StatusOK {
+		t.Fatalf("reset %d %s", reset.Code, reset.Body.String())
+	}
+	var cred struct {
+		Password string `json:"password"`
+	}
+	if err := json.Unmarshal(reset.Body.Bytes(), &cred); err != nil || cred.Password == "" {
+		t.Fatalf("password missing: %s", reset.Body.String())
+	}
+	oldLogin := doJSON(t, h, http.MethodPost, "/auth/login", "", map[string]string{
+		"username": "dev_mgmt", "password": "password1",
+	})
+	if oldLogin.Code != http.StatusUnauthorized {
+		t.Fatalf("old password should fail, got %d", oldLogin.Code)
+	}
+	newLogin := doJSON(t, h, http.MethodPost, "/auth/login", "", map[string]string{
+		"username": "dev_mgmt", "password": cred.Password,
+	})
+	if newLogin.Code != http.StatusOK {
+		t.Fatalf("new password login %d %s", newLogin.Code, newLogin.Body.String())
+	}
+
+	sus := doJSON(t, h, http.MethodPost, "/users/"+devID+"/suspend", adminTok, nil)
+	if sus.Code != http.StatusOK {
+		t.Fatalf("suspend %d %s", sus.Code, sus.Body.String())
+	}
+	blocked := doJSON(t, h, http.MethodPost, "/auth/login", "", map[string]string{
+		"username": "dev_mgmt", "password": cred.Password,
+	})
+	if blocked.Code != http.StatusUnauthorized {
+		t.Fatalf("suspended login %d", blocked.Code)
+	}
+
+	role := doJSON(t, h, http.MethodPatch, "/users/"+devID, adminTok, map[string]string{"platform_role": "platform_ops"})
+	if role.Code != http.StatusOK {
+		t.Fatalf("patch %d %s", role.Code, role.Body.String())
+	}
+
+	unsus := doJSON(t, h, http.MethodPost, "/users/"+devID+"/unsuspend", adminTok, nil)
+	if unsus.Code != http.StatusOK {
+		t.Fatalf("unsuspend %d %s", unsus.Code, unsus.Body.String())
+	}
+
+	del := doJSON(t, h, http.MethodDelete, "/users/"+devID, adminTok, nil)
+	if del.Code != http.StatusNoContent {
+		t.Fatalf("delete %d %s", del.Code, del.Body.String())
+	}
+	after := doJSON(t, h, http.MethodGet, "/users", adminTok, nil)
+	if err := json.Unmarshal(after.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range envelope.Data {
+		if u.Username == "dev_mgmt" {
+			t.Fatal("deleted user still listed")
+		}
+	}
+}
+
 func TestWorkspaceTerminalAuthAndEcho(t *testing.T) {
 	h := testServer(t)
 	tok := registerLogin(t, h, "term-owner", "term-owner@x.com")

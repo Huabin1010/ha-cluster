@@ -39,6 +39,7 @@
 |---|---|---|
 | 侧栏「项目」 | `nav-projects` | 已登录 |
 | 侧栏「成员」 | `nav-members` | 已登录 |
+| 侧栏「用户」 | `nav-users` | `platform_admin` |
 | 侧栏「服务器」 | `nav-workspaces` | 已登录 |
 | 侧栏「节点」 | `nav-nodes` | `platform_admin` / `platform_ops` |
 | 侧栏「容量」 | `nav-capacity` | 同上 |
@@ -264,6 +265,7 @@
 | 用户看到的 | testid |
 |---|---|
 | 全局批量创建用户 | `global-batch-create-open` | `platform_admin` |
+| 前往用户列表 | `users-page-link` | `platform_admin` |
 | 接受邀请页链接 | `invite-accept-page` | |
 | 项目下拉 | `member-project` | |
 | 添加成员 | `member-add-open` → `member-add-form` / `member-username` / `member-role` / `member-add` |
@@ -280,6 +282,47 @@
 角色门：添加/改角色/批 SSH 需项目 admin+；viewer 只读。非成员看不见项目。
 
 相关 E2E：`web/e2e/pw3-members/`。
+
+---
+
+## 用户与团队（平台账号）
+
+### 怎么进入
+
+侧栏 `nav-users` → `/users`。仅 `platform_admin`。成员页说明里的 `users-page-link` 也可进。
+
+口头词：用户说「用户列表 / 团队管理 / 批量开号 / 重置密码 / 删除用户」= 本页。项目内加人仍走「成员」。
+
+### 子功能
+
+- 查看全部平台账号与所属项目
+- 搜索用户名 / 邮箱 / ID
+- 批量创建用户（可选同时加入项目）
+- 配置账号：平台角色、停用 / 恢复、加入项目
+- 重置密码（生成一次性新密码，旧会话立即失效）
+- 删除用户（软删；项目负责人须先转让）
+
+### 快捷键
+
+无。
+
+### 选择器
+
+| 用户看到的 | testid | 角色门 |
+|---|---|---|
+| 侧栏「用户」 | `nav-users` | `platform_admin` |
+| 搜索 | `users-search` | |
+| 刷新 | `users-refresh` | |
+| 批量创建 | `users-batch-create-open` → `batch-create-dialog` | |
+| 用户表 / 行 | `users-table` / `users-row` | |
+| 复制 ID | `users-copy-id` | |
+| 配置账号 | `users-configure` → `users-configure-dialog` / `users-configure-form` / `users-configure-role` / `users-configure-submit` / `users-toggle-status` | |
+| 加入项目 | 配置弹窗内 `users-add-to-project` → `users-add-dialog` / `users-add-form` / `users-add-project` / `users-add-role` / `users-add-submit` | |
+| 重置密码 | `users-reset-password` → `users-reset-dialog` / `users-reset-submit` / `users-reset-copy` | |
+| 删除用户 | `users-delete` → `users-delete-dialog`，确认 `confirm-ok` / `confirm-cancel` | |
+| 无权 | `users-forbidden` | 非 `platform_admin` |
+
+相关 E2E：`web/e2e/pw5-ops/users.spec.ts`。
 
 ---
 

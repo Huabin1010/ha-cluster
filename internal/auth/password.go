@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -17,6 +18,26 @@ const (
 	argonKeyLen  = 32
 	saltLen      = 16
 )
+
+// passwordAlphabet omits easily confused characters (0/O, 1/l/I).
+const passwordAlphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+// RandomPassword returns a cryptographically random password of length n (minimum 8).
+func RandomPassword(n int) (string, error) {
+	if n < 8 {
+		n = 12
+	}
+	out := make([]byte, n)
+	max := big.NewInt(int64(len(passwordAlphabet)))
+	for i := range out {
+		v, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		out[i] = passwordAlphabet[v.Int64()]
+	}
+	return string(out), nil
+}
 
 func HashPassword(password string) (string, error) {
 	salt := make([]byte, saltLen)

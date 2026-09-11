@@ -18,6 +18,23 @@ func TestHashAndVerifyPassword(t *testing.T) {
 	}
 }
 
+func TestRandomPassword(t *testing.T) {
+	a, err := RandomPassword(12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := RandomPassword(12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a) != 12 || len(b) != 12 {
+		t.Fatalf("len a=%d b=%d", len(a), len(b))
+	}
+	if a == b {
+		t.Fatal("random passwords should differ")
+	}
+}
+
 func TestHashPasswordUniqueSalts(t *testing.T) {
 	a, _ := HashPassword("same")
 	b, _ := HashPassword("same")

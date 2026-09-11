@@ -21,6 +21,10 @@ export function canViewAudit(platformRole?: string) {
   return isPlatformStaff(platformRole);
 }
 
+export function canManageUsers(platformRole?: string) {
+  return isPlatformAdmin(platformRole);
+}
+
 export function canManageMembers(myRole?: string, platformRole?: string) {
   if (isPlatformAdmin(platformRole)) return true;
   return myRole === "owner" || myRole === "admin";

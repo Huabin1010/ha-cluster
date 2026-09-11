@@ -36,6 +36,10 @@ export const accessControlProvider: AccessControlProvider = {
       return adminOnly(role);
     }
 
+    if (resource === "users") {
+      return adminOnly(role, "仅 platform_admin 可管理平台用户。");
+    }
+
     if (action === "reconcile") {
       return { can: isPlatformAdmin(role) };
     }
