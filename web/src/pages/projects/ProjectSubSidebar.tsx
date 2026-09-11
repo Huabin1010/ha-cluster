@@ -37,10 +37,11 @@ interface SubNavItemProps {
   index: number;
   registerItem: (index: number, element: HTMLElement | null) => void;
   isActive: boolean;
+  testId: string;
   onNavigate?: () => void;
 }
 
-function SubNavItem({ to, label, icon: Icon, index, registerItem, isActive, onNavigate }: SubNavItemProps) {
+function SubNavItem({ to, label, icon: Icon, index, registerItem, isActive, testId, onNavigate }: SubNavItemProps) {
   const ref = useRef<HTMLAnchorElement>(null);
   useRegisterFluidHoverItem(registerItem, index, ref);
 
@@ -48,6 +49,7 @@ function SubNavItem({ to, label, icon: Icon, index, registerItem, isActive, onNa
     <NavLink
       ref={ref}
       to={to}
+      data-testid={testId}
       onClick={onNavigate}
       className={cn(
         "relative z-10 flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring select-none whitespace-nowrap",
@@ -91,24 +93,28 @@ export function ProjectSubSidebar({
       label: "项目概览",
       icon: LayoutDashboard,
       isActive: isOverview,
+      testId: "project-tab-overview",
     },
     {
       to: `/projects/${projectId}/workspaces`,
       label: "工作区服务器",
       icon: Box,
       isActive: isWorkspaces,
+      testId: "project-tab-workspaces",
     },
     {
       to: `/projects/${projectId}/members`,
       label: "成员与权限",
       icon: Users,
       isActive: isMembers,
+      testId: "project-tab-members",
     },
     {
       to: `/projects/${projectId}/settings`,
       label: "设置与预算",
       icon: Settings,
       isActive: isSettings,
+      testId: "project-tab-settings",
     },
   ];
 
@@ -122,6 +128,7 @@ export function ProjectSubSidebar({
 
   return (
     <motion.aside
+      data-testid="project-subnav"
       animate={{ width: collapsed ? 44 : 210 }}
       transition={spring.moderate}
       className="relative flex h-full shrink-0 flex-col border-r border-border/80 bg-surface-1/60 select-none backdrop-blur-sm overflow-hidden"
@@ -135,6 +142,7 @@ export function ProjectSubSidebar({
                 type="button"
                 variant="ghost"
                 size="compact"
+                data-testid="project-back-list"
                 onClick={() => {
                   onNavigate?.();
                   navigate("/projects");
@@ -226,6 +234,7 @@ export function ProjectSubSidebar({
                 <Hint key={item.to} label={item.label} side="right">
                   <NavLink
                     to={item.to}
+                    data-testid={item.testId}
                     onClick={onNavigate}
                     className={cn(
                       "flex size-8 items-center justify-center rounded-lg text-xs transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring select-none mx-auto",
@@ -248,6 +257,7 @@ export function ProjectSubSidebar({
                 index={index}
                 registerItem={hover.registerItem}
                 isActive={item.isActive}
+                testId={item.testId}
                 onNavigate={onNavigate}
               />
             );

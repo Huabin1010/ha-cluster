@@ -261,6 +261,7 @@ export function LoginPage() {
                   <Button
                     type="button"
                     variant="ghost"
+                    data-testid="login-register-open"
                     aria-expanded={registerOpen}
                     onClick={() => {
                       setRegisterOpen((v) => !v);
@@ -288,6 +289,7 @@ export function LoginPage() {
                               name="email"
                               type="email"
                               autoComplete="email"
+                              data-testid="login-register-email"
                               value={email}
                               onChange={(e) => setEmail(e.target.value)}
                               placeholder="name@example.com"
@@ -300,6 +302,7 @@ export function LoginPage() {
                           <Button
                             type="button"
                             variant="secondary"
+                            data-testid="login-register-submit"
                             disabled={registering}
                             onClick={onRegister}
                             className="w-full text-xs font-medium"

@@ -1,0 +1,17 @@
+---
+description: 改控制台入口或主操作时必须带 data-testid，并同步 Feature Map
+globs: web/src/App.tsx,web/src/pages/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Feature Map 与稳定选择器
+
+改 `web/src/App.tsx` 路由、侧栏/子侧栏入口、或用户要点的主操作（创建按钮、行内审批、Dialog 提交）时：
+
+1. 给该控件稳定 `data-testid`（或 Select/Combobox 的 `testId`）。前缀沿用 `nav-*`、`login-*`、`project-*`、`ws-*`、`nodes-*`、`audit-*`。
+2. 同一变更里更新 [docs/agent/FEATURE_MAP.md](../../docs/agent/FEATURE_MAP.md) 的「怎么进入」和「选择器」。
+3. 桌面子侧栏与窄屏 Tab 若共用文案，testid 要么唯一（`ws-nav-*` vs `ws-tab-*`），要么在地图里写容器收窄（`project-subnav` / `project-mobile-tabs`）。
+4. Dialog 继续走 Radix + `openCreateDialog` / `chooseSelect` / `confirmAlert` 语义；不要原生 select / `window.confirm`。
+5. 不要把密码写进 Feature Map。
+
+Agent 代用户操作或验收 UI 时：先读 Feature Map，再按 testid 点，不要只靠翻源码猜入口。

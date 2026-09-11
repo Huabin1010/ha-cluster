@@ -190,7 +190,7 @@ export function CapacityPage() {
         </div>
       ) : (
         <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-          <Table className="min-w-[700px]">
+          <Table data-testid="capacity-table" className="min-w-[700px]">
             <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
               <TableRow className="border-b border-border/60 hover:bg-transparent">
                 <TableHead className="w-[180px] py-2.5">

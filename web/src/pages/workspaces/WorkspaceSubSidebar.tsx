@@ -115,6 +115,7 @@ export function WorkspaceSubSidebar({ workspaceId, onNavigate }: WorkspaceSubSid
                 type="button"
                 variant="ghost"
                 size="compact"
+                data-testid="ws-back-list"
                 onClick={() => {
                   onNavigate?.();
                   navigate(listHref);

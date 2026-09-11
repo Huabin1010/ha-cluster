@@ -251,6 +251,7 @@ export function WorkspacesPage() {
                 type="button"
                 variant="outline"
                 size="compact"
+                data-testid="ws-refresh"
                 onClick={() => void refetch()}
                 className="h-8 px-3 text-xs gap-1.5 shrink-0"
               >

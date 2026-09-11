@@ -90,7 +90,7 @@ export function MembersPage() {
             </div>
             <p className="mt-1 mb-0 text-sm text-muted-foreground">
               基于项目边界的团队成员权限与 SSH 访问管理。已有邀请 Token？可直接前往{" "}
-              <Link to="/invitations/accept" className="text-primary hover:underline font-medium inline-flex items-center gap-0.5">
+              <Link to="/invitations/accept" data-testid="invite-accept-page" className="text-primary hover:underline font-medium inline-flex items-center gap-0.5">
                 <Mail className="size-3" />
                 接受邀请
               </Link>

@@ -193,10 +193,11 @@ interface NavTabItemProps {
   isActive: boolean;
   onClick: () => void;
   index: number;
+  testId: string;
   registerItem: (index: number, element: HTMLElement | null) => void;
 }
 
-function NavTabItem({ label, icon: Icon, isActive, onClick, index, registerItem }: NavTabItemProps) {
+function NavTabItem({ label, icon: Icon, isActive, onClick, index, testId, registerItem }: NavTabItemProps) {
   const ref = useRef<HTMLButtonElement>(null);
   useRegisterFluidHoverItem(registerItem, index, ref);
 
@@ -204,6 +205,7 @@ function NavTabItem({ label, icon: Icon, isActive, onClick, index, registerItem 
     <button
       ref={ref}
       type="button"
+      data-testid={testId}
       onClick={onClick}
       className={cn(
         "relative z-10 flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring whitespace-nowrap cursor-pointer select-none",
@@ -410,10 +412,10 @@ export function MachinePage() {
 
   const navTabs = useMemo(
     () => [
-      { key: "overview" as const, label: "概览", icon: LayoutDashboard, route: `/workspaces/${id}` },
-      { key: "connect" as const, label: "连接", icon: Terminal, route: `/workspaces/${id}/connect` },
-      { key: "ingress" as const, label: "域名接入", icon: Globe, route: `/workspaces/${id}/ingress` },
-      { key: "history" as const, label: "操作历史", icon: ScrollText, route: `/workspaces/${id}/history` },
+      { key: "overview" as const, label: "概览", icon: LayoutDashboard, route: `/workspaces/${id}`, testId: "ws-tab-overview" },
+      { key: "connect" as const, label: "连接", icon: Terminal, route: `/workspaces/${id}/connect`, testId: "ws-tab-connect" },
+      { key: "ingress" as const, label: "域名接入", icon: Globe, route: `/workspaces/${id}/ingress`, testId: "ws-tab-ingress" },
+      { key: "history" as const, label: "操作历史", icon: ScrollText, route: `/workspaces/${id}/history`, testId: "ws-tab-history" },
     ],
     [id],
   );
@@ -476,6 +478,7 @@ export function MachinePage() {
                 label={tab.label}
                 icon={tab.icon}
                 isActive={section === tab.key}
+                testId={tab.testId}
                 onClick={() => navigate(tab.route)}
               />
             ))}

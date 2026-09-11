@@ -85,10 +85,11 @@ interface NavTabItemProps {
   isActive: boolean;
   onClick: () => void;
   index: number;
+  testId: string;
   registerItem: (index: number, element: HTMLElement | null) => void;
 }
 
-function NavTabItem({ label, icon: Icon, isActive, onClick, index, registerItem }: NavTabItemProps) {
+function NavTabItem({ label, icon: Icon, isActive, onClick, index, testId, registerItem }: NavTabItemProps) {
   const ref = useRef<HTMLButtonElement>(null);
   useRegisterFluidHoverItem(registerItem, index, ref);
 
@@ -96,6 +97,7 @@ function NavTabItem({ label, icon: Icon, isActive, onClick, index, registerItem 
     <button
       ref={ref}
       type="button"
+      data-testid={testId}
       onClick={onClick}
       className={cn(
         "relative z-10 flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring whitespace-nowrap cursor-pointer select-none",
@@ -321,10 +323,10 @@ export function ProjectDetailPage() {
   const diskPct = calculatePercentage(usage?.disk_bytes, project.budget_disk_bytes);
 
   const navTabs = [
-    { key: "overview", label: "项目概览", icon: LayoutDashboard, route: `/projects/${id}` },
-    { key: "workspaces", label: "工作区服务器", icon: Box, route: `/projects/${id}/workspaces` },
-    { key: "members", label: "成员与权限", icon: Users, route: `/projects/${id}/members` },
-    { key: "settings", label: "设置与预算", icon: Settings, route: `/projects/${id}/settings` },
+    { key: "overview", label: "项目概览", icon: LayoutDashboard, route: `/projects/${id}`, testId: "project-tab-overview" },
+    { key: "workspaces", label: "工作区服务器", icon: Box, route: `/projects/${id}/workspaces`, testId: "project-tab-workspaces" },
+    { key: "members", label: "成员与权限", icon: Users, route: `/projects/${id}/members`, testId: "project-tab-members" },
+    { key: "settings", label: "设置与预算", icon: Settings, route: `/projects/${id}/settings`, testId: "project-tab-settings" },
   ];
 
   return (
@@ -437,6 +439,7 @@ export function ProjectDetailPage() {
         <div
           ref={tabsRef}
           className="flex md:hidden relative items-center gap-1 overflow-x-auto pt-2 border-t border-border/60 scrollbar-none"
+          data-testid="project-mobile-tabs"
           {...tabsHover.handlers}
         >
           <FluidHoverHighlight hover={tabsHover} className="rounded-lg bg-hover" />
@@ -448,6 +451,7 @@ export function ProjectDetailPage() {
               label={tab.label}
               icon={tab.icon}
               isActive={activeSection === tab.key}
+              testId={tab.testId}
               onClick={() => navigate(tab.route)}
             />
           ))}
@@ -766,6 +770,7 @@ export function ProjectDetailPage() {
                 type="button"
                 variant="outline"
                 size="compact"
+                data-testid="ws-refresh"
                 onClick={() => void refetchWs()}
                 className="h-8 px-3 text-xs gap-1.5 shrink-0"
               >
@@ -783,7 +788,7 @@ export function ProjectDetailPage() {
                 canApprove={canApproveRole(project.my_role, me?.platform_role)}
                 platformRole={me?.platform_role}
                 trigger={
-                  <Button size="compact" className="h-8 px-3 text-xs font-medium gap-1.5 shrink-0">
+                  <Button size="compact" data-testid="ws-create" className="h-8 px-3 text-xs font-medium gap-1.5 shrink-0">
                     <Plus className="size-3.5" />
                     新建工作区
                   </Button>

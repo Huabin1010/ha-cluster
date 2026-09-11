@@ -203,6 +203,7 @@ export function DockerRegistriesPage() {
                   type="button"
                   variant="outline"
                   size="compact"
+                  data-testid="registries-refresh"
                   onClick={() => void load()}
                   disabled={loading}
                   className="h-8 px-3 text-xs gap-1.5 shrink-0"
@@ -229,6 +230,7 @@ export function DockerRegistriesPage() {
                       <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
                         <Field label="仓库标识名称">
                           <Input
+                            data-testid="registries-name"
                             placeholder="例如：Nexus 私服 / ACR"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
@@ -238,6 +240,7 @@ export function DockerRegistriesPage() {
                         </Field>
                         <Field label="Registry 服务器地址">
                           <Input
+                            data-testid="registries-server"
                             placeholder="例如：registry.example.com 或 192.168.1.9:5000"
                             value={server}
                             onChange={(e) => setServer(e.target.value)}
@@ -248,6 +251,7 @@ export function DockerRegistriesPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Field label="用户名">
                             <Input
+                              data-testid="registries-username"
                               placeholder="docker pull 登录账号"
                               value={username}
                               onChange={(e) => setUsername(e.target.value)}
@@ -256,6 +260,7 @@ export function DockerRegistriesPage() {
                           </Field>
                           <Field label="密码 / Access Token">
                             <Input
+                              data-testid="registries-password"
                               type="password"
                               placeholder="登录密码或访问令牌"
                               value={password}
@@ -347,7 +352,7 @@ export function DockerRegistriesPage() {
           </div>
         ) : (
           <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-            <Table className="min-w-[780px]">
+            <Table data-testid="registries-table" className="min-w-[780px]">
               <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
                 <TableRow className="border-b border-border/60 hover:bg-transparent">
                   <TableHead className="py-2.5">
@@ -384,7 +389,7 @@ export function DockerRegistriesPage() {
               </TableHeader>
               <TableBody>
                 {rows.map((r) => (
-                  <TableRow key={r.id}>
+                  <TableRow key={r.id} data-testid="registries-row">
                     <TableCell className="py-2.5 font-medium whitespace-nowrap text-foreground">
                       <div className="inline-flex items-center gap-2">
                         <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] shrink-0" />
@@ -402,6 +407,7 @@ export function DockerRegistriesPage() {
                     <TableCell className="py-2.5 whitespace-nowrap">
                       <Badge
                         variant={r.auto_inject ? "ok" : "outline"}
+                        data-testid="registries-inject-toggle"
                         className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                         onClick={() => void toggleInject(r)}
                       >
@@ -424,6 +430,7 @@ export function DockerRegistriesPage() {
                           type="button"
                           variant="outline"
                           size="compact"
+                          data-testid="registries-test"
                           disabled={testingId === r.id}
                           className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs px-2"
                           onClick={() => void testRow(r)}
@@ -435,6 +442,7 @@ export function DockerRegistriesPage() {
                           type="button"
                           variant="destructive"
                           size="compact"
+                          data-testid="registries-delete"
                           className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs px-2"
                           onClick={() => setDeleteTarget(r)}
                         >
@@ -462,8 +470,8 @@ export function DockerRegistriesPage() {
             </AlertDialogDescription>
           </AlertDialogBody>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => void removeRow()}>确定删除</AlertDialogAction>
+            <AlertDialogCancel data-testid="confirm-cancel">取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" data-testid="confirm-ok" onClick={() => void removeRow()}>确定删除</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
