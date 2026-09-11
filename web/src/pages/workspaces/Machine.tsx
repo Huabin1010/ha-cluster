@@ -16,6 +16,8 @@ import {
   Terminal,
   Copy,
   Info,
+  Plus,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { api, friendlyError, isApiError, type AuthUser } from "@/providers";
@@ -65,6 +67,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type Section = "overview" | "connect" | "ingress" | "history";
 
@@ -158,6 +169,20 @@ function viaLabel(meta?: Record<string, unknown>): string {
   return via;
 }
 
+function ingressStatusLabel(status: string): string {
+  if (status === "active") return "已生效";
+  if (status === "pending_approval") return "待审批";
+  if (status === "rejected") return "已驳回";
+  return status;
+}
+
+function ingressStatusVariant(status: string): "ok" | "warn" | "danger" | "outline" {
+  if (status === "active") return "ok";
+  if (status === "rejected") return "danger";
+  if (status === "pending_approval") return "warn";
+  return "outline";
+}
+
 function isConnectAction(action: string): boolean {
   return action.startsWith("ssh.");
 }
@@ -216,6 +241,7 @@ export function MachinePage() {
   const [formErr, setFormErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [secondOpen, setSecondOpen] = useState(false);
+  const [ingressOpen, setIngressOpen] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [pendingBody, setPendingBody] = useState<Record<string, unknown> | null>(null);
   const [logs, setLogs] = useState<WsAudit[]>([]);
@@ -296,6 +322,15 @@ export function MachinePage() {
     else toast.show("复制失败，请手动选择命令", "error");
   }
 
+  function resetIngressForm() {
+    setDomain("");
+    setPort("8080");
+    setPreset("nocache");
+    setExtraNginx("");
+    setShowExtra(false);
+    setFormErr("");
+  }
+
   async function submitIngress(confirmSecond: boolean) {
     setFormErr("");
     setBusy(true);
@@ -308,8 +343,8 @@ export function MachinePage() {
     };
     try {
       await api(`/workspaces/${id}/ingress`, { method: "POST", body: JSON.stringify(body) });
-      setDomain("");
-      setExtraNginx("");
+      resetIngressForm();
+      setIngressOpen(false);
       toast.show("已接入域名，请按提示修改 DNS", "success");
       await loadIngress();
     } catch (e) {
@@ -844,109 +879,129 @@ export function MachinePage() {
         {section === "ingress" && (
           <Card>
             <CardHeader>
-              <CardTitle>域名接入</CardTitle>
-              <CardDescription>
-                {meta?.note || "把你的域名 A 记录指到平台公网入口，我们按 Host 分流到这台隔离主机。默认每台机器只暴露一个服务端口。"}
-              </CardDescription>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="inline-flex items-center gap-2">
+                    <Globe className="size-4 shrink-0 text-primary" />
+                    域名接入
+                  </CardTitle>
+                  <CardDescription className="mt-1.5">
+                    {meta?.note ||
+                      "把你的域名 A 记录指到平台公网入口，我们按 Host 分流到这台隔离主机。默认每台机器只暴露一个服务端口。"}
+                  </CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  data-testid="ing-add"
+                  disabled={!canConnect}
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                  onClick={() => setIngressOpen(true)}
+                >
+                  <Plus className="size-4 shrink-0" />
+                  接入域名
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="grid gap-4">
               {meta && (
                 <Alert>
-                  <AlertDescription>
+                  <AlertDescription className="break-words min-w-0">
                     公网入口：<span className="font-mono">{meta.public_host}</span>
                     。在域名服务商添加 <span className="font-mono">A → {meta.public_host}</span>。
                   </AlertDescription>
                 </Alert>
               )}
-              <form className="grid gap-3" onSubmit={(e) => void onIngress(e)}>
-                <Field label="你的域名">
-                  <Input data-testid="ing-domain" placeholder="app.example.com" value={domain} onChange={(e) => setDomain(e.target.value)} required />
-                </Field>
-                <Field label="主机内服务端口">
-                  <Input data-testid="ing-port" inputMode="numeric" value={port} onChange={(e) => setPort(e.target.value)} required />
-                </Field>
-                <Field label="反代预设">
-                  <SelectBox
-                    testId="ing-preset"
-                    value={preset}
-                    onValueChange={setPreset}
-                    options={(meta?.presets ?? [{ id: "nocache", label: "无缓存（默认）" }]).map((p) => ({
-                      value: p.id,
-                      label: p.label,
-                    }))}
-                  />
-                </Field>
-                {meta?.presets && (
-                  <p className="m-0 text-xs text-muted-foreground">
-                    {meta.presets.find((p) => p.id === preset)?.description ||
-                      "默认「无缓存」：关闭缓存与缓冲，超时 3600s。"}
-                  </p>
-                )}
-                <Button type="button" variant="ghost" className="h-auto w-fit px-0 text-sm" onClick={() => setShowExtra((v) => !v)}>
-                  {showExtra ? "收起自定义反代指令" : "自定义反代指令（可选）"}
-                </Button>
-                {showExtra && (
-                  <Field label="追加到 location 内的 nginx 指令">
-                    <Textarea
-                      data-testid="ing-extra"
-                      rows={4}
-                      placeholder={"proxy_set_header X-Foo bar;\nadd_header X-Bar baz;"}
-                      value={extraNginx}
-                      onChange={(e) => setExtraNginx(e.target.value)}
-                    />
-                  </Field>
-                )}
-                {formErr && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{formErr}</AlertDescription>
-                  </Alert>
-                )}
-                <Button data-testid="ing-submit" disabled={busy || !canConnect} type="submit">
-                  {busy ? "提交中…" : "接入域名"}
-                </Button>
-              </form>
-              {routes.length > 0 && (
-                <div className="grid gap-3">
-                  {routes.map((rt) => (
-                    <div key={rt.id} className="grid gap-2 rounded-md border border-border p-3" data-testid="ing-row">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <span className="font-medium">{rt.domain}</span>
-                          <span className="ml-2 text-sm text-muted-foreground">
-                            → :{rt.port} · {rt.preset}
-                          </span>
-                          <Badge
-                            variant={rt.status === "active" ? "ok" : rt.status === "rejected" ? "danger" : "warn"}
-                            className="ml-2"
-                          >
-                            {rt.status === "active" ? "已生效" : rt.status === "pending_approval" ? "待审批" : rt.status === "rejected" ? "已驳回" : rt.status}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {rt.status === "pending_approval" && (
-                            <>
-                              <Button type="button" variant="outline" size="sm" onClick={() => void approveRoute(rt.id)}>
-                                批准
-                              </Button>
-                              <Button type="button" variant="outline" size="sm" onClick={() => void rejectRoute(rt.id)}>
-                                驳回
-                              </Button>
-                            </>
-                          )}
-                          <Button type="button" variant="ghost" size="sm" onClick={() => void removeRoute(rt.id)}>
-                            移除
-                          </Button>
-                        </div>
-                      </div>
-                      {rt.reject_reason && (
-                        <p className="m-0 text-sm text-destructive">驳回原因：{rt.reject_reason}</p>
-                      )}
-                      {rt.dns_hint && <p className="m-0 text-sm text-muted-foreground">{rt.dns_hint}</p>}
-                      {rt.nginx_preview && (
-                        <pre className="mono m-0 max-h-48 overflow-auto rounded-lg border border-border/60 bg-(--token-box-bg) p-3 text-xs text-foreground">{rt.nginx_preview}</pre>
-                      )}
-                    </div>
-                  ))}
+              {routes.length === 0 ? (
+                <p className="m-0 text-sm text-muted-foreground">还没有接入域名。点击「接入域名」添加第一条规则。</p>
+              ) : (
+                <div className="w-full overflow-x-auto rounded-xl border border-border/80">
+                  <Table data-testid="ing-table" className="min-w-[640px]">
+                    <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
+                      <TableRow>
+                        <TableHead className="min-w-0">域名</TableHead>
+                        <TableHead className="w-[90px] whitespace-nowrap">端口</TableHead>
+                        <TableHead className="w-[120px] whitespace-nowrap">预设</TableHead>
+                        <TableHead className="w-[110px] whitespace-nowrap">状态</TableHead>
+                        <TableHead className="w-[180px] whitespace-nowrap text-right">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {routes.map((rt) => {
+                        const presetLabel =
+                          meta?.presets?.find((p) => p.id === rt.preset)?.label ?? rt.preset;
+                        return (
+                          <TableRow key={rt.id} data-testid="ing-row">
+                            <TableCell className="min-w-0 max-w-[280px]">
+                              <div className="grid min-w-0 gap-1">
+                                <Hint label={rt.domain} className="font-medium truncate block">
+                                  {rt.domain}
+                                </Hint>
+                                {rt.dns_hint && (
+                                  <p className="m-0 text-xs text-muted-foreground truncate">{rt.dns_hint}</p>
+                                )}
+                                {rt.reject_reason && (
+                                  <p className="m-0 text-xs text-destructive break-words min-w-0">
+                                    驳回原因：{rt.reject_reason}
+                                  </p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap font-mono text-sm">:{rt.port}</TableCell>
+                            <TableCell className="whitespace-nowrap text-sm">
+                              <Hint label={rt.preset} className="font-mono text-xs">
+                                {presetLabel}
+                              </Hint>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge
+                                variant={ingressStatusVariant(rt.status)}
+                                className="inline-flex items-center whitespace-nowrap shrink-0"
+                              >
+                                <Hint label={rt.status}>{ingressStatusLabel(rt.status)}</Hint>
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-right">
+                              <div className="inline-flex items-center justify-end gap-1 shrink-0">
+                                {rt.status === "pending_approval" && (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="compact"
+                                      className="inline-flex items-center whitespace-nowrap shrink-0"
+                                      onClick={() => void approveRoute(rt.id)}
+                                    >
+                                      批准
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="compact"
+                                      className="inline-flex items-center whitespace-nowrap shrink-0"
+                                      onClick={() => void rejectRoute(rt.id)}
+                                    >
+                                      驳回
+                                    </Button>
+                                  </>
+                                )}
+                                <Hint label="移除域名">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="compact"
+                                    className="inline-flex size-7 items-center justify-center p-0 shrink-0"
+                                    onClick={() => void removeRoute(rt.id)}
+                                  >
+                                    <Trash2 className="size-3.5 shrink-0" />
+                                  </Button>
+                                </Hint>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>
@@ -1012,6 +1067,96 @@ export function MachinePage() {
           </Card>
         )}
       </div>
+
+      <Dialog
+        open={ingressOpen}
+        onOpenChange={(open) => {
+          setIngressOpen(open);
+          if (!open) resetIngressForm();
+        }}
+      >
+        <DialogContent size="lg" className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>接入域名</DialogTitle>
+            <DialogDescription className="break-words min-w-0">
+              {meta
+                ? `将域名 A 记录指向 ${meta.public_host}，平台按 Host 头转发到这台主机内的服务端口。`
+                : "将域名 A 记录指向平台公网入口，平台按 Host 头转发到这台主机内的服务端口。"}
+            </DialogDescription>
+          </DialogHeader>
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={(e) => void onIngress(e)}>
+            <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
+              <Field label="你的域名">
+                <Input
+                  data-testid="ing-domain"
+                  placeholder="app.example.com"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="主机内服务端口">
+                <Input
+                  data-testid="ing-port"
+                  inputMode="numeric"
+                  value={port}
+                  onChange={(e) => setPort(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="反代预设">
+                <SelectBox
+                  testId="ing-preset"
+                  value={preset}
+                  onValueChange={setPreset}
+                  options={(meta?.presets ?? [{ id: "nocache", label: "无缓存（默认）" }]).map((p) => ({
+                    value: p.id,
+                    label: p.label,
+                  }))}
+                />
+              </Field>
+              {meta?.presets && (
+                <p className="m-0 text-xs text-muted-foreground break-words min-w-0">
+                  {meta.presets.find((p) => p.id === preset)?.description ||
+                    "默认「无缓存」：关闭缓存与缓冲，超时 3600s。"}
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-fit px-0 text-sm"
+                onClick={() => setShowExtra((v) => !v)}
+              >
+                {showExtra ? "收起自定义反代指令" : "自定义反代指令（可选）"}
+              </Button>
+              {showExtra && (
+                <Field label="追加到 location 内的 nginx 指令">
+                  <Textarea
+                    data-testid="ing-extra"
+                    rows={4}
+                    placeholder={"proxy_set_header X-Foo bar;\nadd_header X-Bar baz;"}
+                    value={extraNginx}
+                    onChange={(e) => setExtraNginx(e.target.value)}
+                  />
+                </Field>
+              )}
+              {formErr && (
+                <Alert variant="destructive">
+                  <AlertDescription className="break-words min-w-0">{formErr}</AlertDescription>
+                </Alert>
+              )}
+            </DialogBody>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIngressOpen(false)}>
+                取消
+              </Button>
+              <Button data-testid="ing-submit" disabled={busy || !canConnect} type="submit">
+                {busy ? "提交中…" : "接入域名"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={secondOpen} onOpenChange={setSecondOpen}>
         <AlertDialogContent>

@@ -16,6 +16,7 @@ test.describe("PW-4 机器连接与域名", () => {
     await page.getByTestId("ws-copy-ssh").click();
 
     await page.goto(`/workspaces/${ws.id}/ingress`);
+    await page.getByTestId("ing-add").click();
     await page.getByTestId("ing-domain").fill("app.example.com");
     await page.getByTestId("ing-port").fill("8080");
     await expect(page.getByTestId("ing-submit")).toBeEnabled();
