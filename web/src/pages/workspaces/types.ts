@@ -239,3 +239,62 @@ export function canApproveRole(projectRole?: string, platformRole?: string): boo
   if (platformRole === "platform_admin") return true;
   return projectRole === "owner" || projectRole === "admin";
 }
+
+/** 控制面仍在推进、界面应自动轮询直到稳态 */
+const TRANSIENT_WORKSPACE_STATUSES = new Set([
+  "provisioning",
+  "destroying",
+  "requested",
+  "destroy_requested",
+  "destroy_pending_platform",
+]);
+
+export const WORKSPACE_POLL_INTERVAL_MS = 3_000;
+/** 创建/启停等操作后，即使首刷尚未看到过渡态也继续拉一段时间 */
+export const WORKSPACE_POLL_AFTER_MUTATION_MS = 90_000;
+
+export function workspaceNeedsPoll(ws: Pick<Workspace, "status" | "resize_status">): boolean {
+  if (ws.resize_status === "pending") return true;
+  return TRANSIENT_WORKSPACE_STATUSES.has(ws.status);
+}
+
+export function workspacePollInterval(
+  workspaces:
+    | readonly Pick<Workspace, "status" | "resize_status">[]
+    | Pick<Workspace, "status" | "resize_status">
+    | null
+    | undefined,
+): number | false {
+  if (!workspaces) return false;
+  const list = Array.isArray(workspaces) ? workspaces : [workspaces];
+  return list.some(workspaceNeedsPoll) ? WORKSPACE_POLL_INTERVAL_MS : false;
+}
+
+type PollStatus = Pick<Workspace, "status" | "resize_status">;
+
+function isPollStatus(v: unknown): v is PollStatus {
+  return !!v && typeof v === "object" && "status" in v && typeof (v as PollStatus).status === "string";
+}
+
+/**
+ * Refine 类型写成 (data, query)，但 TanStack Query v5 运行时只把 Query 当第一个参数传入。
+ * 两种形状都认：Query.state.data.data 与 GetListResponse.data。
+ */
+export function workspaceListQueryPollInterval(data: unknown): number | false {
+  if (!data || typeof data !== "object") return false;
+  const q = data as { state?: { data?: { data?: unknown } }; data?: unknown };
+  const fromQuery = q.state?.data?.data;
+  if (Array.isArray(fromQuery)) return workspacePollInterval(fromQuery.filter(isPollStatus));
+  if (Array.isArray(q.data)) return workspacePollInterval(q.data.filter(isPollStatus));
+  return false;
+}
+
+/** Refine `useOne` 的 `refetchInterval`（同样兼容 Query / GetOneResponse） */
+export function workspaceDetailQueryPollInterval(data: unknown): number | false {
+  if (!data || typeof data !== "object") return false;
+  const q = data as { state?: { data?: { data?: unknown } }; data?: unknown };
+  const fromQuery = q.state?.data?.data;
+  if (isPollStatus(fromQuery)) return workspacePollInterval(fromQuery);
+  if (isPollStatus(q.data)) return workspacePollInterval(q.data);
+  return false;
+}

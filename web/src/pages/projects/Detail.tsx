@@ -37,6 +37,9 @@ import {
   statusLabel,
   workspaceStatusVariant,
   workspaceStatusDotClass,
+  WORKSPACE_POLL_AFTER_MUTATION_MS,
+  WORKSPACE_POLL_INTERVAL_MS,
+  workspaceListQueryPollInterval,
   type Workspace,
   type ProjectOption,
 } from "@/pages/workspaces/types";
@@ -126,6 +129,7 @@ export function ProjectDetailPage() {
   const { mutate: patch, isLoading: savingBudget } = useUpdate();
   const { mutate: patchMeta, isLoading: savingMeta } = useUpdate();
   const { mutate: remove, isLoading: removing } = useDelete();
+  const wsPollUntilRef = useRef(0);
 
   // 当前项目下的工作区列表
   const {
@@ -137,6 +141,12 @@ export function ProjectDetailPage() {
     pagination: { mode: "off" },
     filters: id ? [{ field: "project_id", operator: "eq", value: id }] : [],
     errorNotification: false,
+    queryOptions: {
+      refetchInterval: (data) => {
+        if (Date.now() < wsPollUntilRef.current) return WORKSPACE_POLL_INTERVAL_MS;
+        return workspaceListQueryPollInterval(data);
+      },
+    },
   });
 
   const [usage, setUsage] = useState<ProjectUsage | null>(null);
@@ -781,6 +791,7 @@ export function ProjectDetailPage() {
                 projects={projectOptions}
                 initialProjectId={id}
                 onCreated={() => {
+                  wsPollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
                   void refetchWs();
                   void loadUsage();
                 }}
@@ -871,6 +882,7 @@ export function ProjectDetailPage() {
                           projectId={id}
                           onBusy={setBusyWsId}
                           onRefresh={() => {
+                            wsPollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
                             void refetchWs();
                             void loadUsage();
                           }}

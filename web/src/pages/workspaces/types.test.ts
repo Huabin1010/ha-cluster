@@ -10,6 +10,11 @@ import {
   canApproveRole,
   workspaceStatusVariant,
   workspaceStatusDotClass,
+  workspaceNeedsPoll,
+  workspacePollInterval,
+  workspaceListQueryPollInterval,
+  workspaceDetailQueryPollInterval,
+  WORKSPACE_POLL_INTERVAL_MS,
 } from "./types";
 import { formatUsageHint } from "./format";
 
@@ -60,6 +65,56 @@ describe("workspace statusLabel", () => {
     expect(workspaceStatusDotClass("failed")).not.toContain("bg-emerald-500");
     expect(workspaceStatusDotClass("requested")).toContain("bg-amber-500");
     expect(workspaceStatusDotClass("stopped")).toContain("bg-muted-foreground");
+  });
+});
+
+describe("workspace polling", () => {
+  const base = { status: "running", resize_status: undefined as string | undefined };
+
+  it("polls while provisioning / destroying / awaiting approval", () => {
+    expect(workspaceNeedsPoll({ ...base, status: "provisioning" })).toBe(true);
+    expect(workspaceNeedsPoll({ ...base, status: "destroying" })).toBe(true);
+    expect(workspaceNeedsPoll({ ...base, status: "requested" })).toBe(true);
+    expect(workspaceNeedsPoll({ ...base, status: "destroy_requested" })).toBe(true);
+    expect(workspaceNeedsPoll({ ...base, status: "destroy_pending_platform" })).toBe(true);
+    expect(workspaceNeedsPoll({ ...base, status: "running", resize_status: "pending" })).toBe(true);
+  });
+
+  it("stops polling on steady states", () => {
+    expect(workspaceNeedsPoll({ ...base, status: "running" })).toBe(false);
+    expect(workspaceNeedsPoll({ ...base, status: "stopped" })).toBe(false);
+    expect(workspaceNeedsPoll({ ...base, status: "failed" })).toBe(false);
+    expect(workspacePollInterval([{ ...base, status: "running" }])).toBe(false);
+    expect(workspacePollInterval([{ ...base, status: "provisioning" }])).toBe(WORKSPACE_POLL_INTERVAL_MS);
+    expect(workspacePollInterval({ ...base, status: "provisioning" })).toBe(WORKSPACE_POLL_INTERVAL_MS);
+    expect(workspacePollInterval(undefined)).toBe(false);
+  });
+
+  it("reads Refine useList/useOne data payloads", () => {
+    const provisioning = { ...base, status: "provisioning" };
+    expect(workspaceListQueryPollInterval({ data: [provisioning] })).toBe(WORKSPACE_POLL_INTERVAL_MS);
+    expect(workspaceListQueryPollInterval({ data: [{ ...base, status: "running" }] })).toBe(false);
+    expect(workspaceListQueryPollInterval(undefined)).toBe(false);
+    expect(workspaceDetailQueryPollInterval({ data: provisioning })).toBe(WORKSPACE_POLL_INTERVAL_MS);
+  });
+
+  it("reads TanStack Query v5 Query objects passed as the first argument", () => {
+    const provisioning = { ...base, status: "provisioning" };
+    expect(
+      workspaceListQueryPollInterval({
+        state: { data: { data: [provisioning] } },
+      }),
+    ).toBe(WORKSPACE_POLL_INTERVAL_MS);
+    expect(
+      workspaceDetailQueryPollInterval({
+        state: { data: { data: provisioning } },
+      }),
+    ).toBe(WORKSPACE_POLL_INTERVAL_MS);
+    expect(
+      workspaceDetailQueryPollInterval({
+        state: { data: { data: { ...base, status: "running" } } },
+      }),
+    ).toBe(false);
   });
 });
 

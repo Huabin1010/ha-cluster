@@ -22,7 +22,7 @@ import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { spring } from "@/lib/springs";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/ui/format";
-import type { Workspace } from "./types";
+import { workspaceDetailQueryPollInterval, type Workspace } from "./types";
 
 interface WorkspaceSubSidebarProps {
   workspaceId: string;
@@ -68,7 +68,11 @@ export function WorkspaceSubSidebar({ workspaceId, onNavigate }: WorkspaceSubSid
   const location = useLocation();
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const { data } = useOne<Workspace>({ resource: "workspaces", id: workspaceId });
+  const { data } = useOne<Workspace>({
+    resource: "workspaces",
+    id: workspaceId,
+    queryOptions: { refetchInterval: workspaceDetailQueryPollInterval },
+  });
   const ws = data?.data;
 
   const navRef = useRef<HTMLElement>(null);

@@ -35,6 +35,7 @@ import {
   workspaceSpec,
   workspaceStatusDotClass,
   workspaceStatusVariant,
+  workspaceDetailQueryPollInterval,
 } from "./types";
 import { ImportKeyDialog } from "./ImportKeyDialog";
 import { WorkspaceTerminalDialog } from "./WorkspaceTerminalDialog";
@@ -226,7 +227,13 @@ export function MachinePage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { data: me } = useGetIdentity<AuthUser>();
-  const { data, isLoading, isError, error } = useOne<Workspace>({ resource: "workspaces", id });
+  const { data, isLoading, isError, error } = useOne<Workspace>({
+    resource: "workspaces",
+    id,
+    queryOptions: {
+      refetchInterval: workspaceDetailQueryPollInterval,
+    },
+  });
   const ws = data?.data;
   const section = parseSection(location.pathname, id);
 

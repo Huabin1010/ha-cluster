@@ -6,7 +6,14 @@ import { isInsufficientCapacity, type AuthUser } from "@/providers";
 import { Banner, Loading, useToast } from "@/ui";
 import { CreateForm } from "@/pages/workspaces/CreateForm";
 import { WorkspaceRow } from "@/pages/workspaces/WorkspaceRow";
-import { canApproveRole, ProjectOption, Workspace } from "@/pages/workspaces/types";
+import {
+  canApproveRole,
+  ProjectOption,
+  Workspace,
+  WORKSPACE_POLL_AFTER_MUTATION_MS,
+  WORKSPACE_POLL_INTERVAL_MS,
+  workspaceListQueryPollInterval,
+} from "@/pages/workspaces/types";
 import { Button } from "@/components/ui/button";
 import { SelectBox } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +34,7 @@ export function WorkspacesPage() {
   const [insufficient, setInsufficient] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const reloadUsageRef = useRef<(() => void) | undefined>(undefined);
+  const pollUntilRef = useRef(0);
 
   const showError = useCallback((msg: string, isInsufficient = false) => {
     setErr(msg);
@@ -42,6 +50,12 @@ export function WorkspacesPage() {
     pagination: { mode: "off" },
     filters: projectFilter ? [{ field: "project_id", operator: "eq", value: projectFilter }] : [],
     errorNotification: false,
+    queryOptions: {
+      refetchInterval: (data) => {
+        if (Date.now() < pollUntilRef.current) return WORKSPACE_POLL_INTERVAL_MS;
+        return workspaceListQueryPollInterval(data);
+      },
+    },
   });
 
   const projects = projectData?.data ?? [];
@@ -70,7 +84,12 @@ export function WorkspacesPage() {
     setSearchParams(next, { replace: true });
   }
 
+  function kickPoll() {
+    pollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
+  }
+
   function afterMutation() {
+    kickPoll();
     reloadUsageRef.current?.();
     void refetch();
   }
@@ -352,7 +371,10 @@ export function WorkspacesPage() {
                   mySshAccess={selected?.my_ssh_access}
                   projectId={projectFilter}
                   onBusy={setBusyId}
-                  onRefresh={() => void refetch()}
+                  onRefresh={() => {
+                    kickPoll();
+                    void refetch();
+                  }}
                   onToast={(m) => toast.show(m, "success")}
                   onError={(e) => showError(e)}
                 />
