@@ -2,21 +2,33 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useGetIdentity, useOne } from "@refinedev/core";
 import {
+  Activity,
+  AlertTriangle,
   ArrowLeft,
+  ChevronRight,
+  Clock,
+  Cpu,
+  Database,
   Globe,
+  HardDrive,
   LayoutDashboard,
   ScrollText,
-  Server,
   Terminal,
 } from "lucide-react";
 import { api, friendlyError, isApiError, type AuthUser } from "@/providers";
 import { canSSH, sshAccessLabel } from "@/lib/permissions";
 import {
+  formatCpuCores,
+  formatDiskSize,
+  formatMemSize,
   formatPlanSpec,
+  hasPendingResize,
+  pendingSpec,
   ProjectOption,
   statusLabel,
   Workspace,
   workspaceSpec,
+  workspaceStatusDotClass,
   workspaceStatusVariant,
 } from "./types";
 import { ImportKeyDialog } from "./ImportKeyDialog";
@@ -34,7 +46,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader, Loading, useToast } from "@/ui";
 import { copyText, formatTime } from "@/ui/format";
 import { actionLabel } from "@/pages/ops/format";
+import { Elevated } from "@/lib/elevated";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/components/ui/tooltip";
 import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hover";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import {
@@ -219,17 +233,21 @@ export function MachinePage() {
   }, [section, loadConn]);
 
   useEffect(() => {
-    if (section !== "ingress") return;
-    void loadIngress();
+    if (section !== "ingress" && section !== "overview") return;
     api<IngressMeta>("/ingress/meta")
       .then(setMeta)
       .catch(() => setMeta(null));
-  }, [section, loadIngress]);
+  }, [section]);
 
   useEffect(() => {
-    if (section !== "history") return;
+    if (section !== "history" && section !== "overview") return;
     void loadHistory();
   }, [section, loadHistory]);
+
+  useEffect(() => {
+    if (section !== "ingress" && section !== "overview") return;
+    void loadIngress();
+  }, [section, loadIngress]);
 
   async function copy(text: string, ok: string) {
     const copied = await copyText(text);
@@ -341,10 +359,14 @@ export function MachinePage() {
   }
 
   const spec = workspaceSpec(ws);
+  const pending = pendingSpec(ws);
   const wsRunning = ws.status === "running" || ws.status === "fabric_degraded";
   const sshGranted = canSSH(projectCtx?.my_role, projectCtx?.my_ssh_access, me?.platform_role);
   const canConnect = wsRunning && sshGranted;
   const showSSHRequest = wsRunning && !sshGranted && projectCtx?.my_role === "developer";
+  const recentLogs = logs.slice(0, 5);
+  const activeRoutes = routes.filter((rt) => rt.status === "active");
+  const pendingRoutes = routes.filter((rt) => rt.status === "pending_approval");
 
   return (
     <PageFrame
@@ -361,11 +383,7 @@ export function MachinePage() {
           </div>
           <PageHeader
             title={ws.name}
-            description={
-              spec
-                ? `${ws.plan} · ${formatPlanSpec(spec)} · 独立隔离主机（即便与别的机器在同一物理节点上，进程/磁盘/网络也不互通）`
-                : `${ws.plan} · 独立隔离主机`
-            }
+            description="独立隔离主机 · 进程、磁盘与网络与其他机器互不互通"
           />
           <div
             ref={tabsRef}
@@ -392,59 +410,279 @@ export function MachinePage() {
       <div className="grid gap-6 pb-8">
         {section === "overview" && (
           <div className="grid gap-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>状态</CardDescription>
-                  <CardTitle className="text-base">
+            {ws.status === "fabric_degraded" && (
+              <Alert variant="info">
+                <AlertDescription className="inline-flex items-center gap-1.5">
+                  <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+                  网络降级：Overlay 暂不可用，控制台仍可管理；SSH 与域名接入可能受影响。
+                </AlertDescription>
+              </Alert>
+            )}
+            {hasPendingResize(ws) && pending && spec && (
+              <Alert variant="info">
+                <AlertDescription>
+                  规格变更审批中：{formatPlanSpec(spec)} → {formatPlanSpec(pending)}。
+                  审批通过后将自动生效。
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="ws-overview-stats">
+              <Elevated offset={1} shadowLevel={1} className="rounded-xl border border-border/80 p-3.5">
+                <p className="m-0 text-xs font-medium text-muted-foreground">状态</p>
+                <div className="mt-2 inline-flex items-center gap-2 whitespace-nowrap shrink-0">
+                  <span className={cn("size-2 rounded-full shrink-0", workspaceStatusDotClass(ws.status))} />
+                  <Hint label={ws.status} className="font-mono">
                     <Badge variant={workspaceStatusVariant(ws.status)}>{statusLabel(ws.status)}</Badge>
+                  </Hint>
+                </div>
+              </Elevated>
+              <Elevated offset={1} shadowLevel={1} className="rounded-xl border border-border/80 p-3.5">
+                <p className="m-0 text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                  <Cpu className="size-3.5 shrink-0 opacity-70" />
+                  规格
+                </p>
+                <p className="m-0 mt-2 text-sm font-medium whitespace-nowrap">
+                  {spec ? formatPlanSpec(spec) : ws.plan}
+                </p>
+                <p className="m-0 mt-0.5 text-[11px] text-muted-foreground font-mono truncate">{ws.plan}</p>
+              </Elevated>
+              <Elevated offset={1} shadowLevel={1} className="rounded-xl border border-border/80 p-3.5">
+                <p className="m-0 text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                  <HardDrive className="size-3.5 shrink-0 opacity-70" />
+                  节点
+                </p>
+                <p className="m-0 mt-2 text-sm font-medium truncate">{ws.node_name || "—"}</p>
+                {ws.arch && (
+                  <p className="m-0 mt-0.5 text-[11px] text-muted-foreground font-mono whitespace-nowrap">{ws.arch}</p>
+                )}
+              </Elevated>
+              <Elevated offset={1} shadowLevel={1} className="rounded-xl border border-border/80 p-3.5">
+                <p className="m-0 text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                  <Clock className="size-3.5 shrink-0 opacity-70" />
+                  创建时间
+                </p>
+                <p className="m-0 mt-2 text-sm font-medium whitespace-nowrap">{formatTime(ws.created_at)}</p>
+              </Elevated>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              {spec && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Activity className="size-4 text-primary shrink-0" />
+                      资源配额
+                    </CardTitle>
+                    <CardDescription>当前分配的 CPU、内存与磁盘硬占用（停止后仍计入项目预算）。</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-lg border border-border/80 bg-surface-1/50 px-3 py-2.5">
+                        <p className="m-0 text-[11px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                          <Cpu className="size-3 shrink-0 opacity-70" />
+                          CPU
+                        </p>
+                        <p className="m-0 mt-1 text-sm font-semibold whitespace-nowrap">{formatCpuCores(spec.cpu_milli)}</p>
+                      </div>
+                      <div className="rounded-lg border border-border/80 bg-surface-1/50 px-3 py-2.5">
+                        <p className="m-0 text-[11px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                          <Database className="size-3 shrink-0 opacity-70" />
+                          内存
+                        </p>
+                        <p className="m-0 mt-1 text-sm font-semibold whitespace-nowrap">{formatMemSize(spec.mem_bytes)}</p>
+                      </div>
+                      <div className="rounded-lg border border-border/80 bg-surface-1/50 px-3 py-2.5">
+                        <p className="m-0 text-[11px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
+                          <HardDrive className="size-3 shrink-0 opacity-70" />
+                          磁盘
+                        </p>
+                        <p className="m-0 mt-1 text-sm font-semibold whitespace-nowrap">{formatDiskSize(spec.disk_bytes)}</p>
+                      </div>
+                    </div>
+                    <p className="m-0 text-xs text-muted-foreground min-w-0 wrap-break-word">
+                      实时 CPU / 内存曲线将在 agent 上报指标后展示。
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Terminal className="size-4 text-primary shrink-0" />
+                    连接
                   </CardTitle>
+                  <CardDescription>
+                    {canConnect
+                      ? "有 SSH 权限，可直接打开网页终端或通过跳板连接。"
+                      : wsRunning
+                        ? "机器已运行，连接前需确认 SSH 权限。"
+                        : "机器尚未运行，开通后才会给出连接信息。"}
+                  </CardDescription>
                 </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>规格</CardDescription>
-                  <CardTitle className="text-base font-medium">
-                    {spec ? formatPlanSpec(spec) : ws.plan}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>节点</CardDescription>
-                  <CardTitle className="text-base font-medium">{ws.node_name || "—"}</CardTitle>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardDescription>创建时间</CardDescription>
-                  <CardTitle className="text-base font-medium">{formatTime(ws.created_at)}</CardTitle>
-                </CardHeader>
+                <CardContent className="grid gap-3">
+                  {!wsRunning && (
+                    <p className="m-0 text-sm text-muted-foreground">当前状态：{statusLabel(ws.status)}。</p>
+                  )}
+                  {wsRunning && !sshGranted && (
+                    <Alert variant="info">
+                      <AlertDescription>
+                        SSH 状态：{sshAccessLabel(projectCtx?.my_ssh_access)}。
+                        {showSSHRequest && ws.project_id ? (
+                          <>
+                            {" "}
+                            <Link className="underline" to={`/projects/${ws.project_id}/members`}>
+                              前往成员页申请
+                            </Link>
+                          </>
+                        ) : (
+                          " 请联系项目管理员授权。"
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {canConnect && (
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" data-testid="ws-overview-terminal" onClick={() => setTermOpen(true)}>
+                        <Terminal className="size-4 shrink-0" />
+                        打开网页终端
+                      </Button>
+                      <Button type="button" variant="outline" onClick={() => navigate(`/workspaces/${id}/connect`)}>
+                        SSH 命令
+                        <ChevronRight className="size-3.5 shrink-0 opacity-60" />
+                      </Button>
+                      <WorkspaceTerminalDialog
+                        workspaceId={ws.id}
+                        workspaceName={ws.name}
+                        open={termOpen}
+                        onOpenChange={setTermOpen}
+                      />
+                    </div>
+                  )}
+                  {!canConnect && wsRunning && (
+                    <Button type="button" variant="outline" onClick={() => navigate(`/workspaces/${id}/connect`)}>
+                      查看连接说明
+                      <ChevronRight className="size-3.5 shrink-0 opacity-60" />
+                    </Button>
+                  )}
+                </CardContent>
               </Card>
             </div>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Server className="size-4 text-primary" />
-                  快捷操作
-                </CardTitle>
-                <CardDescription>SSH / 网页终端、域名接入和谁连过这台机器，都在左侧菜单里。</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-2">
-                <Button type="button" onClick={() => navigate(`/workspaces/${id}/connect`)}>
-                  <Terminal className="size-4" />
-                  连接
-                </Button>
-                <Button type="button" variant="outline" onClick={() => navigate(`/workspaces/${id}/ingress`)}>
-                  <Globe className="size-4" />
-                  域名接入
-                </Button>
-                <Button type="button" variant="outline" onClick={() => navigate(`/workspaces/${id}/history`)}>
-                  <ScrollText className="size-4" />
-                  操作历史
-                </Button>
-              </CardContent>
-            </Card>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Globe className="size-4 text-primary shrink-0" />
+                      域名接入
+                    </CardTitle>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="compact"
+                      className="h-7 px-2 text-xs shrink-0 whitespace-nowrap"
+                      onClick={() => navigate(`/workspaces/${id}/ingress`)}
+                    >
+                      管理
+                      <ChevronRight className="size-3.5 shrink-0 opacity-60" />
+                    </Button>
+                  </div>
+                  <CardDescription>
+                    {routes.length === 0
+                      ? "尚未接入域名，可将服务暴露到公网。"
+                      : `已配置 ${routes.length} 条规则${activeRoutes.length > 0 ? `，${activeRoutes.length} 条已生效` : ""}。`}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-2">
+                  {routes.length === 0 ? (
+                    <Button type="button" variant="outline" className="w-fit" onClick={() => navigate(`/workspaces/${id}/ingress`)}>
+                      <Globe className="size-4 shrink-0" />
+                      接入域名
+                    </Button>
+                  ) : (
+                    <>
+                      {routes.slice(0, 3).map((rt) => (
+                        <div
+                          key={rt.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-border/80 px-3 py-2 min-w-0"
+                        >
+                          <span className="text-sm font-medium truncate min-w-0">{rt.domain}</span>
+                          <Badge
+                            variant={rt.status === "active" ? "ok" : rt.status === "rejected" ? "danger" : "warn"}
+                            className="inline-flex items-center whitespace-nowrap shrink-0"
+                          >
+                            {rt.status === "active" ? "已生效" : rt.status === "pending_approval" ? "待审批" : rt.status === "rejected" ? "已驳回" : rt.status}
+                          </Badge>
+                        </div>
+                      ))}
+                      {pendingRoutes.length > 0 && (
+                        <p className="m-0 text-xs text-muted-foreground">{pendingRoutes.length} 条规则待审批。</p>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ScrollText className="size-4 text-primary shrink-0" />
+                      最近操作
+                    </CardTitle>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="compact"
+                      className="h-7 px-2 text-xs shrink-0 whitespace-nowrap"
+                      onClick={() => navigate(`/workspaces/${id}/history`)}
+                    >
+                      全部
+                      <ChevronRight className="size-3.5 shrink-0 opacity-60" />
+                    </Button>
+                  </div>
+                  <CardDescription>扩容、域名、SSH 连接等操作记录。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-2">
+                  {logsLoading ? (
+                    <Loading label="加载操作记录…" />
+                  ) : recentLogs.length === 0 ? (
+                    <p className="m-0 text-sm text-muted-foreground">还没有记录。连接或变更配置后会出现在这里。</p>
+                  ) : (
+                    recentLogs.map((row) => {
+                      const via = viaLabel(row.meta);
+                      return (
+                        <div
+                          key={row.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-border/80 px-3 py-2 min-w-0"
+                          data-testid="ws-overview-audit-row"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Badge
+                                variant={isConnectAction(row.action) ? "ok" : "outline"}
+                                className="inline-flex items-center whitespace-nowrap shrink-0"
+                              >
+                                {actionLabel(row.action)}
+                              </Badge>
+                              {row.actor_username && (
+                                <span className="text-xs text-muted-foreground truncate">{row.actor_username}</span>
+                              )}
+                            </div>
+                            {via && <p className="m-0 mt-0.5 text-[11px] text-muted-foreground truncate">{via}</p>}
+                          </div>
+                          <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0">
+                            {formatTime(row.created_at)}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         )}
 
