@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useGetIdentity, useOne } from "@refinedev/core";
 import {
@@ -14,6 +14,9 @@ import {
   LayoutDashboard,
   ScrollText,
   Terminal,
+  Copy,
+  Info,
+  Upload,
 } from "lucide-react";
 import { api, friendlyError, isApiError, type AuthUser } from "@/providers";
 import { canSSH, sshAccessLabel } from "@/lib/permissions";
@@ -64,6 +67,44 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type Section = "overview" | "connect" | "ingress" | "history";
+
+const commandBoxClass =
+  "mono min-w-0 flex-1 break-all rounded-lg border border-border/60 bg-(--token-box-bg) px-3 py-2.5 text-xs text-foreground select-all";
+
+function ConnectCommandRow({
+  label,
+  command,
+  copyTestId,
+  commandTestId,
+  onCopy,
+}: {
+  label: ReactNode;
+  command: string;
+  copyTestId?: string;
+  commandTestId?: string;
+  onCopy: () => void;
+}) {
+  return (
+    <Field label={label}>
+      <div className="flex min-w-0 items-stretch gap-2">
+        <code className={commandBoxClass} data-testid={commandTestId}>
+          {command}
+        </code>
+        <Button
+          type="button"
+          variant="outline"
+          size="compact"
+          data-testid={copyTestId}
+          className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 self-stretch px-3"
+          onClick={onCopy}
+        >
+          <Copy className="size-3.5 shrink-0 opacity-70" />
+          复制
+        </Button>
+      </div>
+    </Field>
+  );
+}
 
 type ConnInfo = {
   command: string;
@@ -717,45 +758,73 @@ export function MachinePage() {
                 </Alert>
               )}
               {canConnect && (
-                <div>
-                  <Button type="button" data-testid="ws-web-terminal" onClick={() => setTermOpen(true)}>
-                    <Terminal className="size-4" />
-                    打开网页终端
-                  </Button>
-                  <WorkspaceTerminalDialog
-                    workspaceId={ws.id}
-                    workspaceName={ws.name}
-                    open={termOpen}
-                    onOpenChange={setTermOpen}
-                  />
-                </div>
-              )}
-              {conn && canConnect && (
-                <>
-                  <Field label="SSH">
-                    <div className="flex flex-wrap gap-2">
-                      <code className="mono min-w-0 flex-1 break-all rounded-md border border-border bg-muted px-2 py-2 text-xs" data-testid="ws-ssh-cmd">
-                        {conn.command}
-                      </code>
-                      <Button type="button" data-testid="ws-copy-ssh" onClick={() => void copy(conn.command, "已复制 SSH 命令")}>
-                        复制连接
-                      </Button>
+                <Elevated
+                  offset={1}
+                  shadowLevel={1}
+                  className="rounded-xl border border-border/80 bg-surface-1 p-4 grid gap-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="m-0 text-sm font-medium text-foreground">网页终端</p>
+                      <p className="m-0 mt-0.5 text-xs text-muted-foreground wrap-break-word min-w-0">
+                        无需本机私钥，直接在浏览器打开 Shell。
+                      </p>
                     </div>
-                  </Field>
-                  {conn.scp_example && (
-                    <Field label="上传文件（scp）">
-                      <div className="flex flex-wrap gap-2">
-                        <code className="mono min-w-0 flex-1 break-all rounded-md border border-border bg-muted px-2 py-2 text-xs">{conn.scp_example}</code>
-                        <Button type="button" variant="outline" onClick={() => void copy(conn.scp_example!, "已复制 scp 命令")}>
-                          复制
-                        </Button>
+                    <Button
+                      type="button"
+                      data-testid="ws-web-terminal"
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                      onClick={() => setTermOpen(true)}
+                    >
+                      <Terminal className="size-4 shrink-0" />
+                      打开网页终端
+                    </Button>
+                    <WorkspaceTerminalDialog
+                      workspaceId={ws.id}
+                      workspaceName={ws.name}
+                      open={termOpen}
+                      onOpenChange={setTermOpen}
+                    />
+                  </div>
+                  {conn && (
+                    <>
+                      <div className="border-t border-border/60 pt-4 grid gap-4">
+                        <ConnectCommandRow
+                          label={
+                            <span className="inline-flex items-center gap-1.5 shrink-0">
+                              <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
+                              SSH
+                            </span>
+                          }
+                          command={conn.command}
+                          commandTestId="ws-ssh-cmd"
+                          copyTestId="ws-copy-ssh"
+                          onCopy={() => void copy(conn.command, "已复制 SSH 命令")}
+                        />
+                        {conn.scp_example && (
+                          <ConnectCommandRow
+                            label={
+                              <span className="inline-flex items-center gap-1.5 shrink-0">
+                                <Upload className="size-3.5 shrink-0 text-muted-foreground" />
+                                上传文件（scp）
+                              </span>
+                            }
+                            command={conn.scp_example}
+                            onCopy={() => void copy(conn.scp_example!, "已复制 scp 命令")}
+                          />
+                        )}
                       </div>
-                    </Field>
+                      {conn.note && (
+                        <p className="m-0 flex items-start gap-1.5 text-xs text-muted-foreground wrap-break-word min-w-0">
+                          <Info className="size-3.5 shrink-0 mt-0.5 opacity-70" />
+                          <span>{conn.note}</span>
+                        </p>
+                      )}
+                    </>
                   )}
-                  {conn.note && <p className="m-0 text-sm text-muted-foreground">{conn.note}</p>}
-                </>
+                </Elevated>
               )}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 pt-1 border-t border-border/60">
                 <ImportKeyDialog
                   trigger={
                     <Button type="button" data-testid="ws-import-key">
@@ -874,7 +943,7 @@ export function MachinePage() {
                       )}
                       {rt.dns_hint && <p className="m-0 text-sm text-muted-foreground">{rt.dns_hint}</p>}
                       {rt.nginx_preview && (
-                        <pre className="m-0 max-h-48 overflow-auto rounded-md bg-muted p-2 text-xs">{rt.nginx_preview}</pre>
+                        <pre className="mono m-0 max-h-48 overflow-auto rounded-lg border border-border/60 bg-(--token-box-bg) p-3 text-xs text-foreground">{rt.nginx_preview}</pre>
                       )}
                     </div>
                   ))}
