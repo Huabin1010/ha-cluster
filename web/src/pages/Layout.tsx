@@ -17,6 +17,7 @@ import {
   UserCog,
   Users,
   Container,
+  Globe,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "audit-logs": ScrollText,
   "dangerous-approvals": ScrollText,
   "docker-registries": Container,
+  "ingress-domains": Globe,
 };
 
 const NAV_TESTIDS: Record<string, string> = {
@@ -64,6 +66,7 @@ const NAV_TESTIDS: Record<string, string> = {
   "audit-logs": "nav-audit",
   "dangerous-approvals": "nav-dangerous",
   "docker-registries": "nav-docker-registries",
+  "ingress-domains": "nav-ingress-domains",
 };
 
 function readSidebarCollapsed() {
@@ -194,7 +197,7 @@ export function Layout({ children }: PropsWithChildren) {
       if (item.name === "users") return canManageUsers(me?.platform_role);
       if (item.name === "audit-logs") return canViewAudit(me?.platform_role);
       if (item.name === "dangerous-approvals") return canApproveDangerousOps(me?.platform_role);
-      if (item.name === "docker-registries") return isPlatformAdmin(me?.platform_role);
+      if (item.name === "docker-registries" || item.name === "ingress-domains") return isPlatformAdmin(me?.platform_role);
       return true;
     });
   }, [menuItems, me?.platform_role]);

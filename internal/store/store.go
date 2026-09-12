@@ -90,6 +90,13 @@ type Store interface {
 	UpdateIngress(ctx context.Context, r *models.IngressRoute) error
 	DeleteIngress(ctx context.Context, id uuid.UUID) error
 
+	CreateIngressDomainZone(ctx context.Context, z *models.IngressDomainZone) error
+	GetIngressDomainZone(ctx context.Context, id uuid.UUID) (*models.IngressDomainZone, error)
+	GetIngressDomainZoneBySuffix(ctx context.Context, suffix string) (*models.IngressDomainZone, error)
+	ListIngressDomainZones(ctx context.Context) ([]models.IngressDomainZone, error)
+	UpdateIngressDomainZone(ctx context.Context, z *models.IngressDomainZone) error
+	DeleteIngressDomainZone(ctx context.Context, id uuid.UUID) error
+
 	CreateDockerRegistry(ctx context.Context, r *models.DockerRegistry) error
 	GetDockerRegistry(ctx context.Context, id uuid.UUID) (*models.DockerRegistry, error)
 	GetDockerRegistryByServer(ctx context.Context, server string) (*models.DockerRegistry, error)

@@ -12,4 +12,5 @@ export const resources: ResourceProps[] = [
   { name: "audit-logs", list: "/audit", meta: { label: "审计", testId: "nav-audit" } },
   { name: "dangerous-approvals", list: "/dangerous-approvals", meta: { label: "危险待审", testId: "nav-dangerous" } },
   { name: "docker-registries", list: "/docker-registries", meta: { label: "镜像仓库", testId: "nav-docker-registries" } },
+  { name: "ingress-domains", list: "/ingress-domains", meta: { label: "域名配置", testId: "nav-ingress-domains" } },
 ];

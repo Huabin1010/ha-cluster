@@ -43,6 +43,7 @@ func main() {
 	log.Printf("runtime=%T (fallback=%T) store=%T", rt, localRt, st)
 	app := service.New(st, rt, secret)
 	ensureBootstrapAdmin(app)
+	app.EnsureIngressDomainZones(ctx)
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	service.StartBackgroundTasks(bgCtx, app)

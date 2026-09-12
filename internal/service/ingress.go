@@ -28,12 +28,30 @@ func PublicIngressHost() string {
 type CreateIngressInput struct {
 	WorkspaceID       uuid.UUID
 	Domain            string
+	ZoneID            *uuid.UUID
+	Prefix            string
 	Path              string
 	Port              int
 	Preset            string
 	ExtraNginx        string
 	ConfirmSecondPort bool
 	Actor             models.User
+}
+
+type createRouteParams struct {
+	WS                *models.Workspace
+	Domain            string
+	Path              string
+	Port              int
+	Preset            string
+	ExtraNginx        string
+	ConfirmSecondPort bool
+	Actor             models.User
+	Status            string
+	DomainTier        string
+	ZoneID            *uuid.UUID
+	Prefix            string
+	AutoReview        bool
 }
 
 func (a *App) annotateRoute(ctx context.Context, r *models.IngressRoute) {
@@ -116,8 +134,57 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 	if ws.Status != models.WSRunning && ws.Status != models.WSDegraded {
 		return nil, store.ErrInvalidInput
 	}
-	domain := strings.ToLower(strings.TrimSpace(in.Domain))
-	if !ingress.ValidDomain(domain) || ingress.IsSubdomainReserved(domain) {
+
+	var domain, prefix string
+	var zoneID *uuid.UUID
+	tier := models.IngressTierCustom
+
+	if in.ZoneID != nil && *in.ZoneID != uuid.Nil {
+		z, err := a.Store.GetIngressDomainZone(ctx, *in.ZoneID)
+		if err != nil {
+			return nil, err
+		}
+		if !z.Enabled || !z.RequireApproval {
+			return nil, store.ErrInvalidInput
+		}
+		prefix = strings.ToLower(strings.TrimSpace(in.Prefix))
+		if !ingress.ValidPrefix(prefix) || ingress.IsPrefixReserved(prefix) {
+			return nil, store.ErrInvalidInput
+		}
+		domain = prefix + "." + z.Suffix
+		zoneID = &z.ID
+		tier = models.IngressTierShared
+	} else {
+		domain = strings.ToLower(strings.TrimSpace(in.Domain))
+		if !ingress.ValidDomain(domain) || ingress.IsSubdomainReserved(domain) {
+			return nil, store.ErrInvalidInput
+		}
+		hit, err := a.domainMatchesConfiguredZone(ctx, domain)
+		if err != nil {
+			return nil, err
+		}
+		if hit {
+			return nil, store.ErrInvalidInput
+		}
+	}
+
+	status := models.IngressPendingApproval
+	autoReview := false
+	if canBypassIngressApproval(*mem, in.Actor) {
+		status = models.IngressActive
+		autoReview = true
+	}
+
+	return a.createIngressRoute(ctx, createRouteParams{
+		WS: ws, Domain: domain, Path: in.Path, Port: in.Port, Preset: in.Preset,
+		ExtraNginx: in.ExtraNginx, ConfirmSecondPort: in.ConfirmSecondPort,
+		Actor: in.Actor, Status: status, DomainTier: tier, ZoneID: zoneID, Prefix: prefix,
+		AutoReview: autoReview,
+	})
+}
+
+func (a *App) createIngressRoute(ctx context.Context, in createRouteParams) (*models.IngressRoute, error) {
+	if !ingress.ValidDomain(in.Domain) || ingress.IsSubdomainReserved(in.Domain) {
 		return nil, store.ErrInvalidInput
 	}
 	if in.Port < 1 || in.Port > 65535 {
@@ -134,7 +201,7 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 	if err != nil {
 		return nil, store.ErrInvalidInput
 	}
-	existing, err := a.Store.ListIngress(ctx, &in.WorkspaceID)
+	existing, err := a.Store.ListIngress(ctx, &in.WS.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,20 +213,23 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 		return nil, store.ErrSecondPort
 	}
 
-	status := models.IngressPendingApproval
 	var reviewedBy *uuid.UUID
 	var reviewedAt *time.Time
-	if mem.Role == models.RoleOwner || in.Actor.PlatformRole == models.RolePlatformAdmin {
-		status = models.IngressActive
+	if in.AutoReview {
 		reviewedBy = &in.Actor.ID
 		now := time.Now()
 		reviewedAt = &now
 	}
+	tier := in.DomainTier
+	if tier == "" {
+		tier = models.IngressTierCustom
+	}
 
 	r := &models.IngressRoute{
-		ID: uuid.New(), WorkspaceID: ws.ID, ProjectID: ws.ProjectID,
-		Domain: domain, Path: ingress.NormalizePath(in.Path), Port: in.Port,
-		Preset: preset, ExtraNginx: extra, Status: status,
+		ID: uuid.New(), WorkspaceID: in.WS.ID, ProjectID: in.WS.ProjectID,
+		Domain: in.Domain, Path: ingress.NormalizePath(in.Path), Port: in.Port,
+		Preset: preset, ExtraNginx: extra, Status: in.Status,
+		DomainTier: tier, ZoneID: in.ZoneID, Prefix: in.Prefix,
 		ApplicantUserID: in.Actor.ID,
 		ReviewedBy:      reviewedBy,
 		ReviewedAt:      reviewedAt,
@@ -168,8 +238,8 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 	if err := a.Store.CreateIngress(ctx, r); err != nil {
 		return nil, err
 	}
-	if status == models.IngressActive {
-		if hp, err := a.Runtime.ExposePort(ctx, ws.ID, r.ID, r.Port); err == nil && hp > 0 {
+	if in.Status == models.IngressActive {
+		if hp, err := a.Runtime.ExposePort(ctx, in.WS.ID, r.ID, r.Port); err == nil && hp > 0 {
 			r.HostPort = hp
 			_ = a.Store.UpdateIngress(ctx, r)
 		}
@@ -179,7 +249,10 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: in.Actor.ID, Action: "ingress.create",
 		ResourceType: "ingress", ResourceID: r.ID.String(),
-		Meta: map[string]any{"domain": domain, "port": in.Port, "workspace": ws.ID.String(), "status": status},
+		Meta: map[string]any{
+			"domain": in.Domain, "port": in.Port, "workspace": in.WS.ID.String(),
+			"status": in.Status, "domain_tier": tier, "prefix": in.Prefix,
+		},
 	})
 	return r, nil
 }
@@ -290,10 +363,27 @@ func (a *App) dropWorkspaceIngress(ctx context.Context, workspaceID uuid.UUID) {
 	}
 }
 
-func IngressPublicInfo() map[string]any {
+func (a *App) IngressPublicInfo(ctx context.Context) map[string]any {
+	zonesOut := []map[string]any{}
+	if zones, err := a.Store.ListIngressDomainZones(ctx); err == nil {
+		for _, z := range zones {
+			if !z.Enabled {
+				continue
+			}
+			zonesOut = append(zonesOut, map[string]any{
+				"id":                  z.ID.String(),
+				"suffix":              z.Suffix,
+				"display_name":        z.DisplayName,
+				"require_approval":    z.RequireApproval,
+				"allow_random":        z.AllowRandom,
+				"allow_custom_prefix": z.AllowCustomPrefix,
+			})
+		}
+	}
 	return map[string]any{
 		"public_host": PublicIngressHost(),
 		"presets":     ingress.Presets(),
+		"zones":       zonesOut,
 		"note":        "用户将自己的域名 A 记录指到该公网入口；平台按 Host 分流到对应隔离主机。默认每个主机只暴露一个服务端口，多站点请在主机内用 nginx 做路径路由。",
 	}
 }

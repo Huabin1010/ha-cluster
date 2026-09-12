@@ -470,7 +470,24 @@ const (
 	IngressPendingDNS      = "pending_dns"
 	IngressPendingApproval = "pending_approval"
 	IngressRejected        = "rejected"
+
+	IngressTierShared = "shared"
+	IngressTierCustom = "custom"
 )
+
+// IngressDomainZone — 平台配置的域名后缀（泛域名根）。
+type IngressDomainZone struct {
+	ID                uuid.UUID `json:"id"`
+	Suffix            string    `json:"suffix"`
+	DisplayName       string    `json:"display_name"`
+	RequireApproval   bool      `json:"require_approval"`
+	Enabled           bool      `json:"enabled"`
+	AllowRandom       bool      `json:"allow_random"`
+	AllowCustomPrefix bool      `json:"allow_custom_prefix"`
+	SortOrder         int       `json:"sort_order"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
 
 type IngressRoute struct {
 	ID              uuid.UUID  `json:"id"`
@@ -483,6 +500,9 @@ type IngressRoute struct {
 	Preset          string     `json:"preset"`
 	ExtraNginx      string     `json:"extra_nginx,omitempty"`
 	Status          string     `json:"status"`
+	DomainTier      string     `json:"domain_tier,omitempty"`
+	ZoneID          *uuid.UUID `json:"zone_id,omitempty"`
+	Prefix          string     `json:"prefix,omitempty"`
 	ApplicantUserID uuid.UUID  `json:"applicant_user_id,omitempty"`
 	ReviewedBy      *uuid.UUID `json:"reviewed_by,omitempty"`
 	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`

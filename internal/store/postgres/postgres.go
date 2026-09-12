@@ -47,6 +47,9 @@ var dockerRegistriesSQL string
 //go:embed sql/010_node_host_totals.sql
 var nodeHostTotalsSQL string
 
+//go:embed sql/011_ingress_domain_zones.sql
+var ingressDomainZonesSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -98,6 +101,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, nodeHostTotalsSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, ingressDomainZonesSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -921,14 +928,15 @@ func (s *Store) DeleteRefresh(ctx context.Context, hash string) error {
 	return err
 }
 
-const ingressCols = `id,workspace_id,project_id,domain,path,port,host_port,preset,extra_nginx,status,applicant_user_id,reviewed_by,reviewed_at,reject_reason,created_at`
+const ingressCols = `id,workspace_id,project_id,domain,path,port,host_port,preset,extra_nginx,status,applicant_user_id,reviewed_by,reviewed_at,reject_reason,created_at,domain_tier,zone_id,prefix`
 
 func scanIngress(row interface{ Scan(dest ...any) error }) (*models.IngressRoute, error) {
 	r := &models.IngressRoute{}
 	var applicantID sql.NullString
 	var reviewedBy sql.NullString
 	var reviewedAt sql.NullTime
-	err := row.Scan(&r.ID, &r.WorkspaceID, &r.ProjectID, &r.Domain, &r.Path, &r.Port, &r.HostPort, &r.Preset, &r.ExtraNginx, &r.Status, &applicantID, &reviewedBy, &reviewedAt, &r.RejectReason, &r.CreatedAt)
+	var zoneID sql.NullString
+	err := row.Scan(&r.ID, &r.WorkspaceID, &r.ProjectID, &r.Domain, &r.Path, &r.Port, &r.HostPort, &r.Preset, &r.ExtraNginx, &r.Status, &applicantID, &reviewedBy, &reviewedAt, &r.RejectReason, &r.CreatedAt, &r.DomainTier, &zoneID, &r.Prefix)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -944,6 +952,15 @@ func scanIngress(row interface{ Scan(dest ...any) error }) (*models.IngressRoute
 	if reviewedAt.Valid {
 		r.ReviewedAt = &reviewedAt.Time
 	}
+	if zoneID.Valid && zoneID.String != "" {
+		id, err := uuid.Parse(zoneID.String)
+		if err == nil {
+			r.ZoneID = &id
+		}
+	}
+	if r.DomainTier == "" {
+		r.DomainTier = models.IngressTierCustom
+	}
 	return r, nil
 }
 
@@ -952,8 +969,11 @@ func (s *Store) CreateIngress(ctx context.Context, r *models.IngressRoute) error
 	if r.ApplicantUserID != uuid.Nil {
 		appID = &r.ApplicantUserID
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO ingress_routes (`+ingressCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-		r.ID, r.WorkspaceID, r.ProjectID, r.Domain, r.Path, r.Port, r.HostPort, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.CreatedAt)
+	if r.DomainTier == "" {
+		r.DomainTier = models.IngressTierCustom
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO ingress_routes (`+ingressCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+		r.ID, r.WorkspaceID, r.ProjectID, r.Domain, r.Path, r.Port, r.HostPort, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.CreatedAt, r.DomainTier, r.ZoneID, r.Prefix)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -997,8 +1017,11 @@ func (s *Store) UpdateIngress(ctx context.Context, r *models.IngressRoute) error
 	if r.ApplicantUserID != uuid.Nil {
 		appID = &r.ApplicantUserID
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE ingress_routes SET domain=$2,path=$3,port=$4,preset=$5,extra_nginx=$6,status=$7,applicant_user_id=$8,reviewed_by=$9,reviewed_at=$10,reject_reason=$11,host_port=$12 WHERE id=$1`,
-		r.ID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.HostPort)
+	if r.DomainTier == "" {
+		r.DomainTier = models.IngressTierCustom
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE ingress_routes SET domain=$2,path=$3,port=$4,preset=$5,extra_nginx=$6,status=$7,applicant_user_id=$8,reviewed_by=$9,reviewed_at=$10,reject_reason=$11,host_port=$12,domain_tier=$13,zone_id=$14,prefix=$15 WHERE id=$1`,
+		r.ID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.HostPort, r.DomainTier, r.ZoneID, r.Prefix)
 	return err
 }
 

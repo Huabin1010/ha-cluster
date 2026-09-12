@@ -32,7 +32,7 @@ export const accessControlProvider: AccessControlProvider = {
       };
     }
 
-    if (resource === "docker-registries") {
+    if (resource === "docker-registries" || resource === "ingress-domains") {
       return adminOnly(role);
     }
 

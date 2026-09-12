@@ -41,7 +41,8 @@ type Snapshot struct {
 	AuditSeq    int64                              `json:"audit_seq,omitempty"`
 	Invites     map[string]*models.Invitation      `json:"invites,omitempty"`
 	Refresh     map[string]models.RefreshSession   `json:"refresh,omitempty"`
-	Ingress     map[uuid.UUID]*models.IngressRoute `json:"ingress,omitempty"`
+	Ingress     map[uuid.UUID]*models.IngressRoute      `json:"ingress,omitempty"`
+	IngressZones map[uuid.UUID]*models.IngressDomainZone `json:"ingress_zones,omitempty"`
 }
 
 func userToSnapshot(u *models.User) *snapshotUser {
@@ -96,6 +97,7 @@ type Store struct {
 	invites          map[string]*models.Invitation
 	refresh          map[string]models.RefreshSession
 	ingress          map[uuid.UUID]*models.IngressRoute
+	ingressZones     map[uuid.UUID]*models.IngressDomainZone
 	dockerRegistries map[uuid.UUID]*models.DockerRegistry
 }
 
@@ -114,6 +116,7 @@ func New() *Store {
 		invites:          map[string]*models.Invitation{},
 		refresh:          map[string]models.RefreshSession{},
 		ingress:          map[uuid.UUID]*models.IngressRoute{},
+		ingressZones:     map[uuid.UUID]*models.IngressDomainZone{},
 		dockerRegistries: map[uuid.UUID]*models.DockerRegistry{},
 	}
 }
@@ -1005,7 +1008,8 @@ func (s *Store) saveSnapshotFile(filePath string) error {
 		AuditSeq:    s.auditSeq,
 		Invites:     s.invites,
 		Refresh:     s.refresh,
-		Ingress:     s.ingress,
+		Ingress:      s.ingress,
+		IngressZones: s.ingressZones,
 	}
 	data, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
@@ -1074,6 +1078,11 @@ func (s *Store) LoadSnapshot(filePath string) error {
 	}
 	if snap.Ingress != nil {
 		s.ingress = snap.Ingress
+	}
+	if snap.IngressZones != nil {
+		s.ingressZones = snap.IngressZones
+	} else if s.ingressZones == nil {
+		s.ingressZones = map[uuid.UUID]*models.IngressDomainZone{}
 	}
 	return nil
 }

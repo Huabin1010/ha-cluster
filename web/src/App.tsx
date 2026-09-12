@@ -28,6 +28,9 @@ const DangerousApprovalsPage = lazy(() =>
 const DockerRegistriesPage = lazy(() =>
   import("@/pages/ops/DockerRegistries").then((m) => ({ default: m.DockerRegistriesPage })),
 );
+const IngressDomainsPage = lazy(() =>
+  import("@/pages/ops/IngressDomains").then((m) => ({ default: m.IngressDomainsPage })),
+);
 
 import { Elevated } from "@/lib/elevated";
 
@@ -113,6 +116,7 @@ function RefineApp() {
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/dangerous-approvals" element={<DangerousApprovalsPage />} />
           <Route path="/docker-registries" element={<DockerRegistriesPage />} />
+          <Route path="/ingress-domains" element={<IngressDomainsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

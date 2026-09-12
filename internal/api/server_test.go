@@ -874,6 +874,90 @@ func TestIngressApprovalAPI(t *testing.T) {
 	}
 }
 
+func TestIngressDomainZonesAPI(t *testing.T) {
+	h := testServer(t)
+	adminTok := registerLogin(t, h, "zoneadmin", "zoneadmin@x.com")
+	devTok := registerLogin(t, h, "zonedev", "zonedev@x.com")
+
+	forbidden := doJSON(t, h, http.MethodPost, "/admin/ingress-domains", devTok, map[string]any{
+		"suffix": "apps.test", "display_name": "Apps",
+	})
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", forbidden.Code)
+	}
+
+	created := doJSON(t, h, http.MethodPost, "/admin/ingress-domains", adminTok, map[string]any{
+		"suffix": "apps.test", "display_name": "Apps", "require_approval": false,
+		"enabled": true, "allow_random": true, "allow_custom_prefix": true,
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create zone: %d %s", created.Code, created.Body.String())
+	}
+	var zone models.IngressDomainZone
+	_ = json.Unmarshal(created.Body.Bytes(), &zone)
+
+	need := doJSON(t, h, http.MethodPost, "/admin/ingress-domains", adminTok, map[string]any{
+		"suffix": "need.test", "display_name": "Need", "require_approval": true, "enabled": true,
+	})
+	if need.Code != http.StatusCreated {
+		t.Fatalf("create need zone: %d %s", need.Code, need.Body.String())
+	}
+	var needZone models.IngressDomainZone
+	_ = json.Unmarshal(need.Body.Bytes(), &needZone)
+
+	meta := doJSON(t, h, http.MethodGet, "/ingress/meta", adminTok, nil)
+	if meta.Code != http.StatusOK {
+		t.Fatalf("meta: %d", meta.Code)
+	}
+	var metaBody map[string]any
+	_ = json.Unmarshal(meta.Body.Bytes(), &metaBody)
+	if _, ok := metaBody["zones"]; !ok {
+		t.Fatalf("meta missing zones: %s", meta.Body.String())
+	}
+
+	rr := doJSON(t, h, http.MethodPost, "/projects", adminTok, map[string]string{"name": "zoneproj", "slug": "zoneproj"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+	_ = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", adminTok, map[string]string{
+		"username": "zonedev", "role": "developer",
+	})
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", adminTok, map[string]string{
+		"name": "zonews", "plan": "nano", "arch": "amd64",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var ws models.Workspace
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+
+	shared := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/ingress/shared", devTok, map[string]any{
+		"zone_id": zone.ID.String(), "mode": "custom", "prefix": "demo", "port": 8080,
+	})
+	if shared.Code != http.StatusCreated {
+		t.Fatalf("shared claim: %d %s", shared.Code, shared.Body.String())
+	}
+	var route models.IngressRoute
+	_ = json.Unmarshal(shared.Body.Bytes(), &route)
+	if route.Status != models.IngressActive || route.Domain != "demo.apps.test" {
+		t.Fatalf("unexpected shared route: %+v", route)
+	}
+
+	pending := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/ingress", devTok, map[string]any{
+		"zone_id": needZone.ID.String(), "prefix": "team", "port": 8081, "confirm_second_port": true,
+	})
+	if pending.Code != http.StatusCreated {
+		t.Fatalf("need approval: %d %s", pending.Code, pending.Body.String())
+	}
+	var pendingRoute models.IngressRoute
+	_ = json.Unmarshal(pending.Body.Bytes(), &pendingRoute)
+	if pendingRoute.Status != models.IngressPendingApproval {
+		t.Fatalf("expected pending, got %s", pendingRoute.Status)
+	}
+}
+
 func TestBatchCreateUsersAPI(t *testing.T) {
 	h := testServer(t)
 	adminTok := registerLogin(t, h, "admin_batch", "admin_batch@x.com")

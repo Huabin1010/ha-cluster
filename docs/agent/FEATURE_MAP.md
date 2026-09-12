@@ -47,6 +47,7 @@
 | 侧栏「审计」 | `nav-audit` | `platform_admin` / `platform_ops` |
 | 侧栏「危险待审」 | `nav-dangerous` | 前端 `canApproveDangerousOps`；终审后端仅 `platform_admin` |
 | 侧栏「镜像仓库」 | `nav-docker-registries` | `platform_admin` |
+| 侧栏「域名配置」 | `nav-ingress-domains` | `platform_admin` |
 | 当前项目切换 | `nav-project-switch` | 已登录且有项目 |
 | 收起侧栏 | `sidebar-collapse` | 桌面 |
 | 窄屏打开菜单 | `nav-toggle` | 窄屏 |
@@ -225,7 +226,7 @@
 | 概览打开终端 | `ws-overview-terminal` |
 | 概览审计行 | `ws-overview-audit-row` |
 | SSH 命令 / 复制 | `ws-ssh-cmd` / `ws-copy-ssh` |
-| 添加域名 | `ing-add` → `ing-domain` / `ing-port` / `ing-preset` / `ing-extra` / `ing-submit` |
+| 添加域名 | `ing-add` → `ing-zone` / `ing-mode` / `ing-prefix` / `ing-domain` / `ing-port` / `ing-preset` / `ing-extra` / `ing-submit` |
 | 二次确认 Ingress | `ing-second-ok` / `ing-second-cancel` |
 | 域名表 / 行 | `ing-table` / `ing-row` |
 | 操作历史表 / 行 | `ws-audit-table` / `ws-audit-row` |
@@ -494,6 +495,34 @@
 | 表 / 行 | `registries-table` / `registries-row` |
 | 自动注入 / 测连通 / 删除 | `registries-inject-toggle` / `registries-test` / `registries-delete` |
 | 确认删除 | `confirm-ok` / `confirm-cancel` |
+
+角色门：`platform_admin`。
+
+---
+
+## 域名配置
+
+### 怎么进入
+
+侧栏 `nav-ingress-domains` → `/ingress-domains`。
+
+### 子功能
+
+添加域名后缀、启用/停用、删除；免审域可开放随机/自定义前缀。
+
+### 快捷键
+
+无。
+
+### 选择器
+
+| 用户看到的 | testid |
+|---|---|
+| 刷新 / 添加 | `ing-zone-refresh` / `ing-zone-create` |
+| 后缀 / 名称 | `ing-zone-suffix` / `ing-zone-name` |
+| 提交添加 | `ing-zone-submit` |
+| 表 / 行 | `ing-zone-table` / `ing-zone-row` |
+| 启用切换 / 删除 | `ing-zone-toggle` / `ing-zone-delete` |
 
 角色门：`platform_admin`。
 

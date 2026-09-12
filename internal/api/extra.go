@@ -392,7 +392,7 @@ func (s *Server) rejectResize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ingressMeta(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, service.IngressPublicInfo())
+	writeJSON(w, http.StatusOK, s.App.IngressPublicInfo(r.Context()))
 }
 
 func (s *Server) listIngress(w http.ResponseWriter, r *http.Request) {
@@ -419,23 +419,39 @@ func (s *Server) createIngress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Domain            string `json:"domain"`
-		Path              string `json:"path"`
-		Port              int    `json:"port"`
-		Preset            string `json:"preset"`
-		ExtraNginx        string `json:"extra_nginx"`
-		ConfirmSecondPort bool   `json:"confirm_second_port"`
+		Domain            string  `json:"domain"`
+		ZoneID            *string `json:"zone_id"`
+		Prefix            string  `json:"prefix"`
+		Path              string  `json:"path"`
+		Port              int     `json:"port"`
+		Preset            string  `json:"preset"`
+		ExtraNginx        string  `json:"extra_nginx"`
+		ConfirmSecondPort bool    `json:"confirm_second_port"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
+	var zoneID *uuid.UUID
+	if body.ZoneID != nil && strings.TrimSpace(*body.ZoneID) != "" {
+		zid, err := uuid.Parse(strings.TrimSpace(*body.ZoneID))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+			return
+		}
+		zoneID = &zid
+	}
 	rt, err := s.App.CreateIngress(r.Context(), service.CreateIngressInput{
-		WorkspaceID: id, Domain: body.Domain, Path: body.Path, Port: body.Port,
+		WorkspaceID: id, Domain: body.Domain, ZoneID: zoneID, Prefix: body.Prefix,
+		Path: body.Path, Port: body.Port,
 		Preset: body.Preset, ExtraNginx: body.ExtraNginx,
 		ConfirmSecondPort: body.ConfirmSecondPort, Actor: *userFrom(r),
 	})
 	if err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			writeErr(w, http.StatusConflict, err)
+			return
+		}
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}

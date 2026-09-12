@@ -45,7 +45,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/ui/field";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SelectBox } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { PageFrame } from "@/components/ui/page-frame";
@@ -145,7 +145,17 @@ type IngressMeta = {
   public_host: string;
   note?: string;
   presets: Array<{ id: string; label: string; description: string }>;
+  zones?: Array<{
+    id: string;
+    suffix: string;
+    display_name: string;
+    require_approval: boolean;
+    allow_random: boolean;
+    allow_custom_prefix: boolean;
+  }>;
 };
+
+const INGRESS_CUSTOM_SOURCE = "__custom__";
 
 type WsAudit = {
   id: number;
@@ -292,6 +302,9 @@ export function MachinePage() {
   const [connErr, setConnErr] = useState("");
   const [routes, setRoutes] = useState<IngressRoute[]>([]);
   const [meta, setMeta] = useState<IngressMeta | null>(null);
+  const [domainSource, setDomainSource] = useState(INGRESS_CUSTOM_SOURCE);
+  const [prefixMode, setPrefixMode] = useState<"random" | "custom">("random");
+  const [prefix, setPrefix] = useState("");
   const [domain, setDomain] = useState("");
   const [port, setPort] = useState("8080");
   const [preset, setPreset] = useState("nocache");
@@ -361,7 +374,19 @@ export function MachinePage() {
   useEffect(() => {
     if (section !== "ingress" && section !== "overview") return;
     api<IngressMeta>("/ingress/meta")
-      .then(setMeta)
+      .then((m) => {
+        setMeta(m);
+        const zones = m.zones ?? [];
+        if (zones.length > 0) {
+          setDomainSource(zones[0].id);
+          const z = zones[0];
+          if (!z.require_approval) {
+            setPrefixMode(z.allow_random ? "random" : "custom");
+          }
+        } else {
+          setDomainSource(INGRESS_CUSTOM_SOURCE);
+        }
+      })
       .catch(() => setMeta(null));
   }, [section]);
 
@@ -382,33 +407,78 @@ export function MachinePage() {
   }
 
   function resetIngressForm() {
+    const zones = meta?.zones ?? [];
+    if (zones.length > 0) {
+      setDomainSource(zones[0].id);
+      setPrefixMode(zones[0].allow_random ? "random" : "custom");
+    } else {
+      setDomainSource(INGRESS_CUSTOM_SOURCE);
+      setPrefixMode("random");
+    }
+    setPrefix("");
     setDomain("");
     setPort("8080");
     setPreset("nocache");
     setExtraNginx("");
     setShowExtra(false);
     setFormErr("");
+    setPendingBody(null);
   }
+
+  const selectedZone = useMemo(
+    () => (meta?.zones ?? []).find((z) => z.id === domainSource) ?? null,
+    [meta?.zones, domainSource],
+  );
+  const isCustomDomain = domainSource === INGRESS_CUSTOM_SOURCE;
+  const isFreeZone = !!selectedZone && !selectedZone.require_approval;
 
   async function submitIngress(confirmSecond: boolean) {
     setFormErr("");
     setBusy(true);
-    const body = {
-      domain: domain.trim(),
-      port: Number(port),
-      preset,
-      extra_nginx: extraNginx.trim(),
-      confirm_second_port: confirmSecond,
-    };
     try {
-      await api(`/workspaces/${id}/ingress`, { method: "POST", body: JSON.stringify(body) });
-      resetIngressForm();
-      setIngressOpen(false);
-      toast.show("已接入域名，请按提示修改 DNS", "success");
-      await loadIngress();
+      if (isFreeZone && selectedZone) {
+        const body = {
+          zone_id: selectedZone.id,
+          mode: prefixMode,
+          prefix: prefixMode === "custom" ? prefix.trim() : undefined,
+          port: Number(port),
+          preset,
+          extra_nginx: extraNginx.trim(),
+          confirm_second_port: confirmSecond,
+        };
+        const rt = await api<IngressRoute>(`/workspaces/${id}/ingress/shared`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        resetIngressForm();
+        setIngressOpen(false);
+        toast.show(rt.domain ? `已领取 ${rt.domain}` : "已领取免审子域名", "success");
+        await loadIngress();
+      } else {
+        const body: Record<string, unknown> = {
+          port: Number(port),
+          preset,
+          extra_nginx: extraNginx.trim(),
+          confirm_second_port: confirmSecond,
+        };
+        if (isCustomDomain) {
+          body.domain = domain.trim();
+        } else if (selectedZone) {
+          body.zone_id = selectedZone.id;
+          body.prefix = prefix.trim();
+        }
+        await api(`/workspaces/${id}/ingress`, { method: "POST", body: JSON.stringify(body) });
+        resetIngressForm();
+        setIngressOpen(false);
+        toast.show(
+          isCustomDomain ? "已提交域名申请，请按提示修改 DNS" : "已提交域名申请，待项目管理员审批",
+          "success",
+        );
+        await loadIngress();
+      }
     } catch (e) {
       if (isApiError(e) && e.message === "SECOND_PORT_CONFIRM_REQUIRED") {
-        setPendingBody(body);
+        setPendingBody({ confirm_second_port: true });
         setSecondOpen(true);
         return;
       }
@@ -957,17 +1027,19 @@ export function MachinePage() {
           <Elevated offset={1} shadowLevel={1} className="overflow-hidden rounded-xl border border-border/80 bg-surface-1">
           <Card>
             <CardHeader>
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-surface-2 text-primary">
+                  <Globe className="size-4 shrink-0" />
+                </span>
                 <div className="min-w-0 flex-1">
-                  <CardTitle className="inline-flex items-center gap-2">
-                    <Globe className="size-4 shrink-0 text-primary" />
-                    域名接入
-                  </CardTitle>
-                  <CardDescription className="mt-1.5">
+                  <CardTitle>域名接入</CardTitle>
+                  <CardDescription className="mt-1 wrap-break-word min-w-0">
                     {meta?.note ||
-                      "把你的域名 A 记录指到平台公网入口，我们按 Host 分流到这台隔离主机。默认每台机器只暴露一个服务端口。"}
+                      "把域名 A 记录指到平台公网入口，按 Host 分流到这台隔离主机。默认每台机器只暴露一个服务端口；多站点请在主机内用 nginx 做路径路由。"}
                   </CardDescription>
                 </div>
+              </div>
+              <CardAction>
                 <Button
                   type="button"
                   data-testid="ing-add"
@@ -978,19 +1050,61 @@ export function MachinePage() {
                   <Plus className="size-4 shrink-0" />
                   接入域名
                 </Button>
-              </div>
+              </CardAction>
             </CardHeader>
-            <CardContent className="grid gap-4">
-              {meta && (
-                <Alert>
-                  <AlertDescription className="break-words min-w-0">
-                    公网入口：<span className="font-mono">{meta.public_host}</span>
-                    。在域名服务商添加 <span className="font-mono">A → {meta.public_host}</span>。
-                  </AlertDescription>
-                </Alert>
+            <CardContent className="grid gap-4 pb-4">
+              {meta?.public_host && (
+                <div className="rounded-xl border border-border/80 bg-surface-2/40 p-3.5">
+                  <p className="m-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    DNS 配置
+                  </p>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex min-w-0 items-center gap-1.5 text-sm text-foreground">
+                      <span className="shrink-0 text-muted-foreground">公网入口</span>
+                      <code className="rounded-md border border-border/60 bg-surface-1 px-2 py-0.5 font-mono text-[13px] text-foreground">
+                        {meta.public_host}
+                      </code>
+                    </span>
+                    <Hint label="复制公网 IP">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="compact"
+                        className="inline-flex size-7 items-center justify-center p-0 shrink-0"
+                        aria-label="复制公网 IP"
+                        onClick={() => void copy(meta.public_host, "已复制公网入口")}
+                      >
+                        <Copy className="size-3.5 shrink-0" />
+                      </Button>
+                    </Hint>
+                  </div>
+                  <p className="m-0 mt-2 wrap-break-word min-w-0 text-xs text-muted-foreground">
+                    在域名服务商添加{" "}
+                    <span className="font-mono text-foreground">A → {meta.public_host}</span>
+                    ，解析生效后即可通过域名访问。
+                  </p>
+                </div>
               )}
               {routes.length === 0 ? (
-                <p className="m-0 text-sm text-muted-foreground">还没有接入域名。点击「接入域名」添加第一条规则。</p>
+                <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/80 bg-surface-2/20 px-4 py-10 text-center">
+                  <span className="flex size-11 items-center justify-center rounded-xl border border-border/80 bg-surface-1 text-muted-foreground">
+                    <Globe className="size-5 shrink-0" />
+                  </span>
+                  <p className="m-0 text-sm font-medium text-foreground">还没有接入域名</p>
+                  <p className="m-0 max-w-sm wrap-break-word min-w-0 text-xs text-muted-foreground">
+                    配置 DNS 后点击「接入域名」，把公网流量指到这台机器上的服务端口。
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!canConnect}
+                    className="mt-1 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                    onClick={() => setIngressOpen(true)}
+                  >
+                    <Plus className="size-3.5 shrink-0" />
+                    接入第一条域名
+                  </Button>
+                </div>
               ) : (
                 <div className="w-full overflow-x-auto rounded-xl border border-border/80">
                   <Table data-testid="ing-table" className="min-w-[640px]">
@@ -1168,21 +1282,112 @@ export function MachinePage() {
             <DialogTitle>接入域名</DialogTitle>
             <DialogDescription className="break-words min-w-0">
               {meta
-                ? `将域名 A 记录指向 ${meta.public_host}，平台按 Host 头转发到这台主机内的服务端口。`
-                : "将域名 A 记录指向平台公网入口，平台按 Host 头转发到这台主机内的服务端口。"}
+                ? `选择平台后缀领取子域名，或填写自有域名并将 A 记录指向 ${meta.public_host}。`
+                : "选择平台后缀领取子域名，或填写自有域名并将 A 记录指向平台公网入口。"}
             </DialogDescription>
           </DialogHeader>
           <form className="flex min-h-0 flex-1 flex-col" onSubmit={(e) => void onIngress(e)}>
             <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
-              <Field label="你的域名">
-                <Input
-                  data-testid="ing-domain"
-                  placeholder="app.example.com"
-                  value={domain}
-                  onChange={(e) => setDomain(e.target.value)}
-                  required
+              <Field label="域名来源">
+                <SelectBox
+                  testId="ing-zone"
+                  value={domainSource}
+                  onValueChange={(v) => {
+                    setDomainSource(v);
+                    const z = (meta?.zones ?? []).find((item) => item.id === v);
+                    if (z && !z.require_approval) {
+                      setPrefixMode(z.allow_random ? "random" : "custom");
+                    }
+                    setFormErr("");
+                  }}
+                  options={[
+                    ...(meta?.zones ?? []).map((z) => ({
+                      value: z.id,
+                      label: `${z.display_name || z.suffix}${z.require_approval ? "（需审批）" : "（免审）"}`,
+                    })),
+                    { value: INGRESS_CUSTOM_SOURCE, label: "自有域名" },
+                  ]}
                 />
               </Field>
+
+              {isFreeZone && selectedZone && (
+                <>
+                  <Field label="前缀方式">
+                    <SelectBox
+                      testId="ing-mode"
+                      value={prefixMode}
+                      onValueChange={(v) => setPrefixMode(v as "random" | "custom")}
+                      options={[
+                        ...(selectedZone.allow_random
+                          ? [{ value: "random", label: "随机生成" }]
+                          : []),
+                        ...(selectedZone.allow_custom_prefix
+                          ? [{ value: "custom", label: "自定义前缀" }]
+                          : []),
+                      ]}
+                    />
+                  </Field>
+                  {prefixMode === "random" ? (
+                    <p className="m-0 text-xs text-muted-foreground break-words min-w-0">
+                      提交后将生成类似 <span className="font-mono">xxxxxxxx.{selectedZone.suffix}</span>{" "}
+                      的子域名并立即生效。
+                    </p>
+                  ) : (
+                    <Field label="自定义前缀">
+                      <Input
+                        data-testid="ing-prefix"
+                        placeholder="my-app"
+                        value={prefix}
+                        onChange={(e) => setPrefix(e.target.value)}
+                        required
+                        autoComplete="off"
+                      />
+                      <p className="m-0 mt-1.5 text-xs text-muted-foreground font-mono break-words min-w-0">
+                        预览：{(prefix.trim() || "…").toLowerCase()}.{selectedZone.suffix}
+                      </p>
+                    </Field>
+                  )}
+                </>
+              )}
+
+              {selectedZone?.require_approval && (
+                <Field label="子域前缀">
+                  <Input
+                    data-testid="ing-prefix"
+                    placeholder="my-app"
+                    value={prefix}
+                    onChange={(e) => setPrefix(e.target.value)}
+                    required
+                    autoComplete="off"
+                  />
+                  <p className="m-0 mt-1.5 text-xs text-muted-foreground break-words min-w-0">
+                    将申请{" "}
+                    <span className="font-mono">
+                      {(prefix.trim() || "…").toLowerCase()}.{selectedZone.suffix}
+                    </span>
+                    ，提交后需项目管理员审批。
+                  </p>
+                </Field>
+              )}
+
+              {isCustomDomain && (
+                <Field label="你的域名">
+                  <Input
+                    data-testid="ing-domain"
+                    placeholder="app.example.com"
+                    value={domain}
+                    onChange={(e) => setDomain(e.target.value)}
+                    required
+                    autoComplete="off"
+                  />
+                  {meta?.public_host && (
+                    <p className="m-0 mt-1.5 text-xs text-muted-foreground break-words min-w-0">
+                      请将域名 A 记录解析到 {meta.public_host}（平台公网入口），TTL 可先设 60 秒。提交后需项目管理员审批。
+                    </p>
+                  )}
+                </Field>
+              )}
+
               <Field label="主机内服务端口">
                 <Input
                   data-testid="ing-port"
@@ -1239,7 +1444,7 @@ export function MachinePage() {
                 取消
               </Button>
               <Button data-testid="ing-submit" disabled={busy || !canConnect} type="submit">
-                {busy ? "提交中…" : "接入域名"}
+                {busy ? "提交中…" : isFreeZone ? "领取域名" : "提交申请"}
               </Button>
             </DialogFooter>
           </form>
