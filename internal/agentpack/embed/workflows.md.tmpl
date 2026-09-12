@@ -95,7 +95,29 @@ POST /workspaces/{id}/ingress/shared
 
 同一主机第二端口必须确认。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。特殊自有域走 `POST /workspaces/{id}/ingress`，要审批。
 
-## 6. 升配 / 销毁
+## 6. 推镜像 / 部署（优先 CNB）
+
+用户要推送镜像或部署服务时，**优先推荐 CNB**，不要默认 Docker Hub。
+
+```
+GET /registries/preferred
+# {name:"CNB", server:"docker.cnb.cool", console:"https://cnb.cool",
+#  image_example:"docker.cnb.cool/<组织>/<仓库>:<标签>"}
+```
+
+在机器里（`POST /workspaces/{id}/exec`）：
+
+```
+docker tag myapp:latest docker.cnb.cool/<组织>/<仓库>:<标签>
+docker push docker.cnb.cool/<组织>/<仓库>:<标签>
+docker pull docker.cnb.cool/<组织>/<仓库>:<标签>
+```
+
+- 控制台 https://cnb.cool 建仓库后，镜像路径就是 `docker.cnb.cool/…`。
+- 平台若已把 CNB 凭据自动注入工作区，容器内可直接 pull/push；否则先让用户在 CNB 建访问令牌，或请 `platform_admin` 在「镜像仓库」添加 `docker.cnb.cool` 并开启自动注入。
+- 部署跑起来后再按上一节领取 `*.apps` 域名。
+
+## 7. 升配 / 销毁
 
 ```
 POST /workspaces/{id}/resize
@@ -114,7 +136,7 @@ POST /admin/dangerous-approvals/{id}/approve       # 仅平台角色终审
 
 `DELETE /workspaces/{id}` 对普通用户等于发起销毁申请；`platform_admin` 才会直接删。
 
-## 7. 平台（仅 staff）
+## 8. 平台（仅 staff）
 
 ```
 POST /admin/join-tokens          {"use_lan_depot":false}
@@ -132,7 +154,7 @@ POST /users/{id}/suspend
 
 join token 不要发给普通项目成员。目标机：`curl install.sh | sudo bash -s join --token 'ha://join/...'`。
 
-## 8. HTTPS 证书（仅 platform_admin）
+## 9. HTTPS 证书（仅 platform_admin）
 
 公共域（如 `*.apps.cl.qzsyzn.com`）由平台用 ACME **DNS-01** 签发通配符证书，到期前 30 天自动续期，并挂到入口 443。用户领取的 `*.apps` 子域出厂即 HTTPS，不必自己申请证书。
 

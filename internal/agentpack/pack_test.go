@@ -42,6 +42,9 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.InstallPrompt, "/agent-pack/version") {
 		t.Fatalf("prompt must mention version check: %s", p.InstallPrompt)
 	}
+	if !strings.Contains(p.Files[WorkflowsPath], "docker.cnb.cool") {
+		t.Fatal("workflows should recommend CNB")
+	}
 	md := Markdown(p)
 	if !strings.Contains(md, SkillPath) || !strings.Contains(md, "HA_CLUSTER_AGENT_PACK v"+Version) {
 		t.Fatal(md[:200])

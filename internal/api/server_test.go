@@ -960,6 +960,14 @@ func TestIngressDomainZonesAPI(t *testing.T) {
 	if _, ok := metaBody["zones"]; !ok {
 		t.Fatalf("meta missing zones: %s", meta.Body.String())
 	}
+	pref, _ := metaBody["preferred_registry"].(map[string]any)
+	if pref["server"] != "docker.cnb.cool" {
+		t.Fatalf("preferred_registry %#v", metaBody["preferred_registry"])
+	}
+	prefRR := doJSON(t, h, http.MethodGet, "/registries/preferred", adminTok, nil)
+	if prefRR.Code != http.StatusOK || !strings.Contains(prefRR.Body.String(), "docker.cnb.cool") {
+		t.Fatalf("preferred %d %s", prefRR.Code, prefRR.Body.String())
+	}
 
 	rr := doJSON(t, h, http.MethodPost, "/projects", adminTok, map[string]string{"name": "zoneproj", "slug": "zoneproj"})
 	if rr.Code != http.StatusCreated {

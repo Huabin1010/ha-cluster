@@ -22,6 +22,10 @@ viewer 不能申请。`409 INSUFFICIENT_CAPACITY` 先清闲置机器。
 
 `GET /ingress/meta` 取 `zone_id`。`POST /workspaces/{id}/ingress/shared` `mode=random|custom`。第二端口要 `confirm_second_port: true`。`*.apps` 子域出厂即 HTTPS（平台通配符证书）。
 
+## 推镜像 / 部署（优先 CNB）
+
+`GET /registries/preferred`。镜像路径 `docker.cnb.cool/<组织>/<仓库>:<标签>`。在机器里 `docker tag` / `docker push` / `docker pull` 走这条，不要默认 Docker Hub。控制台 https://cnb.cool。平台注入了 CNB 凭据则可直接用；否则用户自备令牌，或请 admin 在「镜像仓库」添加 `docker.cnb.cool` 并自动注入。
+
 ## HTTPS 证书（仅 platform_admin）
 
 `GET /admin/tls-certs` → 看 `status` / `not_after`。立即签发或续期：`POST /admin/tls-certs/{id}/issue`（DNS-01，可能 1–3 分钟）。`PATCH /admin/tls-certs/{id}` `{"auto_renew":true}`。到期前 30 天后台自动续。列表不含私钥。不要随便给 `*.cl.qzsyzn.com` 点签发以免覆盖控制台证书。

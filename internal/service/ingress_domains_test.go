@@ -102,6 +102,10 @@ func TestIngressDomainZonesAndSharedClaim(t *testing.T) {
 	if meta["fabric_host"] == "" || meta["fabric_dns"] == "" {
 		t.Fatalf("expected fabric_host/dns in meta, got %#v", meta)
 	}
+	pref, _ := meta["preferred_registry"].(map[string]any)
+	if pref["server"] != "docker.cnb.cool" {
+		t.Fatalf("preferred_registry %#v", meta["preferred_registry"])
+	}
 
 	// shared custom claim → active
 	r1, err := app.ClaimSharedIngress(ctx, ClaimSharedIngressInput{

@@ -10,7 +10,9 @@
 
 机器：`GET /workspaces`、`POST /projects/{id}/workspaces`、`approve|reject|stop|start|resize|destroy-request`、`/connection`、`POST /workspaces/{id}/exec`（`{command,stdin_b64?,timeout_sec?}`，进机器只走这条）、`/ingress`、`/ingress/shared`。
 
-入口：`GET /ingress/meta`、`POST|DELETE /ingress/{id}`。公共域已挂平台通配符 HTTPS。
+入口：`GET /ingress/meta`（含 `preferred_registry`）、`POST|DELETE /ingress/{id}`。公共域已挂平台通配符 HTTPS。
+
+镜像：`GET /registries/preferred` → CNB `docker.cnb.cool`（推送/部署优先）。平台仓库配置仍是 `/admin/docker-registries`。
 
 平台：`/admin/join-tokens`、`/admin/docker-registries`、`/admin/ingress-domains`、`/admin/tls-certs`（`GET` 状态；`POST …/issue` 签发/续期；`PATCH …` `{auto_renew}`；到期前 30 天自动续）、`/admin/dangerous-approvals`、`/nodes`、`/capacity`、`/users`、`/audit-logs`。
 

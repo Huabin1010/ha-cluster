@@ -12,6 +12,10 @@ import (
 	"ha-cluster/internal/store"
 )
 
+func (s *Server) preferredRegistry(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, service.PreferredRegistry())
+}
+
 func (s *Server) listDockerRegistries(w http.ResponseWriter, r *http.Request) {
 	if !authz.IsPlatformAdmin(*userFrom(r)) {
 		writeErr(w, http.StatusForbidden, store.ErrForbidden)

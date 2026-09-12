@@ -25,6 +25,7 @@ import { Elevated } from "@/lib/elevated";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
 import { toast } from "sonner";
+import { PREFERRED_REGISTRY, isPreferredRegistry } from "@/lib/preferred-registry";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -188,7 +189,7 @@ export function DockerRegistriesPage() {
                 {rows.length} 个配置
               </Badge>
             }
-            description="配置私有或内网 Docker Registry 认证凭据。开启自动注入后，新开通的工作区将自动具备私有镜像拉取权限。"
+            description={`配置私有或内网 Docker Registry 认证凭据。推送与部署优先推荐 ${PREFERRED_REGISTRY.name}（${PREFERRED_REGISTRY.server}）。开启自动注入后，新开通的工作区可直接拉取/推送该仓库。`}
             actions={
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <Button
@@ -214,8 +215,8 @@ export function DockerRegistriesPage() {
                   <DialogContent size="lg" className="sm:max-w-xl">
                     <DialogHeader>
                       <DialogTitle>添加私有镜像仓库</DialogTitle>
-                      <DialogDescription>
-                        配置私有 Docker 凭据，密钥将通过平台 SecretBox 加密存储并在工作区拉起时安全写入。
+                      <DialogDescription className="wrap-break-word min-w-0">
+                        配置私有 Docker 凭据，密钥加密存储并在工作区拉起时写入。推送镜像请优先用 {PREFERRED_REGISTRY.name}。
                       </DialogDescription>
                     </DialogHeader>
                     <form className="flex min-h-0 flex-1 flex-col" onSubmit={onCreate}>
@@ -223,7 +224,7 @@ export function DockerRegistriesPage() {
                         <Field label="仓库标识名称">
                           <Input
                             data-testid="registries-name"
-                            placeholder="例如：Nexus 私服 / ACR"
+                            placeholder="例如：CNB 镜像 / Nexus"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             required
@@ -231,14 +232,30 @@ export function DockerRegistriesPage() {
                           />
                         </Field>
                         <Field label="Registry 服务器地址">
-                          <Input
-                            data-testid="registries-server"
-                            placeholder="例如：registry.example.com 或 192.168.1.9:5000"
-                            value={server}
-                            onChange={(e) => setServer(e.target.value)}
-                            required
-                            autoComplete="off"
-                          />
+                          <div className="grid gap-2 min-w-0">
+                            <Input
+                              data-testid="registries-server"
+                              placeholder={PREFERRED_REGISTRY.server}
+                              value={server}
+                              onChange={(e) => setServer(e.target.value)}
+                              required
+                              autoComplete="off"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="compact"
+                              data-testid="registries-pref-cnb"
+                              className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 h-7 px-2 text-xs w-fit"
+                              onClick={() => {
+                                setName((n) => n.trim() || `${PREFERRED_REGISTRY.name} 镜像`);
+                                setServer(PREFERRED_REGISTRY.server);
+                                setUsername((u) => u.trim() || "cnb");
+                              }}
+                            >
+                              填入 {PREFERRED_REGISTRY.name}（推荐）
+                            </Button>
+                          </div>
                         </Field>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Field label="用户名">
@@ -338,7 +355,7 @@ export function DockerRegistriesPage() {
               <div>
                 <h3 className="m-0 text-base font-semibold text-foreground">未配置私有镜像仓库</h3>
                 <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed">
-                  若要在工作区内直接拉取团队自建 Harbor、ACR、Nexus 私有镜像，可点击右上角「添加仓库」录入凭证。
+                  推送与部署优先推荐 {PREFERRED_REGISTRY.name}（{PREFERRED_REGISTRY.server}）。也可添加 Harbor / ACR 等其它仓库。
                 </p>
               </div>
             </Elevated>
@@ -384,9 +401,20 @@ export function DockerRegistriesPage() {
                 {rows.map((r) => (
                   <TableRow key={r.id} data-testid="registries-row">
                     <TableCell className="py-2.5 font-medium whitespace-nowrap text-foreground">
-                      <div className="inline-flex items-center gap-2">
-                        <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] shrink-0" />
-                        <span>{r.name}</span>
+                      <div className="inline-flex items-center gap-2 min-w-0">
+                        <span
+                          className={`size-2 rounded-full shrink-0 ${
+                            r.auto_inject
+                              ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.45)]"
+                              : "bg-muted-foreground/40"
+                          }`}
+                        />
+                        <span className="truncate">{r.name}</span>
+                        {isPreferredRegistry(r.server) ? (
+                          <Badge variant="ok" className="inline-flex items-center whitespace-nowrap shrink-0">
+                            推荐
+                          </Badge>
+                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell className="mono font-mono text-xs py-2.5 whitespace-nowrap text-muted-foreground">

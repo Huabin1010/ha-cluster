@@ -204,6 +204,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Post("/ingress/{id}/approve", s.approveIngress)
 		r.Post("/ingress/{id}/reject", s.rejectIngress)
 		r.Get("/ingress/meta", s.ingressMeta)
+		r.Get("/registries/preferred", s.preferredRegistry)
 
 		r.Get("/nodes", s.listNodes)
 		r.Get("/capacity", s.capacity)

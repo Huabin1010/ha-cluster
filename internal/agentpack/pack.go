@@ -30,9 +30,9 @@ const (
 	VersionPath   = ".cursor/skills/ha-cluster-agent/VERSION"
 
 	// Version is a monotonic integer. Bump when pack files change so Agents can self-update.
-	Version    = "2"
+	Version    = "3"
 	ReleasedAt = "2026-09-12"
-	Notes      = "HTTPS 通配符证书自动续期；Agent skill 版本自检"
+	Notes      = "推送镜像与部署优先推荐 CNB（docker.cnb.cool）"
 )
 
 type Vars struct {

@@ -15,6 +15,17 @@ import (
 	"ha-cluster/internal/store"
 )
 
+// PreferredRegistry is the platform-recommended image registry for push / deploy.
+func PreferredRegistry() map[string]any {
+	return map[string]any{
+		"name":          "CNB",
+		"server":        "docker.cnb.cool",
+		"console":       "https://cnb.cool",
+		"image_example": "docker.cnb.cool/<组织>/<仓库>:<标签>",
+		"note":          "推送镜像与部署时优先使用 CNB（docker.cnb.cool），不要默认 Docker Hub。平台已注入凭据的工作区可直接 docker pull / push。",
+	}
+}
+
 func normalizeRegistryServer(server string) string {
 	s := strings.TrimSpace(server)
 	s = strings.TrimPrefix(s, "https://")

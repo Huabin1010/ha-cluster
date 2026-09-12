@@ -404,12 +404,13 @@ func (a *App) IngressPublicInfo(ctx context.Context) map[string]any {
 	}
 	fab := FabricEdgeHost()
 	return map[string]any{
-		"public_host":      PublicIngressHost(),
-		"presets":          ingress.Presets(),
-		"zones":            zonesOut,
-		"fabric_host":      fab,
-		"fabric_http_port": FabricHTTPPort(),
-		"fabric_dns":       fab,
+		"public_host":         PublicIngressHost(),
+		"presets":             ingress.Presets(),
+		"zones":               zonesOut,
+		"fabric_host":         fab,
+		"fabric_http_port":    FabricHTTPPort(),
+		"fabric_dns":          fab,
+		"preferred_registry":  PreferredRegistry(),
 		"note": "公网 A 记录仍指入口机；已加入 EasyTier 时把 DNS 指向 fabric_dns（仅 cl.qzsyzn.com 后缀），" +
 			"域名不变、流量走虚网、不经 42 公网网卡。默认每个主机只暴露一个服务端口。",
 	}

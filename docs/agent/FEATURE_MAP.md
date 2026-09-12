@@ -183,7 +183,7 @@
 - **开通 / 销毁 / 审批过程会自动轮询**（约 3s）：`provisioning`「开通中」、`destroying`、待审批不必点「刷新列表」等稳态
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
 - 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行
-- 机器详情：网页终端、HTTP 执行 curl、Ingress、审计历史
+- 机器详情：网页终端、HTTP 执行 curl、Ingress（含推荐 CNB 镜像仓库）、审计历史
 
 ### 快捷键
 
@@ -232,6 +232,7 @@
 | 概览打开终端 | `ws-overview-terminal` |
 | 概览审计行 | `ws-overview-audit-row` |
 | HTTP 执行 / 复制 | `ws-http-exec` / `ws-copy-http-exec` |
+| 推荐镜像仓库 CNB | `ws-preferred-registry` / `ws-copy-preferred-registry` |
 | 添加域名 | `ing-add` → `ing-zone` / `ing-mode` / `ing-prefix` / `ing-domain` / `ing-port` / `ing-preset` / `ing-extra` / `ing-submit` |
 | 二次确认 Ingress | `ing-second-ok` / `ing-second-cancel` |
 | 域名表 / 行 | `ing-table` / `ing-row` |
@@ -486,7 +487,7 @@
 
 ### 子功能
 
-添加私有 Registry、测连通、开关自动注入、删除。
+添加私有 Registry、测连通、开关自动注入、删除。推送镜像与部署优先推荐 **CNB**（`docker.cnb.cool`）；添加仓库可一键填入推荐地址。
 
 ### 快捷键
 
@@ -498,6 +499,7 @@
 |---|---|
 | 刷新 / 添加 | `registries-refresh` / `registries-add-open` |
 | 名称 / 地址 / 用户 / 密码 | `registries-name` / `registries-server` / `registries-username` / `registries-password` |
+| 填入 CNB（推荐） | `registries-pref-cnb` |
 | 提交添加 | `registries-submit` |
 | 表 / 行 | `registries-table` / `registries-row` |
 | 自动注入 / 测连通 / 删除 | `registries-inject-toggle` / `registries-test` / `registries-delete` |
@@ -515,7 +517,7 @@
 
 ### 子功能
 
-添加域名后缀、启用/停用、删除；免审域可开放随机/自定义前缀。平台为每个启用后缀自动登记通配符 HTTPS 证书，可立即签发 / 自动续期。
+添加域名后缀、启用/停用、删除；免审域可开放随机/自定义前缀。平台为每个启用后缀自动登记通配符 HTTPS 证书，可立即签发 / 自动续期。推送镜像与部署优先推荐 CNB（`docker.cnb.cool`）。
 
 ### 快捷键
 

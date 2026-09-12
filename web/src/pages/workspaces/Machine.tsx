@@ -10,6 +10,7 @@ import {
   Database,
   Globe,
   HardDrive,
+  Layers,
   LayoutDashboard,
   ScrollText,
   Server,
@@ -142,6 +143,13 @@ type IngressMeta = {
   public_host: string;
   note?: string;
   presets: Array<{ id: string; label: string; description: string }>;
+  preferred_registry?: {
+    name: string;
+    server: string;
+    console?: string;
+    image_example?: string;
+    note?: string;
+  };
   zones?: Array<{
     id: string;
     suffix: string;
@@ -1032,6 +1040,43 @@ export function MachinePage() {
               </CardAction>
             </CardHeader>
             <CardContent className="grid gap-4 pb-4">
+              {meta?.preferred_registry && (
+                <div
+                  className="rounded-xl border border-border/80 bg-surface-2/40 p-3.5"
+                  data-testid="ws-preferred-registry"
+                >
+                  <p className="m-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1.5">
+                    <Layers className="size-3.5 shrink-0 opacity-70" />
+                    推荐镜像仓库
+                  </p>
+                  <p className="m-0 mt-1.5 text-sm text-foreground wrap-break-word min-w-0">
+                    {meta.preferred_registry.note ||
+                      `推送镜像与部署优先用 ${meta.preferred_registry.name}，不要默认 Docker Hub。`}
+                  </p>
+                  {meta.preferred_registry.image_example ? (
+                    <div className="mt-2.5 flex min-w-0 items-stretch gap-2">
+                      <code className={`${commandBoxClass} text-foreground`}>
+                        {meta.preferred_registry.image_example}
+                      </code>
+                      <Hint label="复制镜像路径">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="compact"
+                          data-testid="ws-copy-preferred-registry"
+                          className="inline-flex items-center justify-center size-9 p-0 shrink-0"
+                          aria-label="复制镜像路径"
+                          onClick={() =>
+                            void copy(meta.preferred_registry!.image_example!, "已复制 CNB 镜像路径")
+                          }
+                        >
+                          <Copy className="size-3.5 shrink-0" />
+                        </Button>
+                      </Hint>
+                    </div>
+                  ) : null}
+                </div>
+              )}
               {meta?.public_host && (
                 <div className="rounded-xl border border-border/80 bg-surface-2/40 p-3.5">
                   <p className="m-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

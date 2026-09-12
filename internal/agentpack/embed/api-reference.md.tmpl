@@ -78,7 +78,8 @@
 
 | 方法 | 路径 | 体 / 说明 |
 |---|---|---|
-| GET | `/ingress/meta` | zones、`fabric_dns`、presets |
+| GET | `/ingress/meta` | zones、`fabric_dns`、presets、`preferred_registry` |
+| GET | `/registries/preferred` | 推荐镜像仓库（CNB / `docker.cnb.cool`） |
 | GET | `/workspaces/{id}/ingress` | |
 | POST | `/workspaces/{id}/ingress/shared` | `{zone_id,mode:random\|custom,prefix?,port,confirm_second_port?}` |
 | POST | `/workspaces/{id}/ingress` | 自有域，多需审批 |

@@ -72,8 +72,9 @@ curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me
 2. **申请机器**（developer）→ owner/admin 审批 → 等到 `running`
 3. **进机器**：只用 `POST /workspaces/{id}/exec`（HTTPS + Bearer）。不要本机 `ssh` / ssh-config / 8099。控制台网页终端走 JWT+WS。
 4. **暴露 HTTP**：工作区内自己起服务 → `POST /workspaces/{id}/ingress/shared`（公共域已带平台通配符 HTTPS）
-5. **邀请同事**：`POST /projects/{id}/invitations`（按邮箱；accept 必须邮箱匹配）
-6. **HTTPS 证书**（仅 `platform_admin`）：`GET /admin/tls-certs` 看状态；`POST /admin/tls-certs/{id}/issue` 立即签发/续期。到期前 30 天会自动续。
+5. **推镜像 / 部署**：优先推到 **CNB** `docker.cnb.cool/<组织>/<仓库>:<标签>`，不要默认 Docker Hub。`GET /registries/preferred` 可核对推荐仓库。
+6. **邀请同事**：`POST /projects/{id}/invitations`（按邮箱；accept 必须邮箱匹配）
+7. **HTTPS 证书**（仅 `platform_admin`）：`GET /admin/tls-certs` 看状态；`POST /admin/tls-certs/{id}/issue` 立即签发/续期。到期前 30 天会自动续。
 
 ## 硬约束
 
