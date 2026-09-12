@@ -27,15 +27,27 @@ POST /workspaces/{id}/stop
 POST /workspaces/{id}/start
 ```
 
-## 3. SSH
+## 3. 进机器（只走 HTTP 执行）
+
+**不要本机 `ssh`、不要 `ssh-config`、不要 8099。** 进机器只有：
 
 ```
-GET /me/ssh-keys                       → 没有就 POST /me/ssh-keys
-GET /workspaces/{id}/ssh-config        → 200 才能连
-GET /workspaces/{id}/connection
+POST /workspaces/{id}/exec
+  {"command":"uname -a && whoami && pwd"}
 ```
 
-`ssh_access` 不是 `granted`（且不是 owner/admin）时 config 为 403。让用户：
+返回 `{exit_code, stdout, stderr, via:"http-ssh"}`。命令失败时 HTTP 仍是 200，看 `exit_code`。
+
+写文件用 stdin（base64）：
+
+```
+POST /workspaces/{id}/exec
+  {"command":"base64 -d > /tmp/note.txt && cat /tmp/note.txt","stdin_b64":"<BASE64>"}
+```
+
+`timeout_sec` 默认 60，最大 300。只读 SSH（`ssh_mode=read_only`）会 403。
+
+`GET /workspaces/{id}/connection` 含 `exec_example`。`ssh_access` 不是 `granted`（且不是 owner/admin）时 exec 为 403。让用户：
 
 ```
 POST /projects/{pid}/ssh-access-request
@@ -112,8 +124,25 @@ GET  /capacity
 GET  /audit-logs
 GET  /admin/docker-registries
 GET  /admin/ingress-domains
+GET  /admin/tls-certs
+POST /admin/tls-certs/{id}/issue
 POST /users/batch
 POST /users/{id}/suspend
 ```
 
 join token 不要发给普通项目成员。目标机：`curl install.sh | sudo bash -s join --token 'ha://join/...'`。
+
+## 8. HTTPS 证书（仅 platform_admin）
+
+公共域（如 `*.apps.cl.qzsyzn.com`）由平台用 ACME **DNS-01** 签发通配符证书，到期前 30 天自动续期，并挂到入口 443。用户领取的 `*.apps` 子域出厂即 HTTPS，不必自己申请证书。
+
+```
+GET /admin/tls-certs
+POST /admin/tls-certs/{id}/issue          # 立即签发或续期
+PATCH /admin/tls-certs/{id}               {"auto_renew":true}
+```
+
+- 列表不含 `cert_pem` / `key_pem`。
+- `issue` 可能要等 DNS 生效（约 1–3 分钟）；失败看返回的 `error` / `cert.last_error`。
+- 控制台站点 `cl.qzsyzn.com` 一般仍由宝塔管。不要对 `*.cl.qzsyzn.com` 随便点签发，以免覆盖控制台证书。
+- 普通用户 403 是正常的。

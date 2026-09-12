@@ -32,7 +32,7 @@ test.describe("PW-4 RBAC 成员建机权限", () => {
     await expect(row).toBeVisible();
     await expect(row).toHaveAttribute("data-status", "requested");
     await expect(row).toContainText("待审批");
-    await expect(row.getByTestId("ws-ssh-download")).not.toBeVisible();
+    await expect(row.getByTestId("ws-copy-http-exec")).not.toBeVisible();
     await expect(row.getByTestId("ws-approve")).not.toBeVisible();
   });
 });

@@ -16,6 +16,8 @@ alwaysApply: true
 
 口头词：「机器 / 服务器」= Workspace；「开通」= 创建工作区。
 
+每次开干前先核对 skill 版本：`curl -fsS {{API_BASE}}/agent-pack/version`，与 `.cursor/skills/ha-cluster-agent/VERSION`（当前 {{PACK_VERSION}}）比较。服务端更大则重新 `curl -fsSL '{{PACK_URL}}'` 覆盖 files。
+
 先 `curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me` 确认自己是谁，再动手。403 表示当前用户没有这项权限，不要改用别人的账号。
 
-完整操作步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`，接口表读 `api-reference.md`。
+完整操作步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`，接口表读 `api-reference.md`。公共域 HTTPS 由平台自动续期，见 workflows「HTTPS 证书」。

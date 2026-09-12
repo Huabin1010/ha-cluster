@@ -59,6 +59,9 @@ var sshKeyPerUserFingerprintSQL string
 //go:embed sql/014_agent_tokens.sql
 var agentTokensSQL string
 
+//go:embed sql/015_tls_certs.sql
+var tlsCertsSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -126,6 +129,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, agentTokensSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, tlsCertsSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

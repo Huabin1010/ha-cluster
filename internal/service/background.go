@@ -78,4 +78,30 @@ func StartBackgroundTasks(ctx context.Context, app *App) {
 			}
 		}
 	}()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(20 * time.Second):
+		}
+		if issued, skipped, failed := app.RenewDueTLSCerts(context.Background()); issued > 0 || failed > 0 {
+			log.Printf("tls renew: issued=%d skipped=%d failed=%d", issued, skipped, failed)
+		}
+		t := time.NewTicker(12 * time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				issued, skipped, failed := app.RenewDueTLSCerts(context.Background())
+				if issued > 0 || failed > 0 {
+					log.Printf("tls renew: issued=%d skipped=%d failed=%d", issued, skipped, failed)
+				} else {
+					_ = skipped
+				}
+			}
+		}
+	}()
 }

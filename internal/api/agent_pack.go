@@ -45,13 +45,22 @@ func (s *Server) meAgentPack(w http.ResponseWriter, r *http.Request) {
 	if created {
 		code = http.StatusCreated
 	}
+	ver := agentpack.CurrentVersion()
 	writeJSON(w, code, map[string]any{
-		"url":        url,
-		"prompt":     agentpack.InstallPrompt(v),
-		"prefix":     rec.Prefix,
-		"created_at": rec.CreatedAt,
-		"rotated":    rotate && created,
+		"url":         url,
+		"prompt":      agentpack.InstallPrompt(v),
+		"prefix":      rec.Prefix,
+		"created_at":  rec.CreatedAt,
+		"rotated":     rotate && created,
+		"version":     ver.Version,
+		"released_at": ver.ReleasedAt,
+		"notes":       ver.Notes,
 	})
+}
+
+func (s *Server) agentPackVersion(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, agentpack.CurrentVersion())
 }
 
 func (s *Server) publicAgentPack(w http.ResponseWriter, r *http.Request) {

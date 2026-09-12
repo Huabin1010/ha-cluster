@@ -217,12 +217,8 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     const { stdout: fileOut } = await runCmd(verifyFileCmd);
     expect(fileOut).toContain("ha-cluster-e2e-flow-verified");
 
-    // 测试 UI 触发下载 SSH 客户端配置文件
-    const [download] = await Promise.all([
-      ownerPage.waitForEvent("download"),
-      wsRow.locator("[data-testid=ws-ssh-download]").click(),
-    ]);
-    expect(download.suggestedFilename()).toBe(`ha-${shortId}.config`);
+    await expect(wsRow.locator("[data-testid=ws-copy-http-exec]")).toBeVisible();
+    await expect(wsRow.locator("[data-testid=ws-ssh-download]")).toHaveCount(0);
 
     // ==========================================
     // 阶段八：工作区启停与彻底销毁

@@ -68,9 +68,9 @@ func buildDirectSSHConnection(ws *models.Workspace, n *models.Node, actor *model
 	via := tg.Via
 	cmd := "ssh -p " + strconv.Itoa(port) + " " + user + "@" + host
 	scp := "scp -P " + strconv.Itoa(port) + " ./local-file " + user + "@" + host + ":/root/"
-	note := "实验室直连：经节点 " + via + " 地址连接 Workspace SSH 端口。请在平台账户中添加本机 SSH 公钥。"
+	note := "进机器请用网页终端或 HTTP 执行（POST /workspaces/{id}/exec）。不再提供本机 OpenSSH。"
 	if via == "lan" {
-		note = "实验室局域网直连（无需本机加入 EasyTier）。请在平台账户中添加本机 SSH 公钥后再连接。"
+		note = "进机器请用网页终端或 HTTP 执行。控制面经局域网到达工作区，不再提供本机 OpenSSH。"
 	}
 	return sshConnInfo{
 		Command:    cmd,
@@ -98,8 +98,7 @@ func buildBastionSSHConnection(ws *models.Workspace, actor *models.User) sshConn
 		Port:       port,
 		User:       user,
 		Mode:       "bastion",
-		Note: "每台机器是独立隔离环境。已加入 EasyTier 时请用 Host ha-<短码>-et（HostName=" +
-			bastionFabricHost() + "），流量走虚网、不经 42 公网出口。公网用户仍用 *.ssh.cl.qzsyzn.com。连接用户名为平台账号。",
+		Note: "进机器请用网页终端或 HTTP 执行（POST /workspaces/{id}/exec）。不再提供本机 OpenSSH / 8099。",
 	}
 }
 

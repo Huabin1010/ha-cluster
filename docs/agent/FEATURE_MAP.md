@@ -64,7 +64,7 @@
 
 ### Agent 接入（复制给 Cursor）
 
-侧栏导航和底栏用户区之间。「复制专属链接」把一段 **agent-friendly** 说明写入剪贴板：要求 **只用 curl**（禁止 Cursor fetch / WebFetch）执行 `curl -fsSL /api/agent-pack/{haagt_…}`。对方 Agent 无需登录，按返回的 `files` 写入 `.cursor/rules/ha-cluster-agent.mdc` 与 `.cursor/skills/ha-cluster-agent/`，之后继续用 curl + 同一 token 作为 `Authorization: Bearer` 代替用户操作。轮换后旧链接 404。
+侧栏导航和底栏用户区之间。「复制专属链接」把一段 **agent-friendly** 说明写入剪贴板：要求 **只用 curl**（禁止 Cursor fetch / WebFetch）执行 `curl -fsSL /api/agent-pack/{haagt_…}`。对方 Agent 无需登录，按返回的 `files` 写入 `.cursor/rules/ha-cluster-agent.mdc` 与 `.cursor/skills/ha-cluster-agent/`（含 `VERSION`），之后继续用 curl + 同一 token 作为 `Authorization: Bearer` 代替用户操作。Agent 每次开干前应 `GET /agent-pack/version`，若服务端 `version` 更大则重新 curl pack 覆盖 files。轮换后旧链接 404。
 
 相关 E2E：`web/e2e/pw1-auth-shell/`。
 
@@ -182,8 +182,8 @@
 - 按项目筛选、含异常、刷新
 - **开通 / 销毁 / 审批过程会自动轮询**（约 3s）：`provisioning`「开通中」、`destroying`、待审批不必点「刷新列表」等稳态
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
-- 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、一键 SSH、下载 ssh-config、导入公钥
-- 机器详情：网页终端、复制 SSH、Ingress、审计历史
+- 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行
+- 机器详情：网页终端、HTTP 执行 curl、Ingress、审计历史
 
 ### 快捷键
 
@@ -215,9 +215,8 @@
 | 去申请 SSH | `ws-request-ssh` |
 | 网页终端 | `ws-web-terminal` |
 | 管理详情 | `ws-manage` |
-| 复制 SSH / 下载 config | `ws-copy-ssh` / `ws-ssh-download` |
-| 导入公钥 | `ws-import-key` → `ws-keys-name` / `ws-keys-pubkey` / `ws-keys-submit` |
-| 无公钥回退复制 | `ws-copy-ssh-fallback` / `ws-copy-ssh-fallback-confirm` |
+| 复制 HTTP 执行 | `ws-copy-http-exec` |
+| 剪贴板回退 | `ws-copy-http-exec-fallback` / `ws-copy-http-exec-fallback-confirm` |
 | 危险确认 | `confirm-ok` / `confirm-cancel` |
 
 **机器详情**
@@ -232,7 +231,7 @@
 | 概览指标 | `ws-overview-stats` |
 | 概览打开终端 | `ws-overview-terminal` |
 | 概览审计行 | `ws-overview-audit-row` |
-| SSH 命令 / 复制 | `ws-ssh-cmd` / `ws-copy-ssh` |
+| HTTP 执行 / 复制 | `ws-http-exec` / `ws-copy-http-exec` |
 | 添加域名 | `ing-add` → `ing-zone` / `ing-mode` / `ing-prefix` / `ing-domain` / `ing-port` / `ing-preset` / `ing-extra` / `ing-submit` |
 | 二次确认 Ingress | `ing-second-ok` / `ing-second-cancel` |
 | 域名表 / 行 | `ing-table` / `ing-row` |
@@ -342,7 +341,7 @@
 
 ### 子功能
 
-添加公钥、复制指纹、删除。机器页也可「导入公钥」（`ws-import-key`），写入同一用户钥匙串。
+添加公钥、复制指纹、删除。进机器不再依赖这些钥匙（走网页终端 / HTTP 执行）。
 
 ### 快捷键
 
@@ -359,7 +358,7 @@
 | 复制 / 删除 | `keys-copy` / `keys-remove` |
 | 确认删除 | `confirm-ok` / `confirm-cancel` |
 
-角色门：已登录即可管自己的钥匙。无钥匙时一键 SSH 会走导入/回退。
+角色门：已登录即可管自己的钥匙。进机器不再用本机 OpenSSH，公钥页与连接无关。
 
 相关 E2E：`web/e2e/pw5-ops/ssh-keys.spec.ts`。
 
@@ -516,7 +515,7 @@
 
 ### 子功能
 
-添加域名后缀、启用/停用、删除；免审域可开放随机/自定义前缀。
+添加域名后缀、启用/停用、删除；免审域可开放随机/自定义前缀。平台为每个启用后缀自动登记通配符 HTTPS 证书，可立即签发 / 自动续期。
 
 ### 快捷键
 
@@ -531,6 +530,8 @@
 | 提交添加 | `ing-zone-submit` |
 | 表 / 行 | `ing-zone-table` / `ing-zone-row` |
 | 启用切换 / 删除 | `ing-zone-toggle` / `ing-zone-delete` |
+| HTTPS 证书表 / 行 | `tls-cert-table` / `tls-cert-row` |
+| 立即签发 / 续期 | `tls-cert-issue` |
 
 角色门：`platform_admin`。
 
@@ -553,5 +554,5 @@
 
 1. **项目 → 服务器**：登录 → `nav-projects` → `project-detail`（不要点行中央，会点到复制 ID）→ 桌面 `[data-testid=project-subnav] [data-testid=project-tab-workspaces]` → `ws-create` 或已有 `ws-row`。
 2. **节点加入命令**：`platform_admin` → `nav-nodes` → `nodes-join-token-open`（自动出命令）→ `join-copy`。
-3. **网页终端 / 一键 SSH**：`ws-row` running → `ws-web-terminal` 或 `ws-copy-ssh`；详情则 `ws-nav-connect` / `ws-tab-connect`。
+3. **网页终端 / HTTP 执行**：`ws-row` running → `ws-web-terminal` 或 `ws-copy-http-exec`；详情则 `ws-nav-connect` / `ws-tab-connect`。不再提供本机 OpenSSH / ssh-config。
 4. **销毁终审**：项目初审后 → `nav-dangerous` → `dangerous-approve-open` → `dangerous-confirm`。

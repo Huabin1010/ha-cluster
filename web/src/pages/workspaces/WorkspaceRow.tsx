@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy, Download, KeyRound, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock } from "lucide-react";
-import { api, apiText, friendlyError } from "@/providers";
+import { Check, Copy, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock } from "lucide-react";
+import { api, friendlyError } from "@/providers";
 import { formatTime, copyText } from "@/ui/format";
 import { canSSH } from "@/lib/permissions";
 import {
@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Hint } from "@/components/ui/tooltip";
-import { ImportKeyDialog } from "./ImportKeyDialog";
 import { ResizeDialog } from "./ResizeDialog";
 import { WorkspaceTerminalDialog } from "./WorkspaceTerminalDialog";
 import {
@@ -52,16 +51,6 @@ type Props = {
   onError: (msg: string) => void;
 };
 
-async function downloadSSHConfig(id: string): Promise<void> {
-  const text = await apiText(`/workspaces/${id}/ssh-config`);
-  const blob = new Blob([text], { type: "text/plain" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `ha-${id.slice(0, 8)}.config`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-
 export function WorkspaceRow({
   ws,
   busyId,
@@ -77,9 +66,9 @@ export function WorkspaceRow({
 }: Props) {
   const [destroyOpen, setDestroyOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [copiedSsh, setCopiedSsh] = useState(false);
+  const [copiedExec, setCopiedExec] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
-  const [manualSsh, setManualSsh] = useState("");
+  const [manualExec, setManualExec] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
   const busy = busyId === ws.id || pendingAction !== null;
@@ -560,76 +549,44 @@ export function WorkspaceRow({
                   连接 / 详情
                 </Link>
               </Button>
-              <Hint label="复制 SSH 一键连接命令">
+              <Hint label="复制 HTTP 执行命令">
                 <Button
                   type="button"
                   variant="ghost"
                   size="compact"
-                  data-testid="ws-copy-ssh"
+                  data-testid="ws-copy-http-exec"
                   disabled={busy}
                   className={cn(
                     "inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 px-2 text-xs",
-                    copiedSsh && "text-emerald-500 font-medium"
+                    copiedExec && "text-emerald-500 font-medium"
                   )}
                   onClick={() =>
                     run(async () => {
-                      const info = await api<{ command: string }>(`/workspaces/${ws.id}/connection`);
-                      const ok = await copyText(info.command);
-                      if (ok) {
-                        setCopiedSsh(true);
-                        setTimeout(() => setCopiedSsh(false), 2000);
-                        onToast("已复制 SSH 连接命令");
+                      const info = await api<{ exec_example: string }>(`/workspaces/${ws.id}/connection`);
+                      const cmd = info.exec_example;
+                      if (!cmd) {
+                        onError("没有 HTTP 执行命令");
                         return;
                       }
-                      setManualSsh(info.command);
+                      const ok = await copyText(cmd);
+                      if (ok) {
+                        setCopiedExec(true);
+                        setTimeout(() => setCopiedExec(false), 2000);
+                        onToast("已复制 HTTP 执行命令");
+                        return;
+                      }
+                      setManualExec(cmd);
                     })
                   }
                 >
-                  {copiedSsh ? <Check className="size-3.5 text-emerald-500 shrink-0" /> : <Copy className="size-3.5 opacity-70 shrink-0" />}
-                  {copiedSsh ? "已复制" : "复制命令"}
+                  {copiedExec ? <Check className="size-3.5 text-emerald-500 shrink-0" /> : <Copy className="size-3.5 opacity-70 shrink-0" />}
+                  {copiedExec ? "已复制" : "复制命令"}
                 </Button>
               </Hint>
-              <Hint label="下载标准 SSH config 配置文件">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="compact"
-                  data-testid="ws-ssh-download"
-                  disabled={busy}
-                  className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 px-2 text-xs"
-                  onClick={() =>
-                    run(async () => {
-                      await downloadSSHConfig(ws.id);
-                      onToast("SSH config 已下载（含 Host / RemoteCommand）");
-                    })
-                  }
-                >
-                  <Download className="size-3.5 opacity-70 shrink-0" />
-                  配置
-                </Button>
-              </Hint>
-              <ImportKeyDialog
-                trigger={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="compact"
-                    data-testid="ws-import-key"
-                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 px-2 text-xs"
-                  >
-                    <KeyRound className="size-3.5 opacity-70 shrink-0" />
-                    导公钥
-                  </Button>
-                }
-                onImported={() => {
-                  onToast("公钥已导入");
-                  onRefresh();
-                }}
-              />
-              <AlertDialog open={Boolean(manualSsh)} onOpenChange={(open) => { if (!open) setManualSsh(""); }}>
+              <AlertDialog open={Boolean(manualExec)} onOpenChange={(open) => { if (!open) setManualExec(""); }}>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>手动复制 SSH 命令</AlertDialogTitle>
+                    <AlertDialogTitle>手动复制 HTTP 执行命令</AlertDialogTitle>
                     <AlertDialogDescription>
                       当前页面不是 HTTPS，浏览器不允许直接写入剪贴板。点选下方命令复制，或再点一次「复制」。
                     </AlertDialogDescription>
@@ -638,9 +595,9 @@ export function WorkspaceRow({
                     <textarea
                       readOnly
                       autoFocus
-                      data-testid="ws-copy-ssh-fallback"
+                      data-testid="ws-copy-http-exec-fallback"
                       className="w-full min-h-20 rounded-md border border-(--line-strong) bg-(--input-bg) p-2 font-mono text-xs"
-                      value={manualSsh}
+                      value={manualExec}
                       onFocus={(e) => e.currentTarget.select()}
                     />
                   </AlertDialogBody>
@@ -648,15 +605,15 @@ export function WorkspaceRow({
                     <AlertDialogCancel>关闭</AlertDialogCancel>
                     <Button
                       type="button"
-                      data-testid="ws-copy-ssh-fallback-confirm"
+                      data-testid="ws-copy-http-exec-fallback-confirm"
                       onClick={() => {
                         void (async () => {
-                          const ok = await copyText(manualSsh);
+                          const ok = await copyText(manualExec);
                           if (!ok) return;
-                          setCopiedSsh(true);
-                          setTimeout(() => setCopiedSsh(false), 2000);
-                          onToast("已复制 SSH 连接命令");
-                          setManualSsh("");
+                          setCopiedExec(true);
+                          setTimeout(() => setCopiedExec(false), 2000);
+                          onToast("已复制 HTTP 执行命令");
+                          setManualExec("");
                         })();
                       }}
                     >

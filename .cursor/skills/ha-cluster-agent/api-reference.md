@@ -2,16 +2,16 @@
 
 默认基址 `https://cl.qzsyzn.com/api`。个性化 pack 以用户 token 为准。
 
-公开：`GET /healthz`、`POST /auth/login`、`GET /agent-pack/{haagt_…}`（`?format=md`）。
+公开：`GET /healthz`、`POST /auth/login`、`GET /agent-pack/version`（`{version,released_at,notes}`，与本地 VERSION 比较）、`GET /agent-pack/{haagt_…}`（`?format=md`）。
 
 我：`GET /me`、`/me/ssh-keys`、`GET|POST /me/agent-pack`（`{rotate}`）。
 
 项目：`GET|POST /projects`、`GET|PATCH|DELETE /projects/{id}`、`/usage`、`/members`、`/invitations`、`/transfer-ownership`、`/ssh-access-request`。
 
-机器：`GET /workspaces`、`POST /projects/{id}/workspaces`、`approve|reject|stop|start|resize|destroy-request`、`/ssh-config`、`/connection`、`/ingress`、`/ingress/shared`。
+机器：`GET /workspaces`、`POST /projects/{id}/workspaces`、`approve|reject|stop|start|resize|destroy-request`、`/connection`、`POST /workspaces/{id}/exec`（`{command,stdin_b64?,timeout_sec?}`，进机器只走这条）、`/ingress`、`/ingress/shared`。
 
-入口：`GET /ingress/meta`、`POST|DELETE /ingress/{id}`。
+入口：`GET /ingress/meta`、`POST|DELETE /ingress/{id}`。公共域已挂平台通配符 HTTPS。
 
-平台：`/admin/join-tokens`、`/admin/docker-registries`、`/admin/ingress-domains`、`/admin/dangerous-approvals`、`/nodes`、`/capacity`、`/users`、`/audit-logs`。
+平台：`/admin/join-tokens`、`/admin/docker-registries`、`/admin/ingress-domains`、`/admin/tls-certs`（`GET` 状态；`POST …/issue` 签发/续期；`PATCH …` `{auto_renew}`；到期前 30 天自动续）、`/admin/dangerous-approvals`、`/nodes`、`/capacity`、`/users`、`/audit-logs`。
 
 `arch`：`amd64|arm64|any`（`x86_64`→amd64）。重复加人 409。磁盘不能缩。

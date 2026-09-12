@@ -110,4 +110,13 @@ type Store interface {
 	GetAgentTokenByUser(ctx context.Context, userID uuid.UUID) (*models.AgentToken, error)
 	TouchAgentToken(ctx context.Context, id uuid.UUID) error
 	DeleteAgentTokenByUser(ctx context.Context, userID uuid.UUID) error
+
+	CreateTLSCert(ctx context.Context, c *models.TLSCert) error
+	GetTLSCert(ctx context.Context, id uuid.UUID) (*models.TLSCert, error)
+	GetTLSCertByZone(ctx context.Context, zoneID uuid.UUID) (*models.TLSCert, error)
+	ListTLSCerts(ctx context.Context) ([]models.TLSCert, error)
+	UpdateTLSCert(ctx context.Context, c *models.TLSCert) error
+	DeleteTLSCert(ctx context.Context, id uuid.UUID) error
+	GetACMEAccount(ctx context.Context) (*models.ACMEAccount, error)
+	SaveACMEAccount(ctx context.Context, acc *models.ACMEAccount) error
 }

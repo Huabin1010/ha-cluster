@@ -18,7 +18,6 @@ import {
   Info,
   Plus,
   Trash2,
-  Upload,
   type LucideIcon,
 } from "lucide-react";
 import { api, friendlyError, isApiError, type AuthUser } from "@/providers";
@@ -38,7 +37,6 @@ import {
   workspaceStatusVariant,
   workspaceDetailQueryPollInterval,
 } from "./types";
-import { ImportKeyDialog } from "./ImportKeyDialog";
 import { WorkspaceTerminalDialog } from "./WorkspaceTerminalDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,8 +118,7 @@ function ConnectCommandRow({
 }
 
 type ConnInfo = {
-  command: string;
-  scp_example?: string;
+  exec_example?: string;
   host: string;
   port: number;
   user: string;
@@ -959,7 +956,7 @@ export function MachinePage() {
                     <div className="min-w-0">
                       <p className="m-0 text-sm font-medium text-foreground">网页终端</p>
                       <p className="m-0 mt-0.5 text-xs text-muted-foreground wrap-break-word min-w-0">
-                        无需本机私钥，直接在浏览器打开 Shell。
+                        无需本机私钥，直接在浏览器打开 Shell。本机不再提供 OpenSSH / 8099。
                       </p>
                     </div>
                     <Button
@@ -975,28 +972,18 @@ export function MachinePage() {
                   {conn && (
                     <>
                       <div className="border-t border-border/60 pt-4 grid gap-4">
-                        <ConnectCommandRow
-                          label={
-                            <span className="inline-flex items-center gap-1.5 shrink-0">
-                              <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
-                              SSH
-                            </span>
-                          }
-                          command={conn.command}
-                          commandTestId="ws-ssh-cmd"
-                          copyTestId="ws-copy-ssh"
-                          onCopy={() => void copy(conn.command, "已复制 SSH 命令")}
-                        />
-                        {conn.scp_example && (
+                        {conn.exec_example && (
                           <ConnectCommandRow
                             label={
                               <span className="inline-flex items-center gap-1.5 shrink-0">
-                                <Upload className="size-3.5 shrink-0 text-muted-foreground" />
-                                上传文件（scp）
+                                <Globe className="size-3.5 shrink-0 text-muted-foreground" />
+                                HTTP 执行
                               </span>
                             }
-                            command={conn.scp_example}
-                            onCopy={() => void copy(conn.scp_example!, "已复制 scp 命令")}
+                            command={conn.exec_example}
+                            commandTestId="ws-http-exec"
+                            copyTestId="ws-copy-http-exec"
+                            onCopy={() => void copy(conn.exec_example!, "已复制 HTTP 执行命令")}
                           />
                         )}
                       </div>
@@ -1010,19 +997,6 @@ export function MachinePage() {
                   )}
                 </Elevated>
               )}
-              <div className="flex flex-wrap gap-2 pt-1 border-t border-border/60">
-                <ImportKeyDialog
-                  trigger={
-                    <Button type="button" data-testid="ws-import-key">
-                      导入 SSH 公钥
-                    </Button>
-                  }
-                  onImported={() => toast.show("公钥已导入，可用该密钥连接跳板", "success")}
-                />
-                <Button variant="outline" asChild>
-                  <Link to="/settings/keys">管理全部公钥</Link>
-                </Button>
-              </div>
             </CardContent>
           </Card>
           </Elevated>

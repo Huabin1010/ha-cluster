@@ -51,11 +51,22 @@ services:
       HA_PUBLIC_API: ${HA_PUBLIC_API:-https://cl.qzsyzn.com/api}
       HA_PUBLIC_CONSOLE: ${HA_PUBLIC_CONSOLE:-https://cl.qzsyzn.com}
       HA_WEBSHELL_KEY_FILE: /etc/ha-cluster/bastion_ws_ed25519
+      HA_TLS_DIR: /var/lib/ha-cluster/tls
+      HA_ACME_EMAIL: ${HA_ACME_EMAIL:-admin@cl.qzsyzn.com}
+      HA_ACME_ROOT_DOMAIN: ${HA_ACME_ROOT_DOMAIN:-qzsyzn.com}
+      HA_DNSPOD_ID: ${HA_DNSPOD_ID:-}
+      HA_DNSPOD_TOKEN: ${HA_DNSPOD_TOKEN:-}
+      HA_BT_PANEL: ${HA_BT_PANEL:-}
+      HA_BT_KEY: ${HA_BT_KEY:-}
+      HA_BT_SSL_SITE: ${HA_BT_SSL_SITE:-apps.cl.qzsyzn.com}
     ports:
       # 本机 Bastion / 运维直连 API（不对公网）
       - "127.0.0.1:${HA_HOST_PORT:-18082}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ha-ingress-conf:/var/lib/ha-ingress
+      - ha-tls-data:/var/lib/ha-cluster/tls
       - /etc/ha-cluster/bastion_ws_ed25519:/etc/ha-cluster/bastion_ws_ed25519:ro
     depends_on:
       postgres:
@@ -121,6 +132,7 @@ services:
 volumes:
   ha-pg-data:
   ha-ingress-conf:
+  ha-tls-data:
 
 networks:
   default:

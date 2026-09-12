@@ -553,3 +553,53 @@ type AgentToken struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
+
+const (
+	TLSPending  = "pending"
+	TLSIssued   = "issued"
+	TLSRenewing = "renewing"
+	TLSFailed   = "failed"
+)
+
+// TLSCert is a platform-managed HTTPS certificate (typically a shared-zone wildcard).
+type TLSCert struct {
+	ID           uuid.UUID  `json:"id"`
+	Name         string     `json:"name"`
+	Names        []string   `json:"names"`
+	ZoneID       *uuid.UUID `json:"zone_id,omitempty"`
+	AutoRenew    bool       `json:"auto_renew"`
+	Status       string     `json:"status"`
+	NotBefore    *time.Time `json:"not_before,omitempty"`
+	NotAfter     *time.Time `json:"not_after,omitempty"`
+	Issuer       string     `json:"issuer,omitempty"`
+	CertPEM      string     `json:"-"`
+	KeyPEM       string     `json:"-"`
+	LastError    string     `json:"last_error,omitempty"`
+	LastIssuedAt *time.Time `json:"last_issued_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+func (c TLSCert) Public() TLSCert {
+	c.CertPEM = ""
+	c.KeyPEM = ""
+	return c
+}
+
+func (c TLSCert) NeedsRenew(now time.Time, window time.Duration) bool {
+	if !c.AutoRenew {
+		return false
+	}
+	if c.Status != TLSIssued || c.NotAfter == nil {
+		return c.Status == TLSPending || c.Status == TLSFailed || c.CertPEM == ""
+	}
+	return !now.Before(c.NotAfter.Add(-window))
+}
+
+type ACMEAccount struct {
+	Directory string
+	Email     string
+	KeyPEM    string
+	URL       string
+	UpdatedAt time.Time
+}

@@ -334,6 +334,8 @@ func (s *Server) sshConnection(w http.ResponseWriter, r *http.Request) {
 		"mode":        info.Mode,
 		"via":         info.Via,
 		"note":        info.Note,
+		"exec":        "/workspaces/" + ws.ID.String() + "/exec",
+		"exec_example": execExample(requestAPIBase(r), ws.ID),
 	})
 }
 

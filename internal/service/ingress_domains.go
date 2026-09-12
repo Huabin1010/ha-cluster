@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -38,6 +39,7 @@ func (a *App) EnsureIngressDomainZones(ctx context.Context) {
 		UpdatedAt:         now,
 	}
 	_ = a.Store.CreateIngressDomainZone(ctx, z)
+	a.EnsureTLSForZones(ctx)
 }
 
 type CreateIngressDomainZoneInput struct {
@@ -94,6 +96,9 @@ func (a *App) CreateIngressDomainZone(ctx context.Context, in CreateIngressDomai
 	}
 	if err := a.Store.CreateIngressDomainZone(ctx, z); err != nil {
 		return nil, err
+	}
+	if _, err := a.ensureTLSCertForZone(ctx, *z); err != nil {
+		log.Printf("tls ensure after zone create %s: %v", z.Suffix, err)
 	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: in.Actor.ID, Action: "ingress_domain_zone.create",

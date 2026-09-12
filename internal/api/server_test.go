@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 
+	"ha-cluster/internal/agentpack"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/service"
 	"ha-cluster/internal/store/memory"
@@ -1316,6 +1318,94 @@ func TestWorkspaceTerminalAuthAndEcho(t *testing.T) {
 	}
 }
 
+func TestWorkspaceHTTPExec(t *testing.T) {
+	h := testServer(t)
+	tok := registerLogin(t, h, "exec-owner", "exec-owner@x.com")
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "exec-p", "slug": "exec-p"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", tok, map[string]string{
+		"name": "exec-ws", "plan": "nano", "arch": "amd64",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var ws models.Workspace
+	_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+	if ws.Status == models.WSRequested {
+		rr = doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/approve", tok, map[string]string{})
+		if rr.Code != http.StatusOK {
+			t.Fatal(rr.Body.String())
+		}
+		_ = json.Unmarshal(rr.Body.Bytes(), &ws)
+	}
+
+	path := "/workspaces/" + ws.ID.String() + "/exec"
+	denied := doJSON(t, h, http.MethodPost, path, "", map[string]string{"command": "uname"})
+	if denied.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 got %d %s", denied.Code, denied.Body.String())
+	}
+
+	viewerTok := registerLogin(t, h, "exec-view", "exec-view@x.com")
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", tok, map[string]string{
+		"username": "exec-view", "role": "viewer",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	forbid := doJSON(t, h, http.MethodPost, path, viewerTok, map[string]string{"command": "uname"})
+	if forbid.Code != http.StatusForbidden {
+		t.Fatalf("want 403 got %d %s", forbid.Code, forbid.Body.String())
+	}
+
+	empty := doJSON(t, h, http.MethodPost, path, tok, map[string]string{"command": "  "})
+	if empty.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 empty got %d %s", empty.Code, empty.Body.String())
+	}
+
+	ok := doJSON(t, h, http.MethodPost, path, tok, map[string]any{
+		"command":   "uname -a",
+		"stdin_b64": base64.StdEncoding.EncodeToString([]byte("payload")),
+	})
+	if ok.Code != http.StatusOK {
+		t.Fatalf("exec %d %s", ok.Code, ok.Body.String())
+	}
+	var out struct {
+		Exit   int    `json:"exit_code"`
+		Stdout string `json:"stdout"`
+		Via    string `json:"via"`
+	}
+	if err := json.Unmarshal(ok.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Exit != 0 || out.Via != "http-ssh" || !strings.Contains(out.Stdout, "uname -a") || !strings.Contains(out.Stdout, "payload") {
+		t.Fatalf("exec body %+v", out)
+	}
+
+	roTok := registerLogin(t, h, "exec-ro", "exec-ro@x.com")
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", tok, map[string]string{
+		"username": "exec-ro", "role": "developer", "ssh_access": "granted", "ssh_mode": "read_only",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	ro := doJSON(t, h, http.MethodPost, path, roTok, map[string]string{"command": "uname"})
+	if ro.Code != http.StatusForbidden || !strings.Contains(ro.Body.String(), "只读") {
+		t.Fatalf("want 403 read-only got %d %s", ro.Code, ro.Body.String())
+	}
+
+	conn := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/connection", tok, nil)
+	if conn.Code != http.StatusOK {
+		t.Fatalf("connection %d %s", conn.Code, conn.Body.String())
+	}
+	if !strings.Contains(conn.Body.String(), "/exec") || !strings.Contains(conn.Body.String(), "exec_example") {
+		t.Fatalf("connection missing exec: %s", conn.Body.String())
+	}
+}
+
 func TestAccessTokenQueryOnlyOnTerminal(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/workspaces/x/terminal?access_token=abc", nil)
 	if got := accessTokenFromRequest(req); got != "abc" {
@@ -1376,6 +1466,16 @@ func TestAgentPackIssueFetchAndAuth(t *testing.T) {
 	if pack.Files[".cursor/skills/ha-cluster-agent/SKILL.md"] == "" {
 		t.Fatal("missing skill file")
 	}
+	if strings.TrimSpace(pack.Files[".cursor/skills/ha-cluster-agent/VERSION"]) != agentpack.Version {
+		t.Fatalf("pack VERSION %q", pack.Files[".cursor/skills/ha-cluster-agent/VERSION"])
+	}
+	ver := doJSON(t, h, http.MethodGet, "/agent-pack/version", "", nil)
+	if ver.Code != http.StatusOK {
+		t.Fatalf("version %d %s", ver.Code, ver.Body.String())
+	}
+	if !strings.Contains(ver.Body.String(), `"version":"`+agentpack.Version+`"`) {
+		t.Fatalf("version body %s", ver.Body.String())
+	}
 	rr = doJSON(t, h, http.MethodGet, "/me", token, nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("agent token as bearer %d %s", rr.Code, rr.Body.String())
@@ -1392,5 +1492,47 @@ func TestAgentPackIssueFetchAndAuth(t *testing.T) {
 	rr = doJSON(t, h, http.MethodGet, "/agent-pack/"+token, "", nil)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("old pack should 404, got %d", rr.Code)
+	}
+}
+
+func TestTLSCertsIssueAndList(t *testing.T) {
+	t.Setenv("HA_TLS_SELF_SIGNED", "1")
+	t.Setenv("HA_TLS_DIR", t.TempDir())
+	h := testServer(t)
+	adminTok := registerLogin(t, h, "tls-admin", "tls-admin@x.com")
+	devTok := registerLogin(t, h, "tls-dev", "tls-dev@x.com")
+
+	created := doJSON(t, h, http.MethodPost, "/admin/ingress-domains", adminTok, map[string]any{
+		"suffix": "apps.tls.test", "display_name": "TLS Apps", "enabled": true,
+		"allow_random": true, "allow_custom_prefix": true,
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatal(created.Body.String())
+	}
+
+	deny := doJSON(t, h, http.MethodGet, "/admin/tls-certs", devTok, nil)
+	if deny.Code != http.StatusForbidden {
+		t.Fatalf("dev list %d", deny.Code)
+	}
+	listed := doJSON(t, h, http.MethodGet, "/admin/tls-certs", adminTok, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatal(listed.Body.String())
+	}
+	var env struct {
+		Data []models.TLSCert `json:"data"`
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &env); err != nil || len(env.Data) == 0 {
+		t.Fatalf("%v %s", err, listed.Body.String())
+	}
+	id := env.Data[0].ID.String()
+	issued := doJSON(t, h, http.MethodPost, "/admin/tls-certs/"+id+"/issue", adminTok, map[string]any{})
+	if issued.Code != http.StatusOK {
+		t.Fatalf("issue %d %s", issued.Code, issued.Body.String())
+	}
+	if !strings.Contains(issued.Body.String(), `"status":"issued"`) {
+		t.Fatal(issued.Body.String())
+	}
+	if strings.Contains(issued.Body.String(), "BEGIN ") {
+		t.Fatal("pem leaked")
 	}
 }

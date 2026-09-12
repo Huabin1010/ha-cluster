@@ -69,12 +69,8 @@ test.describe("Real Machine: 03 真机 Incus 容器创建、真实 SSH 连通与
     const { stdout: fileOut } = await runCmd(writeCmd);
     expect(fileOut).toContain("cluster-real-2026");
 
-    // 6. 测试 UI 触发 SSH 配置下载
-    const [download] = await Promise.all([
-      ownerPage.waitForEvent("download"),
-      wsRow.locator("[data-testid=ws-ssh-download]").click(),
-    ]);
-    expect(download.suggestedFilename()).toBe(`ha-${shortId}.config`);
+    await expect(wsRow.locator("[data-testid=ws-copy-http-exec]")).toBeVisible();
+    await expect(wsRow.locator("[data-testid=ws-ssh-download]")).toHaveCount(0);
 
     // 7. 在 UI 中停止容器 (ws-stop)
     await wsRow.locator("[data-testid=ws-stop]").click();

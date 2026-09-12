@@ -27,6 +27,12 @@ const (
 	SkillPath     = ".cursor/skills/ha-cluster-agent/SKILL.md"
 	WorkflowsPath = ".cursor/skills/ha-cluster-agent/workflows.md"
 	APIRefPath    = ".cursor/skills/ha-cluster-agent/api-reference.md"
+	VersionPath   = ".cursor/skills/ha-cluster-agent/VERSION"
+
+	// Version is a monotonic integer. Bump when pack files change so Agents can self-update.
+	Version    = "2"
+	ReleasedAt = "2026-09-12"
+	Notes      = "HTTPS 通配符证书自动续期；Agent skill 版本自检"
 )
 
 type Vars struct {
@@ -54,8 +60,20 @@ type Auth struct {
 	PlatformRole string `json:"platform_role"`
 }
 
+type VersionInfo struct {
+	Version    string `json:"version"`
+	ReleasedAt string `json:"released_at"`
+	Notes      string `json:"notes"`
+}
+
+func CurrentVersion() VersionInfo {
+	return VersionInfo{Version: Version, ReleasedAt: ReleasedAt, Notes: Notes}
+}
+
 type Pack struct {
 	Version       string            `json:"version"`
+	ReleasedAt    string            `json:"released_at"`
+	Notes         string            `json:"notes"`
 	InstallPrompt string            `json:"install_prompt"`
 	Auth          Auth              `json:"auth"`
 	Files         map[string]string `json:"files"`
@@ -135,9 +153,16 @@ mcp_web_fetch, browser tools, or any built-in HTTP fetch. curl.exe on Windows is
    - `+SkillPath+`
    - `+WorkflowsPath+`
    - `+APIRefPath+`
+   - `+VersionPath+`
 4. Then act as user `+v.Username+`. Read `+SkillPath+`.
    All later API calls must also be curl, e.g.
    curl -fsS -H "Authorization: Bearer <auth.token>" '`+v.APIBase+`/me'
+5. Version check (do this at the start of a session, or when the user says
+   the platform / skill was updated):
+   curl -fsS '`+v.APIBase+`/agent-pack/version'
+   Compare JSON "version" with local `+VersionPath+` (or SKILL.md pack_version).
+   Version is a rising integer. If remote is greater, curl the pack URL again
+   and overwrite the files (keep using the same token).
 
 Do not commit the token or these files to a public remote.
 ` + "中文：这是我的 ha-cluster 专属 Agent 接入。只用 curl 拉取和调用，禁止 Cursor 自带的 fetch / WebFetch。请立刻 curl 上面的链接，按 files 写入当前项目，然后用我的身份继续 curl API。不要问我密码。")
@@ -152,6 +177,9 @@ func apply(tmpl string, v Vars) string {
 		"{{USER_ID}}", v.UserID,
 		"{{PLATFORM_ROLE}}", v.PlatformRole,
 		"{{PACK_URL}}", v.PackURL,
+		"{{PACK_VERSION}}", Version,
+		"{{PACK_RELEASED_AT}}", ReleasedAt,
+		"{{PACK_NOTES}}", Notes,
 	)
 	return r.Replace(tmpl)
 }
@@ -175,9 +203,12 @@ func Build(user models.User, rawToken string, apiBase string) Pack {
 		SkillPath:     apply(skillTmpl, v),
 		WorkflowsPath: apply(workflowsTmpl, v),
 		APIRefPath:    apply(apiRefTmpl, v),
+		VersionPath:   Version + "\n",
 	}
 	return Pack{
-		Version:       "1",
+		Version:       Version,
+		ReleasedAt:    ReleasedAt,
+		Notes:         Notes,
 		InstallPrompt: InstallPrompt(v),
 		Auth: Auth{
 			APIBase:      v.APIBase,
@@ -192,11 +223,13 @@ func Build(user models.User, rawToken string, apiBase string) Pack {
 
 func Markdown(p Pack) string {
 	var b strings.Builder
-	b.WriteString("<!-- HA_CLUSTER_AGENT_PACK v1 -->\n\n")
+	b.WriteString("<!-- HA_CLUSTER_AGENT_PACK v")
+	b.WriteString(Version)
+	b.WriteString(" -->\n\n")
 	b.WriteString("# Install\n\n")
 	b.WriteString(p.InstallPrompt)
 	b.WriteString("\n\n")
-	for _, path := range []string{RulePath, SkillPath, WorkflowsPath, APIRefPath} {
+	for _, path := range []string{RulePath, SkillPath, WorkflowsPath, APIRefPath, VersionPath} {
 		b.WriteString("## File: ")
 		b.WriteString(path)
 		b.WriteString("\n\n```\n")

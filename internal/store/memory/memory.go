@@ -103,6 +103,8 @@ type Store struct {
 	ingressZones     map[uuid.UUID]*models.IngressDomainZone
 	dockerRegistries map[uuid.UUID]*models.DockerRegistry
 	agentTokens      map[uuid.UUID]*models.AgentToken
+	tlsCerts         map[uuid.UUID]*models.TLSCert
+	acmeAccount      *models.ACMEAccount
 }
 
 func New() *Store {
@@ -123,6 +125,7 @@ func New() *Store {
 		ingressZones:     map[uuid.UUID]*models.IngressDomainZone{},
 		dockerRegistries: map[uuid.UUID]*models.DockerRegistry{},
 		agentTokens:      map[uuid.UUID]*models.AgentToken{},
+		tlsCerts:         map[uuid.UUID]*models.TLSCert{},
 	}
 }
 

@@ -45,7 +45,7 @@ def load_creds() -> tuple[str, str]:
     if cred.is_file():
         text = cred.read_text(encoding="utf-8")
         m_panel = re.search(r"HA_BT_PANEL\s*[:=]\s*`?(\S+?)`?\s*$", text, re.M)
-        m_key = re.search(r"HA_BT_KEY\s*[:=]\s*`?(\S+?)`?\s*$", text, re.M)
+        m_key = re.search(r"HA_BT_KEY\s*[:=]\s*`([A-Za-z0-9]+)`", text)
         if not panel and m_panel:
             panel = m_panel.group(1).rstrip("/")
         if not key and m_key:

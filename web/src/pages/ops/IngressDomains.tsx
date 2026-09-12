@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useGetIdentity } from "@refinedev/core";
-import { CheckCircle2, Globe, Plus, RefreshCw, Shield, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock, Globe, Plus, RefreshCw, Shield, ShieldCheck, Trash2 } from "lucide-react";
 import { api, friendlyError } from "@/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,12 +47,37 @@ type Zone = {
   sort_order: number;
 };
 
+type TLSCert = {
+  id: string;
+  name: string;
+  names: string[];
+  zone_id?: string;
+  auto_renew: boolean;
+  status: string;
+  not_after?: string;
+  issuer?: string;
+  last_error?: string;
+};
+
 type Identity = { platform_role?: string };
+
+function tlsStatusLabel(status: string, notAfter?: string) {
+  if (status === "issued" && notAfter) {
+    const left = new Date(notAfter).getTime() - Date.now();
+    if (left < 30 * 24 * 60 * 60 * 1000) return { text: "即将到期", variant: "warn" as const };
+    return { text: "有效", variant: "ok" as const };
+  }
+  if (status === "renewing") return { text: "续期中", variant: "warn" as const };
+  if (status === "failed") return { text: "失败", variant: "danger" as const };
+  return { text: "未签发", variant: "outline" as const };
+}
 
 export function IngressDomainsPage() {
   const { data: me } = useGetIdentity<Identity>();
   const isAdmin = me?.platform_role === "platform_admin";
   const [rows, setRows] = useState<Zone[]>([]);
+  const [certs, setCerts] = useState<TLSCert[]>([]);
+  const [issuing, setIssuing] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -70,6 +95,12 @@ export function IngressDomainsPage() {
     try {
       const data = await api<{ data: Zone[] }>("/admin/ingress-domains");
       setRows(data.data ?? []);
+      try {
+        const tls = await api<{ data: TLSCert[] }>("/admin/tls-certs");
+        setCerts(tls.data ?? []);
+      } catch {
+        setCerts([]);
+      }
     } catch (e) {
       toast.error(friendlyError(e));
     } finally {
@@ -126,6 +157,20 @@ export function IngressDomainsPage() {
       await load();
     } catch (e) {
       toast.error(friendlyError(e));
+    }
+  }
+
+  async function issueCert(id: string) {
+    setIssuing(id);
+    try {
+      await api(`/admin/tls-certs/${id}/issue`, { method: "POST", body: "{}" });
+      toast.success("证书已签发或续期");
+      await load();
+    } catch (e) {
+      toast.error(friendlyError(e));
+      await load();
+    } finally {
+      setIssuing(null);
     }
   }
 
@@ -190,7 +235,7 @@ export function IngressDomainsPage() {
                 {rows.length} 个后缀
               </Badge>
             }
-            description="配置平台域名后缀。免审后缀允许用户随机或自定义前缀立即生效；需审后缀与自有域名走项目审批。"
+            description="配置平台域名后缀，并为公共域自动签发 / 续期 HTTPS 通配符证书。用户领取的 *.apps 子域出厂带绿锁。"
             actions={
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <Button
@@ -325,7 +370,79 @@ export function IngressDomainsPage() {
           <div className="py-12 text-center">
             <Loading label="加载域名配置…" />
           </div>
-        ) : rows.length === 0 ? (
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col gap-6">
+            <section className="shrink-0 grid gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="m-0 text-sm font-semibold text-foreground inline-flex items-center gap-1.5">
+                  <ShieldCheck className="size-4 shrink-0 text-primary" />
+                  HTTPS 证书
+                </h3>
+                <p className="m-0 text-xs text-muted-foreground break-words min-w-0">
+                  ACME DNS-01 通配符证书，到期前 30 天自动续期。签发后写入平台并挂到入口 HTTPS。
+                </p>
+              </div>
+              {certs.length === 0 ? (
+                <p className="m-0 text-sm text-muted-foreground">添加启用中的域名后缀后，会自动登记通配符证书。</p>
+              ) : (
+                <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
+                  <Table data-testid="tls-cert-table" className="min-w-[720px]">
+                    <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="py-2.5">覆盖域名</TableHead>
+                        <TableHead className="w-[120px] py-2.5 whitespace-nowrap">状态</TableHead>
+                        <TableHead className="w-[170px] py-2.5 whitespace-nowrap">到期</TableHead>
+                        <TableHead className="w-[140px] py-2.5 whitespace-nowrap">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {certs.map((c) => {
+                        const st = tlsStatusLabel(c.status, c.not_after);
+                        return (
+                          <TableRow key={c.id} data-testid="tls-cert-row">
+                            <TableCell className="min-w-0">
+                              <p className="m-0 truncate font-medium text-foreground font-mono">{c.name}</p>
+                              <p className="m-0 mt-0.5 truncate text-xs text-muted-foreground">
+                                {c.auto_renew ? "自动续期" : "已关闭自动续期"}
+                                {c.issuer ? ` · ${c.issuer}` : ""}
+                              </p>
+                              {c.last_error ? (
+                                <p className="m-0 mt-1 text-xs text-destructive break-words min-w-0">{c.last_error}</p>
+                              ) : null}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant={st.variant} className="inline-flex items-center whitespace-nowrap shrink-0">
+                                {st.text}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1.5 text-xs text-foreground">
+                                <Clock className="size-3.5 shrink-0 text-muted-foreground opacity-70" />
+                                {c.not_after ? new Date(c.not_after).toLocaleString("zh-CN") : "—"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Button
+                                type="button"
+                                size="compact"
+                                variant="outline"
+                                data-testid="tls-cert-issue"
+                                disabled={issuing === c.id}
+                                className="h-7 px-2 text-xs inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                                onClick={() => void issueCert(c.id)}
+                              >
+                                {issuing === c.id ? "签发中…" : c.status === "issued" ? "立即续期" : "立即签发"}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </section>
+        {rows.length === 0 ? (
           <div className="py-8 flex flex-col items-center justify-center">
             <Elevated
               offset={1}
@@ -417,6 +534,8 @@ export function IngressDomainsPage() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
           </div>
         )}
       </PageFrame>

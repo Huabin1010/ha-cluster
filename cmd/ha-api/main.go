@@ -44,6 +44,7 @@ func main() {
 	app := service.New(st, rt, secret)
 	ensureBootstrapAdmin(app)
 	app.EnsureIngressDomainZones(ctx)
+	app.EnsureTLSForZones(ctx)
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	service.StartBackgroundTasks(bgCtx, app)

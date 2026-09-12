@@ -19,7 +19,7 @@ test.describe("PW-4 服务器申请与审批", () => {
     const devRow = devPage.locator('[data-testid="ws-row"]', { hasText: "need-approve" });
     await expect(devRow).toBeVisible();
     await expect(devRow).toHaveAttribute("data-status", "requested");
-    await expect(devRow.getByTestId("ws-copy-ssh")).not.toBeVisible();
+    await expect(devRow.getByTestId("ws-copy-http-exec")).not.toBeVisible();
     await expect(devRow.getByTestId("ws-web-terminal")).not.toBeVisible();
 
     await ownerPage.goto(`/workspaces?project_id=${p.id}`);
@@ -30,13 +30,12 @@ test.describe("PW-4 服务器申请与审批", () => {
     await expect(ownerRow).toHaveAttribute("data-status", "running");
     await expectToast(ownerPage, "已批准");
 
-    await expect(ownerRow.getByTestId("ws-copy-ssh")).toBeVisible();
+    await expect(ownerRow.getByTestId("ws-copy-http-exec")).toBeVisible();
     await expect(ownerRow.getByTestId("ws-web-terminal")).toBeVisible();
-    await expect(ownerRow.getByTestId("ws-import-key")).toBeVisible();
 
     await devPage.reload();
     await expect(devRow).toHaveAttribute("data-status", "running");
-    await expect(devRow.getByTestId("ws-copy-ssh")).toBeVisible();
+    await expect(devRow.getByTestId("ws-copy-http-exec")).toBeVisible();
     await expect(devRow.getByTestId("ws-web-terminal")).toBeVisible();
   });
 });
