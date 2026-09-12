@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { Hint } from "@/components/ui/tooltip";
 import { Elevated } from "@/lib/elevated";
 import { Empty, PageBody } from "@/ui";
@@ -139,20 +141,17 @@ export function ProjectsPage() {
     <>
       <PageFrame
         header={
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2.5">
-                  <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">项目</h2>
-                  <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                    {rows.length} 个环境
-                  </Badge>
-                </div>
-                <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                  协作与资源边界。登录后先选项目，项目内可申请隔离服务器，管理员批准后获得 SSH 连接。
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
+          <PageHeading
+            icon={FolderKanban}
+            title="项目"
+            badges={
+              <Badge variant="outline" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+                {rows.length} 个环境
+              </Badge>
+            }
+            description="协作与资源边界。登录后先选项目，项目内可申请隔离服务器，管理员批准后获得 SSH 连接。"
+            actions={
+              <>
                 <Button
                   type="button"
                   variant="outline"
@@ -176,12 +175,12 @@ export function ProjectsPage() {
                   <Plus className="size-4 mr-1.5 shrink-0" />
                   创建项目
                 </Button>
-              </div>
-            </div>
-
+              </>
+            }
+          >
             {rows.length > 0 && (
-              <div className="flex items-center justify-between gap-3">
-                <div className="relative flex-1 max-w-xs sm:max-w-sm">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <div className="relative w-full sm:max-w-sm">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
                   <Input
                     value={search}
@@ -191,13 +190,13 @@ export function ProjectsPage() {
                   />
                 </div>
                 {search && (
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground shrink-0">
                     找到 {filteredRows.length} 个匹配项
                   </span>
                 )}
               </div>
             )}
-          </div>
+          </PageHeading>
         }
         footer={
           <Paginator
@@ -221,6 +220,8 @@ export function ProjectsPage() {
           ) : filteredRows.length === 0 ? (
             <Empty text="未找到匹配的项目" description="试试更换搜索关键词" />
           ) : (
+            <ResponsiveList
+              table={
             <Elevated
               offset={1}
               shadowLevel={2}
@@ -254,7 +255,7 @@ export function ProjectsPage() {
                           创建时间
                         </span>
                       </TableHead>
-                      <TableHead className="w-[200px] text-right font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5 pr-4">
+                      <TableHead stickyEnd className="w-[200px] text-right font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5 pr-4">
                         <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
                           <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
                           操作
@@ -336,6 +337,7 @@ export function ProjectsPage() {
                             </span>
                           </TableCell>
                           <TableCell
+                            stickyEnd
                             className="text-right py-2.5 w-[180px] pr-4"
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => e.stopPropagation()}
@@ -390,6 +392,110 @@ export function ProjectsPage() {
                 </Table>
               </div>
             </Elevated>
+              }
+              cards={pager.slice.map((p) => {
+                const manage = canManageProject(p.my_role, me?.platform_role, p.owner_id, me?.id);
+                return (
+                  <ListCard
+                    key={p.id}
+                    data-testid="project-row"
+                    role="link"
+                    tabIndex={0}
+                    className="cursor-pointer"
+                    onClick={() => openProject(p)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openProject(p);
+                      }
+                    }}
+                  >
+                    <ListCardHeader
+                      leading={
+                        <span className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
+                          <FolderKanban className="size-3.5" />
+                        </span>
+                      }
+                      title={p.name}
+                    />
+                    <ListCardMeta>
+                      <span className="inline-flex items-center gap-1 min-w-0">
+                        <Tag className="size-3 opacity-60 shrink-0" />
+                        <span className="font-mono truncate">{p.slug}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 shrink-0">
+                        <Clock className="size-3 opacity-60" />
+                        {formatTime(p.created_at)}
+                      </span>
+                    </ListCardMeta>
+                    <ListCardActions>
+                      <div
+                        className="flex flex-wrap items-center gap-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <Hint label={copiedId === p.id ? "已复制 ID" : "复制完整 ID"}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="compact"
+                            data-testid="project-copy-id"
+                            onClick={(e) => void onCopyId(e, p.id)}
+                            className={cn(
+                              "size-7 p-0 shrink-0 text-muted-foreground hover:text-foreground",
+                              copiedId === p.id && "text-emerald-500 bg-emerald-500/10",
+                            )}
+                            aria-label="复制项目 ID"
+                          >
+                            {copiedId === p.id ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5 opacity-70" />}
+                          </Button>
+                        </Hint>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="compact"
+                          data-testid="project-detail"
+                          onClick={() => openProject(p)}
+                          className="h-7 px-2 text-xs font-medium inline-flex items-center gap-1 shrink-0"
+                        >
+                          <ExternalLink className="size-3 opacity-60 shrink-0" />
+                          详情
+                        </Button>
+                        {manage && (
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="compact"
+                              data-testid="project-edit"
+                              onClick={() => {
+                                setFormErr("");
+                                setEditTarget(p);
+                              }}
+                              className="h-7 px-2 text-xs font-medium inline-flex items-center gap-1 shrink-0"
+                            >
+                              <Pencil className="size-3 opacity-60 shrink-0" />
+                              编辑
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="compact"
+                              data-testid="project-delete"
+                              onClick={() => setRemoveTarget(p)}
+                              className="h-7 px-2 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive inline-flex items-center gap-1 shrink-0"
+                            >
+                              <Trash2 className="size-3 opacity-70 shrink-0" />
+                              删除
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </ListCardActions>
+                  </ListCard>
+                );
+              })}
+            />
           )}
         </PageBody>
       </PageFrame>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Elevated } from "@/lib/elevated";
 import { Hint } from "@/components/ui/tooltip";
@@ -103,25 +104,17 @@ export function DangerousApprovalsPage() {
     <>
       <PageFrame
         header={
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="size-9 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0 border border-rose-500/20 shadow-xs">
-                  <ShieldAlert className="size-4.5" />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">危险操作终审</h2>
-                    <Badge variant={rows.length > 0 ? "danger" : "outline"} className="px-2 py-0.5 text-xs font-mono font-normal">
-                      {rows.length} 笔待终审
-                    </Badge>
-                  </div>
-                  <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                    项目管理员已初审通过的隔离工作区销毁申请。经平台超级管理员终审后，将彻底释放物理资源配额并擦除实例数据。
-                  </p>
-                </div>
-              </div>
-
+          <PageHeading
+            icon={ShieldAlert}
+            iconClassName="bg-rose-500/10 text-rose-500 border-rose-500/20"
+            title="危险操作终审"
+            badges={
+              <Badge variant={rows.length > 0 ? "danger" : "outline"} className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+                {rows.length} 笔待终审
+              </Badge>
+            }
+            description="项目管理员已初审通过的隔离工作区销毁申请。经平台超级管理员终审后，将彻底释放物理资源配额并擦除实例数据。"
+            actions={
               <Button
                 type="button"
                 variant="outline"
@@ -133,16 +126,17 @@ export function DangerousApprovalsPage() {
                 <RefreshCw className="size-3.5 opacity-70 shrink-0" />
                 刷新待审
               </Button>
-            </div>
+            }
+          >
 
             {/* 警示条 */}
             <Elevated
               offset={1}
               shadowLevel={1}
-              className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3.5 shadow-surface-1 flex items-center gap-2.5 text-xs text-rose-500"
+              className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3.5 shadow-surface-1 flex items-start gap-2.5 text-xs text-rose-500"
             >
-              <AlertTriangle className="size-4 shrink-0" />
-              <span>
+              <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+              <span className="break-words min-w-0">
                 高危防线注意：终审通过后将执行不可逆的容器与存储销毁指令。请核验所属项目以及该工作区是否仍有挂载资产未备份。
               </span>
             </Elevated>
@@ -152,7 +146,7 @@ export function DangerousApprovalsPage() {
                 <AlertDescription>{err}</AlertDescription>
               </Alert>
             )}
-          </div>
+          </PageHeading>
         }
       >
         {loading ? (
@@ -200,7 +194,7 @@ export function DangerousApprovalsPage() {
                       当前审批状态
                     </span>
                   </TableHead>
-                  <TableHead className="w-[160px] text-right py-2.5 pr-4">
+                  <TableHead stickyEnd className="w-[160px] text-right py-2.5 pr-4">
                     <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
                       <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
                       终审操作
@@ -231,7 +225,7 @@ export function DangerousApprovalsPage() {
                         {statusLabel(w.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right py-2.5 w-[160px] pr-4">
+                    <TableCell stickyEnd className="text-right py-2.5 w-[160px] pr-4">
                       <Button
                         type="button"
                         variant="destructive"

@@ -360,7 +360,7 @@ export function ProjectDetailPage() {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
               <FolderKanban className="size-4.5" />
@@ -378,10 +378,12 @@ export function ProjectDetailPage() {
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                <span className="font-mono text-[11px] select-all opacity-80" data-testid="project-id">
-                  {project.id}
-                </span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 mt-1 text-xs text-muted-foreground">
+                <Hint label={project.id}>
+                  <span className="font-mono text-[11px] select-all opacity-80 truncate max-w-[10rem] sm:max-w-[20rem]" data-testid="project-id">
+                    {project.id}
+                  </span>
+                </Hint>
                 <Hint label={copied ? "已复制到剪贴板" : "复制完整项目 ID"}>
                   <Button
                     type="button"
@@ -411,7 +413,7 @@ export function ProjectDetailPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:shrink-0">
             {isOwnerOrAdmin && (
               <>
                 <Button
@@ -847,7 +849,7 @@ export function ProjectDetailPage() {
               >
                 <div className="w-full min-h-0 flex-1 overflow-auto">
                   <Table className="min-w-[880px]">
-                    <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none sticky top-0 z-10 backdrop-blur-sm">
+                    <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none sticky top-0 z-20 backdrop-blur-sm">
                       <TableRow className="border-b border-border/60 hover:bg-transparent">
                         <TableHead className="font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
                           工作区名称
@@ -864,7 +866,7 @@ export function ProjectDetailPage() {
                         <TableHead className="w-[160px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
                           创建时间
                         </TableHead>
-                        <TableHead className="w-[200px] text-right font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5 pr-4">
+                        <TableHead stickyEnd className="w-[200px] text-right font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5 pr-4">
                           操作
                         </TableHead>
                       </TableRow>

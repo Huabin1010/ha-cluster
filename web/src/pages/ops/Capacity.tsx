@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
 import { friendlyError } from "@/providers";
@@ -51,25 +52,16 @@ export function CapacityPage() {
   return (
     <PageFrame
       header={
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
-                <Database className="size-4.5" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">算力容量池</h2>
-                  <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                    {pools.length} 个架构池
-                  </Badge>
-                </div>
-                <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                  按 CPU 架构（amd64 / arm64）硬占用隔离汇总 Ready 宿主机的剩余可分配算力，杜绝跨架构超卖与混跑。
-                </p>
-              </div>
-            </div>
-
+        <PageHeading
+          icon={Database}
+          title="算力容量池"
+          badges={
+            <Badge variant="outline" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+              {pools.length} 个架构池
+            </Badge>
+          }
+          description="按 CPU 架构（amd64 / arm64）硬占用隔离汇总 Ready 宿主机的剩余可分配算力，杜绝跨架构超卖与混跑。"
+          actions={
             <Button
               type="button"
               variant="outline"
@@ -81,7 +73,8 @@ export function CapacityPage() {
               <RefreshCw className="size-3.5 opacity-70 shrink-0" />
               刷新容量
             </Button>
-          </div>
+          }
+        >
 
           {/* 指标汇总卡片条 */}
           {pools.length > 0 && (
@@ -153,7 +146,7 @@ export function CapacityPage() {
               <AlertDescription>{friendlyError(error)}</AlertDescription>
             </Alert>
           )}
-        </div>
+        </PageHeading>
       }
       footer={
         <Paginator

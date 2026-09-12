@@ -19,6 +19,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
 import { Hint } from "@/components/ui/tooltip";
@@ -127,39 +128,29 @@ export function SSHKeysPage() {
     <>
       <PageFrame
         header={
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
-                  <KeyRound className="size-4.5" />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">SSH 个人公钥</h2>
-                    <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                      {keys.length} 把公钥
-                    </Badge>
-                  </div>
-                  <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                    登记你的 SSH 身份公钥。添加后将自动注入你有权访问的所有隔离服务器，用于经由 Bastion 跳板机免密安全登录。
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2">
-                <Dialog
-                  open={open}
-                  onOpenChange={(v) => {
-                    setOpen(v);
-                    if (!v) reset();
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button type="button" size="compact" data-testid="keys-add-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
-                      <Plus className="size-3.5 shrink-0" />
-                      添加公钥
-                    </Button>
-                  </DialogTrigger>
+          <PageHeading
+            icon={KeyRound}
+            title="SSH 个人公钥"
+            badges={
+              <Badge variant="outline" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+                {keys.length} 把公钥
+              </Badge>
+            }
+            description="登记你的 SSH 身份公钥。添加后将自动注入你有权访问的所有隔离服务器，用于经由 Bastion 跳板机免密安全登录。"
+            actions={
+              <Dialog
+                open={open}
+                onOpenChange={(v) => {
+                  setOpen(v);
+                  if (!v) reset();
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button type="button" size="compact" data-testid="keys-add-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
+                    <Plus className="size-3.5 shrink-0" />
+                    添加公钥
+                  </Button>
+                </DialogTrigger>
                   <DialogContent size="lg" className="sm:max-w-xl">
                     <DialogHeader>
                       <DialogTitle>登记 SSH 公钥</DialogTitle>
@@ -205,22 +196,22 @@ export function SSHKeysPage() {
                     </form>
                   </DialogContent>
                 </Dialog>
-              </div>
-            </div>
+            }
+          >
 
             {/* 提示与指南条 */}
             <Elevated
               offset={1}
               shadowLevel={1}
-              className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"
+              className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between text-xs text-muted-foreground"
             >
-              <div className="flex items-center gap-2">
-                <Shield className="size-4 text-emerald-500 shrink-0" />
-                <span>
+              <div className="flex items-start gap-2 min-w-0">
+                <Shield className="size-4 text-emerald-500 shrink-0 mt-0.5" />
+                <span className="break-words min-w-0">
                   至少需要登记一把公钥才能通过平台 Bastion 跳板机接入。公钥变动将在 30 秒内向活跃容器热同步。
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <Badge variant="ok" size="compact" className="font-mono font-normal">
                   Ed25519 推荐
                 </Badge>
@@ -233,7 +224,7 @@ export function SSHKeysPage() {
                 </Badge>
               </div>
             </Elevated>
-          </div>
+          </PageHeading>
         }
         footer={
           <Paginator
@@ -291,7 +282,7 @@ export function SSHKeysPage() {
                       登记时间
                     </span>
                   </TableHead>
-                  <TableHead className="w-[180px] text-right py-2.5 pr-4">
+                  <TableHead stickyEnd className="w-[180px] text-right py-2.5 pr-4">
                     <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
                       <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
                       操作
@@ -321,7 +312,7 @@ export function SSHKeysPage() {
                         {fmtTime(k.created_at)}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right py-2.5 w-[180px] pr-4">
+                    <TableCell stickyEnd className="text-right py-2.5 w-[180px] pr-4">
                       <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                         <Button
                           type="button"

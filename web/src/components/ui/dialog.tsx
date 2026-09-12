@@ -165,10 +165,10 @@ const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(
           <motion.div
             className={cn(
               container ? "absolute" : "fixed",
-              "left-1/2 z-50 w-[calc(100%-2rem)]",
+              "left-1/2 z-50 flex w-[calc(100%-1.5rem)] max-h-[min(92dvh,calc(100svh-1.5rem))] flex-col overflow-hidden",
               position === "top" ? "top-[12dvh]" : "top-1/2",
               surfaceClasses(dialogLevel),
-              "p-6 focus:outline-none",
+              "p-5 sm:p-6 focus:outline-none",
               size === "sm" && (compact ? "max-w-[360px]" : "max-w-[400px]"),
               size === "lg" && (compact ? "max-w-[500px]" : "max-w-[580px]"),
               size === "xl" && (compact ? "max-w-[800px]" : "max-w-[880px]"),
@@ -220,7 +220,10 @@ function DialogHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
 function DialogFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("flex justify-end gap-2 mt-6", className)}
+      className={cn(
+        "mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end [&>*]:w-full sm:[&>*]:w-auto",
+        className,
+      )}
       {...props}
     />
   );

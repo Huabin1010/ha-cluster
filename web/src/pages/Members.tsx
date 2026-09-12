@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useGetIdentity, useList } from "@refinedev/core";
-import { Users, FolderKanban, ArrowRight, Plus, Mail, Shield } from "lucide-react";
+import { Users, FolderKanban, ArrowRight, Plus, Mail } from "lucide-react";
 import { MemberList } from "@/pages/members/MemberList";
 import { BatchCreateUsersDialog } from "@/pages/members/BatchCreateUsersDialog";
 import { SelectBox } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Elevated } from "@/lib/elevated";
 import { type AuthUser } from "@/providers";
 import { readCurrentProject, writeCurrentProject } from "@/lib/current-project";
@@ -27,7 +28,6 @@ export function MembersPage() {
   const { data, isLoading } = useList<Project>({ resource: "projects" });
   const projects = data?.data ?? [];
 
-  // 优先级：路由参数 > URL Query > 全局当前项目缓存
   const savedProjectId = readCurrentProject();
   const initialId = routeProjectId || queryId || savedProjectId;
   const [projectId, setProjectId] = useState(initialId);
@@ -68,114 +68,129 @@ export function MembersPage() {
     })),
   ];
 
-  const headerContent = (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
-            <Users className="size-4.5" />
-          </span>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">成员与权限</h2>
-              <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                {projects.length} 个项目
-              </Badge>
-              {selected && (
-                <Badge variant="default" className="px-2 py-0.5 text-xs font-normal inline-flex items-center gap-1">
-                  <FolderKanban className="size-3" />
-                  当前: {selected.name}
-                </Badge>
-              )}
-            </div>
-            <p className="mt-1 mb-0 text-sm text-muted-foreground">
-              基于项目边界的团队成员权限与 SSH 访问管理。已有邀请 Token？可直接前往{" "}
-              <Link to="/invitations/accept" data-testid="invite-accept-page" className="text-primary hover:underline font-medium inline-flex items-center gap-0.5">
-                <Mail className="size-3" />
-                接受邀请
-              </Link>
-              。
-            </p>
-          </div>
-        </div>
+  const headingBadges = (
+    <>
+      <Badge variant="outline" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+        {projects.length} 个项目
+      </Badge>
+      {selected && (
+        <Badge variant="default" className="inline-flex max-w-full items-center gap-1 whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-normal">
+          <FolderKanban className="size-3 shrink-0" />
+          <span className="truncate">当前: {selected.name}</span>
+        </Badge>
+      )}
+    </>
+  );
 
-        <div className="flex shrink-0 items-center gap-2">
-          {isPlatformAdmin && (
-            <Button
-              type="button"
-              variant="outline"
-              size="compact"
-              data-testid="global-batch-create-open"
-              onClick={() => setGlobalBatchOpen(true)}
-              className="h-8 px-3 text-xs gap-1.5 shrink-0"
-            >
-              <Users className="size-3.5 shrink-0" />
-              批量创建用户
-            </Button>
-          )}
+  const headingDescription = (
+    <>
+      基于项目边界的团队成员权限与 SSH 访问管理。已有邀请 Token？可直接前往{" "}
+      <Link to="/invitations/accept" data-testid="invite-accept-page" className="text-primary hover:underline font-medium inline-flex items-center gap-0.5">
+        <Mail className="size-3" />
+        接受邀请
+      </Link>
+      {isPlatformAdmin ? (
+        <>
+          。平台账号名册见{" "}
+          <Link to="/users" data-testid="users-page-link" className="text-primary hover:underline font-medium inline-flex items-center gap-0.5">
+            <Users className="size-3" />
+            用户列表
+          </Link>
+          。
+        </>
+      ) : (
+        "。"
+      )}
+    </>
+  );
+
+  const projectSelector = (
+    <Elevated
+      offset={1}
+      shadowLevel={1}
+      className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <span className="text-xs font-medium text-muted-foreground shrink-0 inline-flex items-center gap-1.5">
+          <FolderKanban className="size-3.5 text-primary shrink-0" />
+          目标项目
+        </span>
+        <div className="w-full min-w-0 sm:max-w-sm">
+          <SelectBox
+            testId="member-project"
+            value={projectId || "__none__"}
+            onValueChange={(v) => onSelectProject(v === "__none__" ? "" : v)}
+            disabled={isLoading}
+            placeholder="— 选择项目 —"
+            options={projectOptions}
+          />
         </div>
       </div>
 
-      {/* 快捷项目切换栏 */}
-      <Elevated
-        offset={1}
-        shadowLevel={1}
-        className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-wrap items-center justify-between gap-3"
-      >
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <span className="text-xs font-medium text-muted-foreground shrink-0 flex items-center gap-1.5">
-            <FolderKanban className="size-3.5 text-primary" />
-            目标项目:
-          </span>
-          <div className="w-full max-w-xs sm:max-w-sm">
-            <SelectBox
-              testId="member-project"
-              value={projectId || "__none__"}
-              onValueChange={(v) => onSelectProject(v === "__none__" ? "" : v)}
-              disabled={isLoading}
-              placeholder="— 选择项目 —"
-              options={projectOptions}
-            />
-          </div>
-        </div>
-
-        {selected && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-            <span className="font-mono bg-muted/40 px-2 py-0.5 rounded border border-border/60 text-foreground">
+      {selected && (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {selected.slug ? (
+            <span className="font-mono bg-muted/40 px-2 py-0.5 rounded border border-border/60 text-foreground truncate max-w-[10rem]">
               {selected.slug}
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="compact"
-              onClick={() => navigate(`/projects/${selected.id}`)}
-              className="h-7 text-xs text-muted-foreground hover:text-foreground px-2 gap-1"
-            >
-              <span>查看项目详情</span>
-              <ArrowRight className="size-3" />
-            </Button>
-          </div>
-        )}
-      </Elevated>
-    </div>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="compact"
+            onClick={() => navigate(`/projects/${selected.id}`)}
+            className="h-7 text-xs text-muted-foreground hover:text-foreground px-2 gap-1 inline-flex items-center whitespace-nowrap shrink-0"
+          >
+            <span>查看项目详情</span>
+            <ArrowRight className="size-3 shrink-0" />
+          </Button>
+        </div>
+      )}
+    </Elevated>
   );
 
   if (!projectId) {
     return (
       <>
-        <PageFrame header={headerContent}>
+        <PageFrame
+          header={
+            <PageHeading
+              icon={Users}
+              title="成员与权限"
+              badges={headingBadges}
+              description={headingDescription}
+              actions={
+                isPlatformAdmin ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="compact"
+                    data-testid="global-batch-create-open"
+                    onClick={() => setGlobalBatchOpen(true)}
+                    className="h-8 px-3 text-xs gap-1.5 shrink-0"
+                  >
+                    <Users className="size-3.5 shrink-0" />
+                    批量创建用户
+                  </Button>
+                ) : undefined
+              }
+            >
+              {projectSelector}
+            </PageHeading>
+          }
+        >
           <div className="py-6 flex flex-col items-center justify-center">
             <Elevated
               offset={1}
               shadowLevel={2}
-              className="rounded-2xl border border-border/80 bg-surface-1 p-8 shadow-surface-2 text-center max-w-xl w-full flex flex-col items-center gap-4"
+              className="rounded-2xl border border-border/80 bg-surface-1 p-6 sm:p-8 shadow-surface-2 text-center max-w-xl w-full flex flex-col items-center gap-4"
             >
               <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20 shadow-xs">
                 <Users className="size-6" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="m-0 text-base font-semibold text-foreground">请选择要管理成员的项目</h3>
-                <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed">
+                <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed break-words">
                   ha-cluster 的成员与 SSH 授权基于项目边界进行隔离。
                   请在上方下拉菜单选择项目，或从下方快速点选已有项目进入管理。
                 </p>
@@ -188,9 +203,9 @@ export function MembersPage() {
                       key={p.id}
                       type="button"
                       onClick={() => onSelectProject(p.id)}
-                      className="p-3 rounded-xl border border-border/70 bg-surface-2/40 hover:bg-hover hover:border-primary/40 transition-all flex flex-col gap-1 text-left group cursor-pointer"
+                      className="p-3 rounded-xl border border-border/70 bg-surface-2/40 hover:bg-hover hover:border-primary/40 transition-all flex flex-col gap-1 text-left group cursor-pointer min-w-0"
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2 min-w-0">
                         <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors truncate">
                           {p.name}
                         </span>
@@ -228,16 +243,13 @@ export function MembersPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="shrink-0">{headerContent}</div>
-      <div className="min-h-0 flex-1">
-        <MemberList projectId={projectId} projectName={selected?.name} />
-      </div>
-      <BatchCreateUsersDialog
-        open={globalBatchOpen}
-        onOpenChange={setGlobalBatchOpen}
-        projects={projects}
-      />
-    </div>
+    <MemberList
+      projectId={projectId}
+      projectName={selected?.name}
+      headingTitle="成员与权限"
+      headingBadges={headingBadges}
+      headingDescription={headingDescription}
+      extraHeader={projectSelector}
+    />
   );
 }

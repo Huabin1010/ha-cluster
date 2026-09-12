@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, Eye, Hash, Mail, Plus, Shield, Terminal, Trash2, User, Users, Clock } from "lucide-react";
 import { useGetIdentity } from "@refinedev/core";
@@ -24,7 +24,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta, ResponsiveList, TableShell } from "@/components/ui/responsive-list";
 import { Elevated } from "@/lib/elevated";
 import {
   AlertDialog,
@@ -59,23 +61,35 @@ const ROLE_SELECT_OPTIONS = [
   { value: "admin", label: roleChipLabel("admin"), icon: Shield },
 ] as const;
 
-function roleSelectClass(role: string): string {
+function roleSelectClass(role: string, fullWidth = false): string {
+  const width = fullWidth ? "w-full min-w-0 max-w-none" : "min-w-[168px] max-w-[200px]";
   switch (role) {
     case "admin":
-      return "min-w-[168px] max-w-[200px] border-blue-500/35 bg-blue-500/10 text-blue-600 [&_svg]:text-blue-500";
+      return `${width} border-blue-500/35 bg-blue-500/10 text-blue-600 [&_svg]:text-blue-500`;
     case "developer":
-      return "min-w-[168px] max-w-[200px] border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 [&_svg]:text-emerald-500";
+      return `${width} border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 [&_svg]:text-emerald-500`;
     default:
-      return "min-w-[168px] max-w-[200px] border-border/80 bg-surface-2/50 text-foreground [&_svg]:text-muted-foreground";
+      return `${width} border-border/80 bg-surface-2/50 text-foreground [&_svg]:text-muted-foreground`;
   }
 }
 
 type Props = {
   projectId: string;
   projectName?: string;
+  headingTitle?: string;
+  headingDescription?: ReactNode;
+  headingBadges?: ReactNode;
+  extraHeader?: ReactNode;
 };
 
-export function MemberList({ projectId, projectName }: Props) {
+export function MemberList({
+  projectId,
+  projectName,
+  headingTitle,
+  headingDescription,
+  headingBadges,
+  extraHeader,
+}: Props) {
   const [rows, setRows] = useState<Member[]>([]);
   const [userMap, setUserMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -289,6 +303,48 @@ export function MemberList({ projectId, projectName }: Props) {
     );
   }
 
+  function renderRoleControl(m: Member, fullWidth = false) {
+    if (m.role === "owner" || !canManage) {
+      return renderRoleBadge(m.role);
+    }
+    return (
+      <SelectBox
+        size="compact"
+        testId="member-role-select"
+        aria-label="项目角色"
+        value={m.role}
+        disabled={busy}
+        className={roleSelectClass(m.role, fullWidth)}
+        onValueChange={(role) => void changeRole(m, role)}
+        options={ROLE_SELECT_OPTIONS.map((r) => ({
+          value: r.value,
+          label: r.label,
+          icon: r.icon,
+        }))}
+      />
+    );
+  }
+
+  function renderSshControl(m: Member) {
+    if (canManage && m.role !== "owner" && m.role !== "admin") {
+      return (
+        <Hint label={m.ssh_access === "granted" ? "点击取消授权" : "点击授权"}>
+          <button
+            type="button"
+            data-testid="member-ssh-toggle"
+            disabled={busy}
+            aria-label={m.ssh_access === "granted" ? "取消 SSH 授权" : "授予 SSH 授权"}
+            onClick={() => void toggleSSH(m)}
+            className="inline-flex cursor-pointer items-center rounded-md transition-opacity duration-80 hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)] disabled:opacity-50"
+          >
+            {renderSshBadge(m.ssh_access, m.ssh_mode)}
+          </button>
+        </Hint>
+      );
+    }
+    return renderSshBadge(m.ssh_access, m.ssh_mode);
+  }
+
   function renderSshBadge(access?: string, mode?: string) {
     if (access === "granted") {
       return (
@@ -363,18 +419,22 @@ export function MemberList({ projectId, projectName }: Props) {
       <PageFrame
         className="members-panel"
         header={
-          <div className="grid gap-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="m-0 text-base font-semibold text-foreground flex items-center gap-2">
-                  <Users className="size-4 text-primary shrink-0" />
-                  {projectName ? `${projectName} · 项目成员` : "项目成员名单"}
-                </h3>
-                <p className="mt-1 mb-0 text-xs text-muted-foreground">
-                  项目 ID: <span className="font-mono">{projectId}</span> · 管理团队成员与 SSH 跳板机接入权限
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
+          <PageHeading
+            icon={Users}
+            title={headingTitle ?? (projectName ? `${projectName} · 项目成员` : "项目成员名单")}
+            badges={headingBadges}
+            description={
+              headingDescription ?? (
+                <>
+                  <Hint label={projectId}>
+                    <span className="font-mono cursor-help">项目 ID: {projectId.slice(0, 8)}…</span>
+                  </Hint>
+                  <span className="hidden sm:inline"> · 管理团队成员与 SSH 跳板机接入权限</span>
+                </>
+              )
+            }
+            actions={
+              <>
                 {myRole === "developer" && !canSSH(myRole, mySshAccess, me?.platform_role) && (
                   <Button
                     type="button"
@@ -492,14 +552,16 @@ export function MemberList({ projectId, projectName }: Props) {
                     </form>
                   </DialogContent>
                 </Dialog>
-              </div>
-            </div>
+              </>
+            }
+          >
+            {extraHeader}
             {err && (
               <Alert variant="destructive" role="alert" data-testid="member-error">
                 <AlertDescription>{err}</AlertDescription>
               </Alert>
             )}
-          </div>
+          </PageHeading>
         }
         footer={
           <Paginator
@@ -513,12 +575,31 @@ export function MemberList({ projectId, projectName }: Props) {
         }
       >
         <div className="grid gap-4">
+          <div data-testid="role-help" aria-label="角色说明">
+          <details
+            className="group rounded-xl border border-border/80 bg-surface-1 shadow-surface-1 md:hidden"
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2.5 text-xs font-semibold text-foreground [&::-webkit-details-marker]:hidden">
+              <Shield className="size-3.5 text-primary shrink-0" />
+              项目角色与权限说明
+            </summary>
+            <div className="grid grid-cols-1 gap-2 px-3 pb-3 text-xs">
+              {Object.entries(ROLE_HELP).map(([role, tip]) => (
+                <div key={role} className="p-2.5 rounded-lg border border-border/60 bg-surface-2/40 flex flex-col gap-1 min-w-0">
+                  <span className="font-mono font-bold text-foreground text-[11px] uppercase tracking-wider">
+                    {role}
+                  </span>
+                  <span className="text-muted-foreground text-[11px] leading-relaxed break-words">
+                    {tip}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
           <Elevated
             offset={1}
             shadowLevel={1}
-            data-testid="role-help"
-            aria-label="角色说明"
-            className="rounded-xl border border-border/80 bg-surface-1 p-4 shadow-surface-1"
+            className="hidden md:block rounded-xl border border-border/80 bg-surface-1 p-4 shadow-surface-1"
           >
             <h4 className="m-0 text-xs font-semibold text-foreground flex items-center gap-1.5 mb-2.5">
               <Shield className="size-3.5 text-primary shrink-0" />
@@ -537,6 +618,7 @@ export function MemberList({ projectId, projectName }: Props) {
               ))}
             </div>
           </Elevated>
+          </div>
 
           {loading ? (
             <div className="py-12 text-center">
@@ -550,124 +632,139 @@ export function MemberList({ projectId, projectName }: Props) {
             >
               <Users className="size-8 text-muted-foreground/40 mb-1" />
               <p className="text-sm font-medium text-foreground m-0">暂无项目成员（或无权查看）</p>
-              <p className="text-xs text-muted-foreground m-0">点击上方「添加成员」或「生成邀请」将协作伙伴加入该项目。</p>
+              <p className="text-xs text-muted-foreground m-0 break-words">点击上方「添加成员」或「生成邀请」将协作伙伴加入该项目。</p>
             </Elevated>
           ) : (
-            <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-              <Table data-testid="member-table" className="min-w-[700px]">
-                <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
-                  <TableRow className="border-b border-border/60 hover:bg-transparent">
-                    <TableHead className="py-2.5">
-                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <User className="size-3.5 opacity-60 shrink-0" />
-                        成员账户
-                      </span>
-                    </TableHead>
-                    <TableHead className="w-[180px] py-2.5">
-                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <Hash className="size-3.5 opacity-60 shrink-0" />
-                        用户 ID
-                      </span>
-                    </TableHead>
-                    <TableHead className="w-[190px] py-2.5">
-                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <Shield className="size-3.5 opacity-60 shrink-0" />
-                        项目角色
-                      </span>
-                    </TableHead>
-                    <TableHead className="w-[140px] py-2.5">
-                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <Terminal className="size-3.5 opacity-60 shrink-0" />
-                        SSH 权限
-                      </span>
-                    </TableHead>
-                    <TableHead className="w-[110px] text-right py-2.5 pr-4">
-                      <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
-                        操作
-                      </span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pager.slice.map((m) => {
-                    const displayName = m.username || userMap[m.user_id];
-                    return (
-                      <TableRow key={m.user_id} data-testid="member-row">
-                        <TableCell className="py-2.5 font-medium whitespace-nowrap">
-                          <div className="inline-flex items-center gap-2">
-                            <span className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[11px] shrink-0 border border-primary/20">
-                              {(displayName || m.user_id).slice(0, 1).toUpperCase()}
-                            </span>
-                            <span className="font-medium text-foreground">{displayName || "—"}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="mono font-mono text-xs py-2.5 whitespace-nowrap text-muted-foreground">
-                          <Hint label={m.user_id}>
-                            <span className="cursor-help">{m.user_id.slice(0, 12)}…</span>
-                          </Hint>
-                        </TableCell>
-                        <TableCell className="py-2.5 whitespace-nowrap">
-                          {m.role === "owner" || !canManage ? (
-                            renderRoleBadge(m.role)
-                          ) : (
-                            <SelectBox
-                              size="compact"
-                              testId="member-role-select"
-                              aria-label="项目角色"
-                              value={m.role}
-                              disabled={busy}
-                              className={roleSelectClass(m.role)}
-                              onValueChange={(role) => void changeRole(m, role)}
-                              options={ROLE_SELECT_OPTIONS.map((r) => ({
-                                value: r.value,
-                                label: r.label,
-                                icon: r.icon,
-                              }))}
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2.5 whitespace-nowrap">
-                          {canManage && m.role !== "owner" && m.role !== "admin" ? (
-                            <Hint label={m.ssh_access === "granted" ? "点击取消授权" : "点击授权"}>
-                              <button
-                                type="button"
-                                data-testid="member-ssh-toggle"
-                                disabled={busy}
-                                aria-label={m.ssh_access === "granted" ? "取消 SSH 授权" : "授予 SSH 授权"}
-                                onClick={() => void toggleSSH(m)}
-                                className="inline-flex cursor-pointer items-center rounded-md transition-opacity duration-80 hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)] disabled:opacity-50"
-                              >
-                                {renderSshBadge(m.ssh_access, m.ssh_mode)}
-                              </button>
-                            </Hint>
-                          ) : (
-                            renderSshBadge(m.ssh_access, m.ssh_mode)
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right py-2.5 w-[110px] pr-4">
-                          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                            {m.role !== "owner" && canManage && (
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="compact"
-                                data-testid="member-remove"
-                                disabled={busy}
-                                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
-                                onClick={() => void remove(m.user_id, m.role)}
-                              >
-                                <Trash2 className="size-3.5 shrink-0" />
-                                移除
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
+            <ResponsiveList
+              table={
+                <TableShell>
+                  <Table data-testid="member-table" className="min-w-[700px]">
+                    <TableHeader className="sticky top-0 z-20 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
+                      <TableRow className="border-b border-border/60 hover:bg-transparent">
+                        <TableHead className="py-2.5">
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <User className="size-3.5 opacity-60 shrink-0" />
+                            成员账户
+                          </span>
+                        </TableHead>
+                        <TableHead className="w-[180px] py-2.5">
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <Hash className="size-3.5 opacity-60 shrink-0" />
+                            用户 ID
+                          </span>
+                        </TableHead>
+                        <TableHead className="w-[190px] py-2.5">
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <Shield className="size-3.5 opacity-60 shrink-0" />
+                            项目角色
+                          </span>
+                        </TableHead>
+                        <TableHead className="w-[140px] py-2.5">
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <Terminal className="size-3.5 opacity-60 shrink-0" />
+                            SSH 权限
+                          </span>
+                        </TableHead>
+                        <TableHead stickyEnd className="w-[110px] text-right py-2.5 pr-4">
+                          <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
+                            操作
+                          </span>
+                        </TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                    </TableHeader>
+                    <TableBody>
+                      {pager.slice.map((m) => {
+                        const displayName = m.username || userMap[m.user_id];
+                        return (
+                          <TableRow key={m.user_id} data-testid="member-row">
+                            <TableCell className="py-2.5 font-medium whitespace-nowrap">
+                              <div className="inline-flex items-center gap-2">
+                                <span className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[11px] shrink-0 border border-primary/20">
+                                  {(displayName || m.user_id).slice(0, 1).toUpperCase()}
+                                </span>
+                                <span className="font-medium text-foreground">{displayName || "—"}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="mono font-mono text-xs py-2.5 whitespace-nowrap text-muted-foreground">
+                              <Hint label={m.user_id}>
+                                <span className="cursor-help">{m.user_id.slice(0, 12)}…</span>
+                              </Hint>
+                            </TableCell>
+                            <TableCell className="py-2.5 whitespace-nowrap">
+                              {renderRoleControl(m)}
+                            </TableCell>
+                            <TableCell className="py-2.5 whitespace-nowrap">
+                              {renderSshControl(m)}
+                            </TableCell>
+                            <TableCell stickyEnd className="text-right py-2.5 w-[110px] pr-4">
+                              <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                                {m.role !== "owner" && canManage && (
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="compact"
+                                    data-testid="member-remove"
+                                    disabled={busy}
+                                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                                    onClick={() => void remove(m.user_id, m.role)}
+                                  >
+                                    <Trash2 className="size-3.5 shrink-0" />
+                                    移除
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableShell>
+              }
+              cards={pager.slice.map((m) => {
+                const displayName = m.username || userMap[m.user_id];
+                return (
+                  <ListCard key={m.user_id} data-testid="member-row">
+                    <ListCardHeader
+                      leading={
+                        <span className="size-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[11px] shrink-0 border border-primary/20">
+                          {(displayName || m.user_id).slice(0, 1).toUpperCase()}
+                        </span>
+                      }
+                      title={displayName || "—"}
+                      trailing={renderSshControl(m)}
+                    />
+                    <ListCardMeta>
+                      <Hint label={m.user_id}>
+                        <span className="inline-flex items-center gap-1 font-mono cursor-help">
+                          <Hash className="size-3 opacity-60 shrink-0" />
+                          {m.user_id.slice(0, 8)}…
+                        </span>
+                      </Hint>
+                    </ListCardMeta>
+                    <div className="mt-3 min-w-0">
+                      {renderRoleControl(m, true)}
+                    </div>
+                    {m.role !== "owner" && canManage && (
+                      <ListCardActions>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="compact"
+                          data-testid="member-remove"
+                          disabled={busy}
+                          className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                          onClick={() => void remove(m.user_id, m.role)}
+                        >
+                          <Trash2 className="size-3.5 shrink-0" />
+                          移除
+                        </Button>
+                      </ListCardActions>
+                    )}
+                  </ListCard>
+                );
+              })}
+            />
           )}
         </div>
       </PageFrame>

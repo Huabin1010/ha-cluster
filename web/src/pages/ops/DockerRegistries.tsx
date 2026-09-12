@@ -20,6 +20,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Elevated } from "@/lib/elevated";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
@@ -179,26 +180,17 @@ export function DockerRegistriesPage() {
     <>
       <PageFrame
         header={
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
-                  <Layers className="size-4.5" />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">私有镜像仓库</h2>
-                    <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                      {rows.length} 个配置
-                    </Badge>
-                  </div>
-                  <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                    配置私有或内网 Docker Registry 认证凭据。开启自动注入后，新开通的工作区将自动具备私有镜像拉取权限。
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2">
+          <PageHeading
+            icon={Layers}
+            title="私有镜像仓库"
+            badges={
+              <Badge variant="outline" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+                {rows.length} 个配置
+              </Badge>
+            }
+            description="配置私有或内网 Docker Registry 认证凭据。开启自动注入后，新开通的工作区将自动具备私有镜像拉取权限。"
+            actions={
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <Button
                   type="button"
                   variant="outline"
@@ -291,7 +283,8 @@ export function DockerRegistriesPage() {
                   </DialogContent>
                 </Dialog>
               </div>
-            </div>
+            }
+          >
 
             {/* 指标条 */}
             <div className="grid grid-cols-2 gap-3">
@@ -325,7 +318,7 @@ export function DockerRegistriesPage() {
                 </div>
               </Elevated>
             </div>
-          </div>
+          </PageHeading>
         }
       >
         {loading ? (
@@ -379,7 +372,7 @@ export function DockerRegistriesPage() {
                       自动注入
                     </span>
                   </TableHead>
-                  <TableHead className="w-[200px] text-right py-2.5 pr-4">
+                  <TableHead stickyEnd className="w-[200px] text-right py-2.5 pr-4">
                     <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
                       <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
                       操作
@@ -424,7 +417,7 @@ export function DockerRegistriesPage() {
                         )}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right py-2.5 w-[200px] pr-4">
+                    <TableCell stickyEnd className="text-right py-2.5 w-[200px] pr-4">
                       <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                         <Button
                           type="button"

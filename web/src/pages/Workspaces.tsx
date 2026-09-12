@@ -19,6 +19,7 @@ import { SelectBox } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
 import { useClientPager } from "@/lib/use-client-pager";
@@ -97,48 +98,39 @@ export function WorkspacesPage() {
   return (
     <PageFrame
       header={
-        <div className="flex flex-col gap-4">
-          {/* 顶栏标题与开通入口 */}
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
-                <Server className="size-4.5" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">服务器</h2>
-                  <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                    {rows.length} 台实例
-                  </Badge>
-                  {selected && (
-                    <Badge variant="default" className="px-2 py-0.5 text-xs font-normal inline-flex items-center gap-1">
-                      <FolderKanban className="size-3" />
-                      当前项目: {selected.name}
-                    </Badge>
-                  )}
-                </div>
-                <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                  项目隔离的 Linux 计算环境。升配：管理员直接生效，成员需审批。降配一律需审批。管理员销毁无需再走申请。
-                </p>
-              </div>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              <CreateForm
-                projects={projects}
-                initialProjectId={projectFilter}
-                reloadUsageRef={reloadUsageRef}
-                canApprove={canApprove}
-                platformRole={me?.platform_role}
-                onCreated={() => {
-                  showError("");
-                  toast.show(canApprove ? "创建成功" : "已提交申请，等待管理员审批", "success");
-                  afterMutation();
-                }}
-                onError={showError}
-              />
-            </div>
-          </div>
+        <PageHeading
+          icon={Server}
+          title="服务器"
+          badges={
+            <>
+              <Badge variant="outline" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+                {rows.length} 台实例
+              </Badge>
+              {selected && (
+                <Badge variant="default" className="inline-flex max-w-full items-center gap-1 whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-normal">
+                  <FolderKanban className="size-3 shrink-0" />
+                  <span className="truncate">当前项目: {selected.name}</span>
+                </Badge>
+              )}
+            </>
+          }
+          description="项目隔离的 Linux 计算环境。升配：管理员直接生效，成员需审批。降配一律需审批。管理员销毁无需再走申请。"
+          actions={
+            <CreateForm
+              projects={projects}
+              initialProjectId={projectFilter}
+              reloadUsageRef={reloadUsageRef}
+              canApprove={canApprove}
+              platformRole={me?.platform_role}
+              onCreated={() => {
+                showError("");
+                toast.show(canApprove ? "创建成功" : "已提交申请，等待管理员审批", "success");
+                afterMutation();
+              }}
+              onError={showError}
+            />
+          }
+        >
 
           {/* 统计指标卡片条 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -233,14 +225,14 @@ export function WorkspacesPage() {
           <Elevated
             offset={1}
             shadowLevel={1}
-            className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-wrap items-center justify-between gap-3"
+            className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
           >
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <span className="text-xs font-medium text-muted-foreground shrink-0 flex items-center gap-1.5">
-                <FolderKanban className="size-3.5 text-primary" />
-                项目筛选:
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <span className="text-xs font-medium text-muted-foreground shrink-0 inline-flex items-center gap-1.5">
+                <FolderKanban className="size-3.5 text-primary shrink-0" />
+                项目筛选
               </span>
-              <div className="w-full max-w-xs sm:max-w-sm">
+              <div className="w-full min-w-0 sm:max-w-sm">
                 <SelectBox
                   testId="ws-filter-project"
                   value={projectFilter || "__all__"}
@@ -254,7 +246,7 @@ export function WorkspacesPage() {
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:shrink-0">
               <Button
                 type="button"
                 variant={showAbnormal ? "secondary" : "outline"}
@@ -279,7 +271,7 @@ export function WorkspacesPage() {
               </Button>
             </div>
           </Elevated>
-        </div>
+        </PageHeading>
       }
       footer={
         <Paginator
@@ -351,7 +343,7 @@ export function WorkspacesPage() {
                     创建时间
                   </span>
                 </TableHead>
-                <TableHead className="w-[320px] text-right py-2.5 pr-4">
+                <TableHead stickyEnd className="w-[320px] text-right py-2.5 pr-4">
                   <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
                     <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
                     快捷操作

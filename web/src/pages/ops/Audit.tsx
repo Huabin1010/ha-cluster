@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageFrame } from "@/components/ui/page-frame";
+import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
 import { ApiError, friendlyError } from "@/providers";
@@ -115,26 +116,17 @@ function AuditList() {
   return (
     <PageFrame
       header={
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
-                <Activity className="size-4.5" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">审计日志</h2>
-                  <Badge variant="outline" className="px-2 py-0.5 text-xs font-mono font-normal">
-                    {logs.length} 条近况
-                  </Badge>
-                </div>
-                <p className="mt-1 mb-0 text-sm text-muted-foreground">
-                  记录平台核心安全与资源生命周期事件（登录、创建/销毁工作区、SSH 接入授权与对账轨迹）。
-                </p>
-              </div>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2">
+        <PageHeading
+          icon={Activity}
+          title="审计日志"
+          badges={
+            <Badge variant="outline" className="inline-flex items-center whitespace-nowrap shrink-0 px-2 py-0.5 text-xs font-mono font-normal">
+              {logs.length} 条近况
+            </Badge>
+          }
+          description="记录平台核心安全与资源生命周期事件（登录、创建/销毁工作区、SSH 接入授权与对账轨迹）。"
+          actions={
+            <>
               <Button
                 type="button"
                 variant="outline"
@@ -176,15 +168,16 @@ function AuditList() {
                   {reconciling ? "对账中…" : "系统对账"}
                 </Button>
               )}
-            </div>
-          </div>
+            </>
+          }
+        >
 
           {error && !forbidden && (
             <Alert variant="destructive">
               <AlertDescription>{friendlyError(error)}</AlertDescription>
             </Alert>
           )}
-        </div>
+        </PageHeading>
       }
       footer={
         <Paginator
