@@ -38,9 +38,15 @@ func workspaceHealthActive(status string) bool {
 	}
 }
 
-func instanceStatus(running bool) string {
+// instanceStatus maps agent instance running flag to workspace status.
+// Idle-suspended workspaces stay suspended when the container is stopped,
+// so the UI does not collapse them into a generic "stopped".
+func instanceStatus(running bool, current string) string {
 	if running {
 		return models.WSRunning
+	}
+	if current == models.WSSuspended {
+		return models.WSSuspended
 	}
 	return models.WSStopped
 }
@@ -78,7 +84,7 @@ func (a *App) ReconcileWorkspaceHealth(ctx context.Context) (updated int, err er
 				if rem != nil {
 					inst, ok, gerr := rem.GetStrict(ctx, w.ID)
 					if gerr == nil && ok {
-						newStatus = instanceStatus(inst.Running)
+						newStatus = instanceStatus(inst.Running, w.Status)
 					} else if w.Status == models.WSRunning {
 						newStatus = models.WSDegraded
 					}

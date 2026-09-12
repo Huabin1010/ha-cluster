@@ -17,15 +17,24 @@ func defaultIdleSuspendHours() int {
 			return h
 		}
 	}
-	return 2
+	return 0
 }
 
-func idleThreshold(w models.Workspace) time.Duration {
-	h := w.IdleSuspendHours
-	if h <= 0 {
-		h = defaultIdleSuspendHours()
+// effectiveIdleSuspendHours returns the active idle threshold in hours.
+// Workspace field wins when > 0; otherwise the process default (env or 0=off).
+func effectiveIdleSuspendHours(w models.Workspace) int {
+	if w.IdleSuspendHours > 0 {
+		return w.IdleSuspendHours
 	}
-	return time.Duration(h) * time.Hour
+	return defaultIdleSuspendHours()
+}
+
+func idleThreshold(w models.Workspace) (time.Duration, bool) {
+	h := effectiveIdleSuspendHours(w)
+	if h <= 0 {
+		return 0, false
+	}
+	return time.Duration(h) * time.Hour, true
 }
 
 func (a *App) touchWorkspaceActivity(ctx context.Context, w *models.Workspace) {
@@ -36,6 +45,7 @@ func (a *App) touchWorkspaceActivity(ctx context.Context, w *models.Workspace) {
 }
 
 // SuspendIdleWorkspaces stops running workspaces that exceeded idle threshold.
+// Disabled by default (threshold 0); enable via workspace idle_suspend_hours or HA_IDLE_SUSPEND_HOURS.
 func (a *App) SuspendIdleWorkspaces(ctx context.Context) (suspended int, err error) {
 	wss, err := a.Store.ListWorkspaces(ctx, nil)
 	if err != nil {
@@ -46,6 +56,10 @@ func (a *App) SuspendIdleWorkspaces(ctx context.Context) (suspended int, err err
 		if w.Status != models.WSRunning && w.Status != models.WSDegraded {
 			continue
 		}
+		thresh, enabled := idleThreshold(w)
+		if !enabled {
+			continue
+		}
 		last := w.LastActivityAt
 		if last.IsZero() {
 			last = w.UpdatedAt
@@ -53,12 +67,13 @@ func (a *App) SuspendIdleWorkspaces(ctx context.Context) (suspended int, err err
 		if last.IsZero() {
 			last = w.CreatedAt
 		}
-		if now.Sub(last) < idleThreshold(w) {
+		if now.Sub(last) < thresh {
 			continue
 		}
 		if err := a.Runtime.Stop(ctx, w.ID); err != nil {
 			continue
 		}
+		hours := effectiveIdleSuspendHours(w)
 		w.Status = models.WSSuspended
 		w.UpdatedAt = now
 		if err := a.Store.UpdateWorkspace(ctx, &w); err != nil {
@@ -68,7 +83,7 @@ func (a *App) SuspendIdleWorkspaces(ctx context.Context) (suspended int, err err
 		_ = a.Store.AddAudit(ctx, models.AuditLog{
 			ActorUserID: w.OwnerUserID, Action: "workspace.idle_suspend",
 			ResourceType: "workspace", ResourceID: w.ID.String(),
-			Meta: map[string]any{"idle_hours": w.IdleSuspendHours},
+			Meta: map[string]any{"idle_hours": hours},
 		})
 	}
 	return suspended, nil
