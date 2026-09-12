@@ -211,7 +211,7 @@ export function UsersPage() {
                 data-testid="users-search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索用户名、邮箱或 ID"
+                placeholder="搜索姓名、用户名、邮箱或 ID"
                 className="pl-8"
               />
             </div>
@@ -261,7 +261,7 @@ export function UsersPage() {
           </div>
         ) : (
           <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-            <Table data-testid="users-table" className="min-w-[960px]">
+            <Table data-testid="users-table" className="min-w-[1080px]">
               <TableHeader className="sticky top-0 z-20 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                 <TableRow className="border-b border-border/60 hover:bg-transparent">
                   <TableHead className="py-2.5">
@@ -269,6 +269,9 @@ export function UsersPage() {
                       <User className="size-3.5 opacity-60 shrink-0" />
                       账号
                     </span>
+                  </TableHead>
+                  <TableHead className="w-[120px] py-2.5">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">姓名</span>
                   </TableHead>
                   <TableHead className="w-[220px] py-2.5">
                     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -309,7 +312,7 @@ export function UsersPage() {
                       <div className="inline-flex items-center gap-2 min-w-0">
                         <span className={cn("size-2 rounded-full shrink-0", statusDotClass(u.status))} />
                         <span className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[11px] shrink-0 border border-primary/20">
-                          {u.username.slice(0, 1).toUpperCase()}
+                          {(u.display_name || u.username).slice(0, 1).toUpperCase()}
                         </span>
                         <span className="font-medium text-foreground">{u.username}</span>
                         <Hint label="复制 ID">
@@ -329,6 +332,9 @@ export function UsersPage() {
                           </Button>
                         </Hint>
                       </div>
+                    </TableCell>
+                    <TableCell className="py-2.5 whitespace-nowrap text-sm text-foreground">
+                      {u.display_name?.trim() ? u.display_name : "—"}
                     </TableCell>
                     <TableCell className="py-2.5 whitespace-nowrap text-sm text-foreground">
                       {u.email || "—"}

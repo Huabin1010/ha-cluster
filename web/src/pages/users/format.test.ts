@@ -16,10 +16,16 @@ describe("user list labels", () => {
     expect(userStatusLabel("deleted")).toBe("已删除");
   });
 
-  it("filters by username, email or id", () => {
-    const u = { id: "abc-123", username: "chenweipeng", email: "cwp@ha-lab.test" };
+  it("filters by username, display name, email or id", () => {
+    const u = {
+      id: "abc-123",
+      username: "chenweipeng",
+      display_name: "陈伟鹏",
+      email: "cwp@ha-lab.test",
+    };
     expect(matchesUserQuery(u, "")).toBe(true);
     expect(matchesUserQuery(u, "Chen")).toBe(true);
+    expect(matchesUserQuery(u, "伟鹏")).toBe(true);
     expect(matchesUserQuery(u, "ha-lab")).toBe(true);
     expect(matchesUserQuery(u, "abc-123")).toBe(true);
     expect(matchesUserQuery(u, "nobody")).toBe(false);

@@ -23,6 +23,7 @@ import {
 export type ParsedUser = {
   username: string;
   email: string;
+  display_name?: string;
   password?: string;
   lineNo: number;
   raw: string;
@@ -54,9 +55,14 @@ export type BatchCreateUsersDialogProps = {
   projects?: Array<{ id: string; name: string; slug?: string }>;
 };
 
-const SAMPLE_TEXT = `dev_alice alice@example.com ha123456
-dev_bob bob@example.com
+const SAMPLE_TEXT = `dev_alice alice@example.com 爱丽丝
+dev_bob bob@example.com 鲍勃 ha123456
 dev_charlie charlie@example.com`;
+
+/** 纯 ASCII 且长度≥6 时视为密码（兼容旧「用户名 邮箱 密码」三列格式）。 */
+function looksLikePassword(value: string): boolean {
+  return value.length >= 6 && /^[\x21-\x7e]+$/.test(value) && !value.includes("@");
+}
 
 export function parseBatchInput(text: string): { parsed: ParsedUser[]; invalidCount: number } {
   const lines = text.split("\n");
@@ -72,7 +78,22 @@ export function parseBatchInput(text: string): { parsed: ParsedUser[]; invalidCo
     if (parts.length >= 2) {
       const username = parts[0];
       const email = parts[1];
-      const password = parts[2] || undefined;
+      let display_name: string | undefined;
+      let password: string | undefined;
+
+      if (parts.length === 2) {
+        // username email
+      } else if (parts.length === 3) {
+        if (looksLikePassword(parts[2])) {
+          password = parts[2];
+        } else {
+          display_name = parts[2];
+        }
+      } else {
+        display_name = parts[2];
+        password = parts[3];
+      }
+
       let error: string | undefined;
 
       if (!email.includes("@")) {
@@ -86,6 +107,7 @@ export function parseBatchInput(text: string): { parsed: ParsedUser[]; invalidCo
       parsed.push({
         username,
         email,
+        display_name,
         password,
         lineNo: idx + 1,
         raw: line,
@@ -154,6 +176,7 @@ export function BatchCreateUsersDialog({
         users: validUsers.map((u) => ({
           username: u.username,
           email: u.email,
+          ...(u.display_name ? { display_name: u.display_name } : {}),
           ...(u.password ? { password: u.password } : {}),
         })),
         default_password: defaultPassword.trim() || undefined,
@@ -345,7 +368,7 @@ export function BatchCreateUsersDialog({
                 )}
               </div>
 
-              <Field label="用户列表（一行一条，格式：用户名 邮箱 [密码]）">
+              <Field label="用户列表（一行一条，格式：用户名 邮箱 [姓名] [密码]）">
                 <div className="grid gap-1.5">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>
@@ -388,7 +411,7 @@ export function BatchCreateUsersDialog({
                     data-testid="batch-create-textarea"
                     rows={6}
                     className="font-mono text-xs leading-relaxed"
-                    placeholder={`# 示例：用户名 邮箱 [自定义密码]\nalice alice@example.com\nbob bob@example.com secret123\ncarol carol@example.com`}
+                    placeholder={`# 示例：用户名 邮箱 [姓名] [自定义密码]\nalice alice@example.com 爱丽丝\nbob bob@example.com 鲍勃 secret123\ncarol carol@example.com`}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                   />

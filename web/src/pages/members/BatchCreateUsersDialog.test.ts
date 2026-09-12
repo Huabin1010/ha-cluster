@@ -35,10 +35,35 @@ describe("parseBatchInput", () => {
     });
   });
 
+  it("parses display name and optional password", () => {
+    const text = `
+      guohanli guohanli@qzsyzn.com 郭总
+      yexinwei yexinwei@qzsyzn.com 叶鑫伟 secret99
+      legacy legacy@example.com ha123456
+    `;
+    const res = parseBatchInput(text);
+    expect(res.invalidCount).toBe(0);
+    expect(res.parsed[0]).toMatchObject({
+      username: "guohanli",
+      display_name: "郭总",
+      password: undefined,
+    });
+    expect(res.parsed[1]).toMatchObject({
+      username: "yexinwei",
+      display_name: "叶鑫伟",
+      password: "secret99",
+    });
+    expect(res.parsed[2]).toMatchObject({
+      username: "legacy",
+      display_name: undefined,
+      password: "ha123456",
+    });
+  });
+
   it("flags invalid email format or too short password", () => {
     const text = `
       user1 invalid-email-no-at
-      user2 user2@example.com 123
+      user2 user2@example.com 张三 123
       incomplete_line
     `;
     const res = parseBatchInput(text);

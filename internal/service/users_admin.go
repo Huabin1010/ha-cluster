@@ -15,6 +15,7 @@ import (
 
 type PatchUserInput struct {
 	PlatformRole *string `json:"platform_role"`
+	DisplayName  *string `json:"display_name"`
 }
 
 type ResetPasswordInput struct {
@@ -176,44 +177,60 @@ func (a *App) PatchUser(ctx context.Context, actor models.User, target uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	if in.PlatformRole == nil {
+	if in.PlatformRole == nil && in.DisplayName == nil {
 		return nil, store.ErrInvalidInput
 	}
-	role := strings.TrimSpace(*in.PlatformRole)
-	switch role {
-	case models.RolePlatformAdmin, models.RolePlatformOps, models.RolePlatformUser:
-	default:
-		return nil, store.ErrInvalidInput
-	}
-	if role == u.PlatformRole {
-		return u, nil
-	}
-	if u.PlatformRole == models.RolePlatformAdmin && role != models.RolePlatformAdmin {
-		if err := a.refuseLastAdmin(ctx, *u); err != nil {
-			return nil, err
+
+	changed := false
+	if in.DisplayName != nil {
+		name := strings.TrimSpace(*in.DisplayName)
+		if name != u.DisplayName {
+			u.DisplayName = name
+			changed = true
 		}
 	}
-	if err := refuseSelf(actor, *u, "变更"); err != nil {
-		return nil, err
+
+	if in.PlatformRole != nil {
+		role := strings.TrimSpace(*in.PlatformRole)
+		switch role {
+		case models.RolePlatformAdmin, models.RolePlatformOps, models.RolePlatformUser:
+		default:
+			return nil, store.ErrInvalidInput
+		}
+		if role != u.PlatformRole {
+			if u.PlatformRole == models.RolePlatformAdmin && role != models.RolePlatformAdmin {
+				if err := a.refuseLastAdmin(ctx, *u); err != nil {
+					return nil, err
+				}
+			}
+			if err := refuseSelf(actor, *u, "变更"); err != nil {
+				return nil, err
+			}
+			from := u.PlatformRole
+			u.PlatformRole = role
+			u.TokenVersion++
+			changed = true
+			_ = a.Store.AddAudit(ctx, models.AuditLog{
+				ActorUserID:  actor.ID,
+				Action:       "user.role_change",
+				ResourceType: "user",
+				ResourceID:   u.ID.String(),
+				Meta: map[string]any{
+					"username": u.Username,
+					"from":     from,
+					"to":       role,
+				},
+			})
+		}
 	}
-	from := u.PlatformRole
-	u.PlatformRole = role
-	u.TokenVersion++
+
+	if !changed {
+		return u, nil
+	}
 	u.UpdatedAt = time.Now()
 	if err := a.Store.UpdateUser(ctx, u); err != nil {
 		return nil, err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{
-		ActorUserID:  actor.ID,
-		Action:       "user.role_change",
-		ResourceType: "user",
-		ResourceID:   u.ID.String(),
-		Meta: map[string]any{
-			"username": u.Username,
-			"from":     from,
-			"to":       role,
-		},
-	})
 	return u, nil
 }
 

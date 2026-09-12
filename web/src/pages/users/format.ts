@@ -27,13 +27,14 @@ export function userStatusLabel(status?: string): string {
 }
 
 export function matchesUserQuery(
-  user: { username: string; email?: string; id?: string },
+  user: { username: string; display_name?: string; email?: string; id?: string },
   query: string,
 ): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   return (
     user.username.toLowerCase().includes(needle) ||
+    (user.display_name ?? "").toLowerCase().includes(needle) ||
     (user.email ?? "").toLowerCase().includes(needle) ||
     (user.id ?? "").toLowerCase().includes(needle)
   );

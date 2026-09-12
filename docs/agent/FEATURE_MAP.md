@@ -297,9 +297,9 @@
 ### 子功能
 
 - 查看全部平台账号与所属项目
-- 搜索用户名 / 邮箱 / ID
-- 批量创建用户（可选同时加入项目）
-- 配置账号：平台角色、停用 / 恢复、加入项目
+- 搜索姓名 / 用户名 / 邮箱 / ID
+- 批量创建用户（可选同时加入项目；格式：用户名 邮箱 [姓名] [密码]）
+- 配置账号：姓名、平台角色、停用 / 恢复、加入项目
 - 重置密码（生成一次性新密码，旧会话立即失效）
 - 删除用户（软删；项目负责人须先转让）
 
@@ -317,7 +317,7 @@
 | 批量创建 | `users-batch-create-open` → `batch-create-dialog` | |
 | 用户表 / 行 | `users-table` / `users-row` | |
 | 复制 ID | `users-copy-id` | |
-| 配置账号 | `users-configure` → `users-configure-dialog` / `users-configure-form` / `users-configure-role` / `users-configure-submit` / `users-toggle-status` | |
+| 配置账号 | `users-configure` → `users-configure-dialog` / `users-configure-form` / `users-configure-display-name` / `users-configure-role` / `users-configure-submit` / `users-toggle-status` | |
 | 加入项目 | 配置弹窗内 `users-add-to-project` → `users-add-dialog` / `users-add-form` / `users-add-project` / `users-add-role` / `users-add-submit` | |
 | 重置密码 | `users-reset-password` → `users-reset-dialog` / `users-reset-submit` / `users-reset-copy` | |
 | 删除用户 | `users-delete` → `users-delete-dialog`，确认 `confirm-ok` / `confirm-cancel` | |

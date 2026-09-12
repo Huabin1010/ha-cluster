@@ -7,6 +7,7 @@ import { ASSIGNABLE_PLATFORM_ROLES, platformRoleLabel, userStatusLabel } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { SelectBox } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Hint } from "@/components/ui/tooltip";
@@ -42,6 +43,7 @@ export type UserProject = {
 export type PlatformUser = {
   id: string;
   username: string;
+  display_name?: string;
   email?: string;
   platform_role?: string;
   status?: string;
@@ -175,16 +177,18 @@ function ConfigureUserDialog({
   onAddToProject: () => void;
 }) {
   const [role, setRole] = useState("platform_user");
+  const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     setRole(user?.platform_role || "platform_user");
+    setDisplayName(user?.display_name || "");
     setErr("");
-  }, [user?.id, user?.platform_role]);
+  }, [user?.id, user?.platform_role, user?.display_name]);
 
-  async function saveRole(e: FormEvent) {
+  async function saveConfig(e: FormEvent) {
     e.preventDefault();
     if (!user) return;
     setBusy(true);
@@ -192,9 +196,12 @@ function ConfigureUserDialog({
     try {
       await api(`/users/${user.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ platform_role: role }),
+        body: JSON.stringify({
+          platform_role: role,
+          display_name: displayName.trim(),
+        }),
       });
-      toast.success(`已将 ${user.username} 设为${platformRoleLabel(role)}`);
+      toast.success(`已更新 ${user.username} 的账号配置`);
       onChanged();
     } catch (e) {
       setErr(friendlyError(e));
@@ -230,10 +237,10 @@ function ConfigureUserDialog({
             配置账号
           </DialogTitle>
           <DialogDescription className="break-words min-w-0">
-            调整平台角色、停用或恢复账号。把用户加入项目不会新建账号。
+            调整姓名、平台角色，或停用/恢复账号。把用户加入项目不会新建账号。
           </DialogDescription>
         </DialogHeader>
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={saveRole} data-testid="users-configure-form">
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={saveConfig} data-testid="users-configure-form">
           <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
             {err && (
               <Alert variant="destructive">
@@ -246,6 +253,14 @@ function ConfigureUserDialog({
                 <span className="font-medium">{user?.username}</span>
                 {user?.email ? <span className="text-muted-foreground truncate">{user.email}</span> : null}
               </div>
+            </Field>
+            <Field label="姓名">
+              <Input
+                data-testid="users-configure-display-name"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="如：郭总、叶鑫伟"
+              />
             </Field>
             <Field label="平台角色">
               <SelectBox
@@ -304,7 +319,7 @@ function ConfigureUserDialog({
               关闭
             </Button>
             <Button data-testid="users-configure-submit" type="submit" disabled={busy}>
-              {busy ? "保存中…" : "保存角色"}
+              {busy ? "保存中…" : "保存"}
             </Button>
           </DialogFooter>
         </form>

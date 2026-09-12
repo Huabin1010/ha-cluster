@@ -20,6 +20,7 @@ import (
 type snapshotUser struct {
 	ID           uuid.UUID `json:"id"`
 	Username     string    `json:"username"`
+	DisplayName  string    `json:"display_name"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"password_hash,omitempty"`
 	PlatformRole string    `json:"platform_role"`
@@ -52,6 +53,7 @@ func userToSnapshot(u *models.User) *snapshotUser {
 	return &snapshotUser{
 		ID:           u.ID,
 		Username:     u.Username,
+		DisplayName:  u.DisplayName,
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
 		PlatformRole: u.PlatformRole,
@@ -69,6 +71,7 @@ func snapshotToUser(u *snapshotUser) *models.User {
 	return &models.User{
 		ID:           u.ID,
 		Username:     u.Username,
+		DisplayName:  u.DisplayName,
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
 		PlatformRole: u.PlatformRole,

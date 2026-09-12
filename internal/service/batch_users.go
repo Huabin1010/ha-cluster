@@ -13,9 +13,10 @@ import (
 )
 
 type BatchUserInput struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password,omitempty"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name,omitempty"`
+	Email       string `json:"email"`
+	Password    string `json:"password,omitempty"`
 }
 
 type BatchCreateUsersInput struct {
@@ -116,6 +117,7 @@ func (a *App) BatchCreateUsers(ctx context.Context, actor models.User, in BatchC
 		newUser := &models.User{
 			ID:           uuid.New(),
 			Username:     uname,
+			DisplayName:  strings.TrimSpace(u.DisplayName),
 			Email:        email,
 			PasswordHash: hash,
 			PlatformRole: models.RolePlatformUser,

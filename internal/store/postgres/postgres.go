@@ -50,6 +50,9 @@ var nodeHostTotalsSQL string
 //go:embed sql/011_ingress_domain_zones.sql
 var ingressDomainZonesSQL string
 
+//go:embed sql/012_user_display_name.sql
+var userDisplayNameSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -108,6 +111,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if _, err := db.ExecContext(ctx, userDisplayNameSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 
@@ -128,9 +135,9 @@ func nullTime(t time.Time) sql.NullTime {
 }
 
 func (s *Store) CreateUser(ctx context.Context, u *models.User) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO users (id,username,email,password_hash,platform_role,status,token_version,created_at,updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		u.ID, u.Username, u.Email, u.PasswordHash, u.PlatformRole, u.Status, u.TokenVersion, u.CreatedAt, u.UpdatedAt)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO users (id,username,display_name,email,password_hash,platform_role,status,token_version,created_at,updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		u.ID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.PlatformRole, u.Status, u.TokenVersion, u.CreatedAt, u.UpdatedAt)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -139,7 +146,7 @@ func (s *Store) CreateUser(ctx context.Context, u *models.User) error {
 
 func scanUser(row interface{ Scan(dest ...any) error }) (*models.User, error) {
 	u := &models.User{}
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.PlatformRole, &u.Status, &u.TokenVersion, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.PasswordHash, &u.PlatformRole, &u.Status, &u.TokenVersion, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -147,17 +154,17 @@ func scanUser(row interface{ Scan(dest ...any) error }) (*models.User, error) {
 }
 
 func (s *Store) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
-	return scanUser(s.db.QueryRowContext(ctx, `SELECT id,username,email,password_hash,platform_role,status,token_version,created_at,updated_at FROM users WHERE id=$1`, id))
+	return scanUser(s.db.QueryRowContext(ctx, `SELECT id,username,display_name,email,password_hash,platform_role,status,token_version,created_at,updated_at FROM users WHERE id=$1`, id))
 }
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
-	return scanUser(s.db.QueryRowContext(ctx, `SELECT id,username,email,password_hash,platform_role,status,token_version,created_at,updated_at FROM users WHERE lower(username)=lower($1)`, username))
+	return scanUser(s.db.QueryRowContext(ctx, `SELECT id,username,display_name,email,password_hash,platform_role,status,token_version,created_at,updated_at FROM users WHERE lower(username)=lower($1)`, username))
 }
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	return scanUser(s.db.QueryRowContext(ctx, `SELECT id,username,email,password_hash,platform_role,status,token_version,created_at,updated_at FROM users WHERE lower(email)=lower($1)`, email))
+	return scanUser(s.db.QueryRowContext(ctx, `SELECT id,username,display_name,email,password_hash,platform_role,status,token_version,created_at,updated_at FROM users WHERE lower(email)=lower($1)`, email))
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]models.User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,username,email,password_hash,platform_role,status,token_version,created_at,updated_at FROM users WHERE status<>'deleted'`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,username,display_name,email,password_hash,platform_role,status,token_version,created_at,updated_at FROM users WHERE status<>'deleted'`)
 	if err != nil {
 		return nil, err
 	}
@@ -174,8 +181,8 @@ func (s *Store) ListUsers(ctx context.Context) ([]models.User, error) {
 }
 
 func (s *Store) UpdateUser(ctx context.Context, u *models.User) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET username=$2,email=$3,password_hash=$4,platform_role=$5,status=$6,token_version=$7,updated_at=$8 WHERE id=$1`,
-		u.ID, u.Username, u.Email, u.PasswordHash, u.PlatformRole, u.Status, u.TokenVersion, u.UpdatedAt)
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET username=$2,display_name=$3,email=$4,password_hash=$5,platform_role=$6,status=$7,token_version=$8,updated_at=$9 WHERE id=$1`,
+		u.ID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.PlatformRole, u.Status, u.TokenVersion, u.UpdatedAt)
 	return err
 }
 
