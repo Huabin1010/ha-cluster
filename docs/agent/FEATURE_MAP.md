@@ -377,8 +377,9 @@
 | 用户看到的 | testid |
 |---|---|
 | 刷新 | `nodes-refresh` |
-| 生成加入命令 | `nodes-join-token-open` |
-| 密钥 / 生成 / 命令 / 复制 | `join-secret` / `join-generate` / `join-command` / `join-copy` |
+| 一键加入命令 | `nodes-join-token-open`（打开即自动生成） |
+| 公网 S3 / 局域网 Depot | `join-depot-public` / `join-depot-lan` |
+| 重新生成 / 命令 / 复制 | `join-generate` / `join-command` / `join-copy` |
 | 对账 | `nodes-reconcile` |
 | 指标卡 | `nodes-metrics-cards` |
 | 节点行 / Ready | `node-row` / `node-ready` |
@@ -544,6 +545,6 @@
 ## Agent 验收最短路径
 
 1. **项目 → 服务器**：登录 → `nav-projects` → `project-detail`（不要点行中央，会点到复制 ID）→ 桌面 `[data-testid=project-subnav] [data-testid=project-tab-workspaces]` → `ws-create` 或已有 `ws-row`。
-2. **节点加入命令**：`platform_admin` → `nav-nodes` → `nodes-join-token-open` → `join-generate` → `join-command`。
+2. **节点加入命令**：`platform_admin` → `nav-nodes` → `nodes-join-token-open`（自动出命令）→ `join-copy`。
 3. **网页终端 / 一键 SSH**：`ws-row` running → `ws-web-terminal` 或 `ws-copy-ssh`；详情则 `ws-nav-connect` / `ws-tab-connect`。
 4. **销毁终审**：项目初审后 → `nav-dangerous` → `dangerous-approve-open` → `dangerous-confirm`。

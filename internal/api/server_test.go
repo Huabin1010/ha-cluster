@@ -958,6 +958,41 @@ func TestIngressDomainZonesAPI(t *testing.T) {
 	}
 }
 
+func TestJoinTokenAPI(t *testing.T) {
+	h := testServer(t)
+	adminTok := registerLogin(t, h, "joinadmin", "joinadmin@x.com")
+	devTok := registerLogin(t, h, "joindev", "joindev@x.com")
+
+	forbidden := doJSON(t, h, http.MethodPost, "/admin/join-tokens", devTok, map[string]any{})
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", forbidden.Code)
+	}
+
+	res := doJSON(t, h, http.MethodPost, "/admin/join-tokens", adminTok, map[string]any{})
+	if res.Code != http.StatusOK {
+		t.Fatalf("join token: %d %s", res.Code, res.Body.String())
+	}
+	var out struct {
+		Token   string `json:"token"`
+		Command string `json:"command"`
+		Secret  string `json:"secret"`
+		Cluster string `json:"cluster"`
+	}
+	_ = json.Unmarshal(res.Body.Bytes(), &out)
+	if out.Secret == "" || out.Token == "" || out.Command == "" {
+		t.Fatalf("incomplete join payload: %+v", out)
+	}
+	if !strings.Contains(out.Command, "curl -fsSL") || !strings.Contains(out.Command, "HA_DEPOT_PUBLIC=") {
+		t.Fatalf("command should curl depot install.sh with HA_DEPOT_PUBLIC: %s", out.Command)
+	}
+	if !strings.Contains(out.Command, out.Token) {
+		t.Fatalf("command should embed token: %s", out.Command)
+	}
+	if !strings.HasPrefix(out.Token, "ha://join/") {
+		t.Fatalf("token: %s", out.Token)
+	}
+}
+
 func TestBatchCreateUsersAPI(t *testing.T) {
 	h := testServer(t)
 	adminTok := registerLogin(t, h, "admin_batch", "admin_batch@x.com")

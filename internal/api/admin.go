@@ -1,9 +1,10 @@
 package api
 
 import (
-	"fmt"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
-	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -180,32 +181,31 @@ func (s *Server) generateJoinToken(w http.ResponseWriter, r *http.Request) {
 		Secret      string `json:"secret"`
 		API         string `json:"api"`
 		DepotPublic string `json:"depot_public"`
+		UseLANDepot bool   `json:"use_lan_depot"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+	if r.Body != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+			return
+		}
+	}
+	out, err := service.IssueJoinToken(service.JoinTokenInput{
+		Cluster: body.Cluster, Secret: body.Secret,
+		API: body.API, DepotPublic: body.DepotPublic,
+		UseLANDepot: body.UseLANDepot,
+	})
+	if err != nil {
+		writeAPIErr(w, err)
 		return
 	}
-	if body.Cluster == "" || body.Secret == "" {
-		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
-		return
-	}
-	if body.API == "" {
-		body.API = "https://ha.mnnumath.vip/api"
-	}
-	if body.DepotPublic == "" {
-		body.DepotPublic = "https://rustfs.s.ggss.club:50000/typora/ha-cluster"
-	}
-	q := url.Values{}
-	q.Set("et_net", "ha-cluster-easytier")
-	q.Set("et_peer", "tcp://110.40.229.62:15010")
-	q.Set("api", body.API)
-	q.Set("depot_public", body.DepotPublic)
-	token := fmt.Sprintf("ha://join/%s/%s?%s", body.Cluster, body.Secret, q.Encode())
 	_ = s.App.Store.AddAudit(r.Context(), models.AuditLog{
 		ActorUserID: userFrom(r).ID, Action: "node.join_token_issued",
-		ResourceType: "cluster", ResourceID: body.Cluster,
+		ResourceType: "cluster", ResourceID: out.Cluster,
+		Meta: map[string]any{"api": out.API, "depot_public": out.DepotPublic},
 	})
-	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) patchNode(w http.ResponseWriter, r *http.Request) {

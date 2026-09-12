@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useCustomMutation, useGetIdentity, useList } from "@refinedev/core";
 import {
   Activity,
@@ -21,8 +21,6 @@ import type { LucideIcon } from "lucide-react";
 import { api, friendlyError } from "@/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Field } from "@/components/ui/field";
 import {
   Dialog,
   DialogBody,
@@ -179,36 +177,71 @@ export function NodesPage() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinErr, setJoinErr] = useState("");
-  const [cluster, setCluster] = useState("ha-cluster");
-  const [secret, setSecret] = useState("");
   const [joinCmd, setJoinCmd] = useState("");
+  const [joinMeta, setJoinMeta] = useState<{
+    depot_public?: string;
+    api?: string;
+    et_net?: string;
+    et_peer?: string;
+    install_url?: string;
+  } | null>(null);
+  const [useLanDepot, setUseLanDepot] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  async function generateJoinToken(e: FormEvent) {
-    e.preventDefault();
+  const generateJoinToken = useCallback(async (lan = useLanDepot) => {
     setJoinErr("");
     setJoinBusy(true);
-    setJoinCmd("");
     try {
-      const out = await api<{ token: string }>("/admin/join-tokens", {
+      const apiURL = `${window.location.origin}/api`;
+      const out = await api<{
+        token: string;
+        command: string;
+        depot_public?: string;
+        api?: string;
+        et_net?: string;
+        et_peer?: string;
+        install_url?: string;
+      }>("/admin/join-tokens", {
         method: "POST",
         body: JSON.stringify({
-          cluster: cluster.trim(),
-          secret: secret.trim(),
-          api: "https://ha.mnnumath.vip/api",
-          depot_public: "https://rustfs.s.ggss.club:50000/typora/ha-cluster",
+          api: apiURL,
+          use_lan_depot: lan,
         }),
       });
-      const install =
-        "curl -fsSL https://rustfs.s.ggss.club:50000/typora/ha-cluster/install.sh | sudo bash -s join --token '" +
-        out.token +
-        "'";
-      setJoinCmd(install);
+      setJoinCmd(out.command || "");
+      setJoinMeta({
+        depot_public: out.depot_public,
+        api: out.api,
+        et_net: out.et_net,
+        et_peer: out.et_peer,
+        install_url: out.install_url,
+      });
     } catch (err) {
       setJoinErr(friendlyError(err));
+      setJoinCmd("");
+      setJoinMeta(null);
     } finally {
       setJoinBusy(false);
     }
+  }, [useLanDepot]);
+
+  useEffect(() => {
+    if (!joinOpen) {
+      setJoinErr("");
+      setJoinCmd("");
+      setJoinMeta(null);
+      setCopied(false);
+      return;
+    }
+    void generateJoinToken(useLanDepot);
+  }, [joinOpen, useLanDepot, generateJoinToken]);
+
+  async function copyJoinCommand() {
+    if (!joinCmd) return;
+    const ok = await copyText(joinCmd);
+    if (!ok) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
   }
 
   const readyCount = rows.filter((n) => n.ready).length;
@@ -258,76 +291,129 @@ export function NodesPage() {
                   <DialogTrigger asChild>
                     <Button type="button" variant="outline" size="compact" data-testid="nodes-join-token-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
                       <KeyRound className="size-3.5 shrink-0" />
-                      生成 join token
+                      一键加入命令
                     </Button>
                   </DialogTrigger>
                   <DialogContent size="lg" className="sm:max-w-xl">
                     <DialogHeader>
                       <DialogTitle>纳管新节点</DialogTitle>
-                      <DialogDescription>在目标宿主机以 root 执行下方一行命令（仅 platform_admin）。</DialogDescription>
+                      <DialogDescription className="break-words min-w-0">
+                        从 Depot（RustFS S3）拉取 install.sh，带好 EasyTier / API / depot_public 参数。目标机以 root 执行一行即可加入。
+                      </DialogDescription>
                     </DialogHeader>
-                    <form className="flex min-h-0 flex-1 flex-col" onSubmit={generateJoinToken}>
+                    <div className="flex min-h-0 flex-1 flex-col">
                       <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
-                        <Field label="cluster">
-                          <Input className="border-(--line-strong) bg-(--input-bg)" value={cluster} onChange={(e) => setCluster(e.target.value)} required />
-                        </Field>
-                        <Field label="secret（一次性随机串）">
-                          <Input
-                            data-testid="join-secret"
-                            className="border-(--line-strong) bg-(--input-bg)"
-                            value={secret}
-                            onChange={(e) => setSecret(e.target.value)}
-                            placeholder="随机 secret"
-                            required
-                          />
-                        </Field>
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-surface-2/40 px-3 py-2.5">
+                          <div className="min-w-0">
+                            <p className="m-0 text-xs font-medium text-foreground">Depot 源</p>
+                            <p className="m-0 mt-0.5 text-[11px] text-muted-foreground break-words">
+                              {useLanDepot
+                                ? "局域网 RustFS（PVE / lab 同网段更快）"
+                                : "公网 RustFS S3（手机 / 外网节点）"}
+                            </p>
+                          </div>
+                          <div className="inline-flex items-center gap-1.5 shrink-0">
+                            <Button
+                              type="button"
+                              size="compact"
+                              variant={useLanDepot ? "outline" : "default"}
+                              className="h-7 px-2 text-xs whitespace-nowrap"
+                              data-testid="join-depot-public"
+                              disabled={joinBusy}
+                              onClick={() => setUseLanDepot(false)}
+                            >
+                              公网 S3
+                            </Button>
+                            <Button
+                              type="button"
+                              size="compact"
+                              variant={useLanDepot ? "default" : "outline"}
+                              className="h-7 px-2 text-xs whitespace-nowrap"
+                              data-testid="join-depot-lan"
+                              disabled={joinBusy}
+                              onClick={() => setUseLanDepot(true)}
+                            >
+                              局域网
+                            </Button>
+                          </div>
+                        </div>
+
+                        {joinBusy && !joinCmd && (
+                          <p className="m-0 text-sm text-muted-foreground">正在组装一键命令…</p>
+                        )}
                         {joinErr && (
                           <Alert variant="destructive">
-                            <AlertDescription>{joinErr}</AlertDescription>
+                            <AlertDescription className="break-words min-w-0">{joinErr}</AlertDescription>
                           </Alert>
                         )}
                         {joinCmd && (
-                          <Alert variant="info" data-testid="join-command">
-                            <AlertDescription>
-                              <code className="block break-all font-mono text-xs select-all bg-background/50 p-2 rounded border border-border/60">
+                          <div className="grid gap-3" data-testid="join-command">
+                            <div>
+                              <p className="m-0 text-xs font-medium text-foreground">在目标机执行（需 sudo）：</p>
+                              <code className="mt-1.5 block break-all font-mono text-xs select-all rounded-xl border border-border/80 bg-surface-2/50 p-3 text-foreground">
                                 {joinCmd}
                               </code>
-                            </AlertDescription>
-                          </Alert>
+                            </div>
+                            {joinMeta && (
+                              <ul className="m-0 list-none space-y-1 rounded-xl border border-border/60 bg-surface-1 p-3 text-[11px] text-muted-foreground">
+                                <li className="break-words min-w-0">
+                                  <span className="text-foreground">Depot</span> ·{" "}
+                                  <span className="font-mono">{joinMeta.depot_public}</span>
+                                </li>
+                                <li className="break-words min-w-0">
+                                  <span className="text-foreground">API</span> ·{" "}
+                                  <span className="font-mono">{joinMeta.api}</span>
+                                </li>
+                                <li className="break-words min-w-0">
+                                  <span className="text-foreground">EasyTier</span> ·{" "}
+                                  <span className="font-mono">
+                                    {joinMeta.et_net} / {joinMeta.et_peer}
+                                  </span>
+                                </li>
+                              </ul>
+                            )}
+                            <p className="m-0 text-xs text-muted-foreground break-words min-w-0">
+                              脚本会从 Depot 拉 ha-setup、payload / worker 包并安装 EasyTier + Incus + ha-agent。命令含一次性 secret，请勿外传。
+                            </p>
+                          </div>
                         )}
                       </DialogBody>
                       <DialogFooter className="gap-2">
-                        <Button type="button" variant="outline" onClick={() => setJoinOpen(false)}>关闭</Button>
-                        <Button type="submit" data-testid="join-generate" disabled={joinBusy}>
-                          {joinBusy ? "生成中…" : "生成命令"}
+                        <Button type="button" variant="outline" onClick={() => setJoinOpen(false)}>
+                          关闭
                         </Button>
-                        {joinCmd && (
-                          <Button
-                            type="button"
-                            data-testid="join-copy"
-                            className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
-                            onClick={async () => {
-                              const ok = await copyText(joinCmd);
-                              if (!ok) return;
-                              setCopied(true);
-                              setTimeout(() => setCopied(false), 2500);
-                            }}
-                          >
-                            {copied ? (
-                              <>
-                                <Check className="size-3.5 text-emerald-500" />
-                                已复制命令
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="size-3.5 opacity-70" />
-                                复制命令
-                              </>
-                            )}
-                          </Button>
-                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          data-testid="join-generate"
+                          disabled={joinBusy}
+                          className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                          onClick={() => void generateJoinToken(useLanDepot)}
+                        >
+                          <RefreshCw className={cn("size-3.5 shrink-0", joinBusy && "animate-spin")} />
+                          {joinBusy ? "生成中…" : "重新生成"}
+                        </Button>
+                        <Button
+                          type="button"
+                          data-testid="join-copy"
+                          disabled={!joinCmd || joinBusy}
+                          className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                          onClick={() => void copyJoinCommand()}
+                        >
+                          {copied ? (
+                            <>
+                              <Check className="size-3.5 text-emerald-500 shrink-0" />
+                              已复制
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="size-3.5 opacity-70 shrink-0" />
+                              复制命令
+                            </>
+                          )}
+                        </Button>
                       </DialogFooter>
-                    </form>
+                    </div>
                   </DialogContent>
                 </Dialog>
               )}
@@ -460,7 +546,7 @@ export function NodesPage() {
               <div>
                 <h3 className="m-0 text-base font-semibold text-foreground">暂无节点心跳</h3>
                 <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed">
-                  请先在物理机或目标虚拟机上运行 ha-agent，或点击右上角「生成 join token」一键纳管节点。
+                  请先在物理机或目标虚拟机上运行 ha-agent，或点击右上角「一键加入命令」在目标机执行 curl 纳管。
                 </p>
               </div>
             </Elevated>
