@@ -102,6 +102,7 @@ type Store struct {
 	ingress          map[uuid.UUID]*models.IngressRoute
 	ingressZones     map[uuid.UUID]*models.IngressDomainZone
 	dockerRegistries map[uuid.UUID]*models.DockerRegistry
+	agentTokens      map[uuid.UUID]*models.AgentToken
 }
 
 func New() *Store {
@@ -121,6 +122,7 @@ func New() *Store {
 		ingress:          map[uuid.UUID]*models.IngressRoute{},
 		ingressZones:     map[uuid.UUID]*models.IngressDomainZone{},
 		dockerRegistries: map[uuid.UUID]*models.DockerRegistry{},
+		agentTokens:      map[uuid.UUID]*models.AgentToken{},
 	}
 }
 
@@ -207,7 +209,7 @@ func (s *Store) AddSSHKey(_ context.Context, k *models.SSHKey) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, e := range s.sshKeys {
-		if e.Fingerprint == k.Fingerprint {
+		if e.UserID == k.UserID && e.Fingerprint == k.Fingerprint {
 			return store.ErrConflict
 		}
 	}
@@ -359,7 +361,11 @@ func (s *Store) AddMembership(_ context.Context, m models.Membership) error {
 		return store.ErrNotFound
 	}
 	models.NormalizeMembershipSSH(&m)
-	s.memberships[memKey(m.ProjectID, m.UserID)] = m
+	k := memKey(m.ProjectID, m.UserID)
+	if _, ok := s.memberships[k]; ok {
+		return store.ErrConflict
+	}
+	s.memberships[k] = m
 	s.saveSnapshotLocked()
 	return nil
 }
@@ -772,6 +778,48 @@ func (s *Store) AddAudit(ctx context.Context, l models.AuditLog) error {
 	return nil
 }
 
+func (s *Store) decorateAuditLocked(l models.AuditLog) models.AuditLog {
+	if u := s.users[l.ActorUserID]; u != nil {
+		l.ActorUsername = u.Username
+		l.ActorDisplayName = strings.TrimSpace(u.DisplayName)
+	}
+	if name := models.AuditResourceNameFromMeta(l.Meta); name != "" {
+		l.ResourceName = name
+		return l
+	}
+	id, err := uuid.Parse(l.ResourceID)
+	if err != nil {
+		return l
+	}
+	switch l.ResourceType {
+	case "project":
+		if p := s.projects[id]; p != nil {
+			l.ResourceName = p.Name
+		}
+	case "workspace":
+		if w := s.workspaces[id]; w != nil {
+			l.ResourceName = w.Name
+		}
+	case "user", "membership":
+		if u := s.users[id]; u != nil {
+			l.ResourceName = models.UserVisibleName(u.DisplayName, u.Username)
+		}
+	case "node":
+		if n := s.nodes[id]; n != nil {
+			l.ResourceName = n.Name
+		}
+	case "docker_registry":
+		if r := s.dockerRegistries[id]; r != nil {
+			l.ResourceName = r.Name
+		}
+	case "ingress":
+		if r := s.ingress[id]; r != nil {
+			l.ResourceName = r.Domain
+		}
+	}
+	return l
+}
+
 func (s *Store) ListAudit(_ context.Context, limit int) ([]models.AuditLog, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -785,9 +833,7 @@ func (s *Store) ListAudit(_ context.Context, limit int) ([]models.AuditLog, erro
 	out := make([]models.AuditLog, limit)
 	copy(out, s.audit[start:])
 	for i := range out {
-		if u := s.users[out[i].ActorUserID]; u != nil {
-			out[i].ActorUsername = u.Username
-		}
+		out[i] = s.decorateAuditLocked(out[i])
 	}
 	return out, nil
 }
@@ -810,10 +856,7 @@ func (s *Store) ListAuditByResource(_ context.Context, resourceID string, limit 
 				continue
 			}
 		}
-		if u := s.users[l.ActorUserID]; u != nil {
-			l.ActorUsername = u.Username
-		}
-		out = append(out, l)
+		out = append(out, s.decorateAuditLocked(l))
 	}
 	return out, nil
 }

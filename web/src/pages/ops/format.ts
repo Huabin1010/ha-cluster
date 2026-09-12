@@ -129,23 +129,41 @@ function specLine(cpu?: number, mem?: number, disk?: number): string {
   return bits.join(" / ");
 }
 
-/** 资源列名称：优先用户名 / 工作区名 / 域名，否则短 ID */
-export function auditResourceName(type?: string, id?: string, meta?: AuditMeta): string {
-  if (type === "membership" || type === "user") {
-    const name = metaStr(meta, "target_username") || metaStr(meta, "username");
+/** 资源列名称：优先接口回填 / 项目名 / 用户名 / 工作区名 / 域名，否则短 ID */
+export function auditResourceName(type?: string, id?: string, meta?: AuditMeta, resolved?: string): string {
+  const live = resolved?.trim();
+  if (live) return live;
+  if (type === "project") {
+    const name = metaStr(meta, "project_name") || metaStr(meta, "name");
+    if (name) return name;
+  } else if (type === "membership" || type === "user") {
+    const name =
+      metaStr(meta, "target_display_name") ||
+      metaStr(meta, "display_name") ||
+      metaStr(meta, "target_username") ||
+      metaStr(meta, "username");
     if (name) return name;
   } else if (type === "workspace") {
-    const name = metaStr(meta, "workspace_name");
+    const name = metaStr(meta, "workspace_name") || metaStr(meta, "name");
     if (name) return name;
   } else if (type === "ingress") {
     const name = metaStr(meta, "domain");
     if (name) return name;
+  } else if (type === "node") {
+    const name = metaStr(meta, "node") || metaStr(meta, "name");
+    if (name) return name;
   }
+  const fallback = metaStr(meta, "project_name") || metaStr(meta, "workspace_name") || metaStr(meta, "name");
+  if (fallback) return fallback;
   return shortId(id);
 }
 
-export function auditResourceTitle(type?: string, id?: string, meta?: AuditMeta): string {
-  return `${resourceTypeLabel(type)} ${auditResourceName(type, id, meta)}`.trim();
+export function auditResourceTitle(type?: string, id?: string, meta?: AuditMeta, resolved?: string): string {
+  return `${resourceTypeLabel(type)} ${auditResourceName(type, id, meta, resolved)}`.trim();
+}
+
+export function auditActorLabel(displayName?: string, username?: string, id?: string): string {
+  return displayName?.trim() || username?.trim() || shortId(id);
 }
 
 /** 资源列第二行：扩容从 A→B、权限从 xx→xx 等变更摘要 */

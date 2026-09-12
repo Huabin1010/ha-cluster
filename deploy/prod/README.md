@@ -78,10 +78,23 @@ python deploy/prod/baota_api.py ensure-ssl --domain cl.qzsyzn.com
 
 PortForward / Bastion 后置：公网勿抢 22；独立端口 + EasyTier 到 Workspace。
 
-## 阶段 6 — 带宽演进（后置，不阻塞首期）
+## 阶段 6 — EasyTier 走域名、不经 42 公网网卡
+
+公网 DNS 仍把 `cl.qzsyzn.com` / `*.apps` / `*.ssh` 指到 `42.193.236.123`（未入网用户走 443）。
+
+已加入 EasyTier 的客户端把 **同一套域名** 解析到 `10.129.129.253`：
+
+- `ha-fabric-dns`（CoreDNS）只听虚 IP `:53`，`*.cl.qzsyzn.com` → `.253`，其它名转发公网 DNS
+- Worker 执行 `deploy/prod/fabric-dns-client.sh`（systemd-resolved：`Domains=~cl.qzsyzn.com`）
+- HTTPS 打到 `.253:443` 仍由宝塔终结证书；HTTP 探测可用 `.253:18080` + `Host`
+- SSH：`Host ha-<短码>-et` / `HostName 10.129.129.253` 端口 8099
+
+这样浏览器地址栏仍是域名，TCP 走虚网，不占 42 公网出口。
+
+## 阶段 7 — 带宽演进（后置，不阻塞首期）
 
 42 带宽不足时：把 **443 Edge** 迁到高带宽机；42 只留 `ha-api`+DB；Hub 仍只做 EasyTier。  
-首期业务流量经 42 反代仍会占用其公网带宽——这是已知取舍，见计划「阶段 6」。
+未入 EasyTier 的公网用户仍经 42 反代。
 
 ## 安全
 

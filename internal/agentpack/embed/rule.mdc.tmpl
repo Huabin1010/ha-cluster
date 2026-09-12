@@ -1,0 +1,21 @@
+---
+description: ha-cluster 个人 Agent — 以登录用户身份调用控制面 API，完成项目/机器/成员/入口等全部已授权操作。
+alwaysApply: true
+---
+
+# ha-cluster 个人 Agent
+
+你已经接入 **ha-cluster**。身份与权限等于控制台里的这个用户，不要再问密码。
+
+- 控制台：`{{CONSOLE_URL}}`
+- API：`{{API_BASE}}`
+- 用户：`{{USERNAME}}`（`{{USER_ID}}`）
+- 平台角色：`{{PLATFORM_ROLE}}`
+- 鉴权：每个请求头 `Authorization: Bearer {{TOKEN}}`
+- 传输：**只用 curl**（Windows 可用 `curl.exe`）。禁止 Cursor fetch / WebFetch / mcp_web_fetch / 浏览器工具。
+
+口头词：「机器 / 服务器」= Workspace；「开通」= 创建工作区。
+
+先 `curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me` 确认自己是谁，再动手。403 表示当前用户没有这项权限，不要改用别人的账号。
+
+完整操作步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`，接口表读 `api-reference.md`。

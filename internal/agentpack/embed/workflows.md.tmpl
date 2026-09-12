@@ -1,0 +1,119 @@
+# 工作流（用 {{USERNAME}} 的身份）
+
+基址 `{{API_BASE}}`，头 `Authorization: Bearer {{TOKEN}}`。**只用 curl**，禁止 Cursor fetch / WebFetch。
+
+## 1. 开通一台 2c2g
+
+```
+GET /projects                          → 记下 project_id（或先 POST /projects）
+GET /projects/{pid}/members            → 看自己的 role / ssh_access
+POST /projects/{pid}/workspaces
+  {"name":"dev-1","plan":"2c2g","arch":"amd64","visibility":"shared"}
+```
+
+- 自己是 owner/admin：可能直接进入开通，轮询 `GET /workspaces/{id}` 直到 `running`（通常 <90s）。
+- 自己是 developer：`status=requested`，请项目 owner/admin：
+  `POST /workspaces/{id}/approve`
+- viewer：403，停止。
+
+容量不够：`409 INSUFFICIENT_CAPACITY`。先让用户停/销毁闲置机器，或换小套餐。
+
+## 2. 停 / 启
+
+仅 `running` / `stopped` / `fabric_degraded` 可停启。`destroy_*` 状态会 `400`。
+
+```
+POST /workspaces/{id}/stop
+POST /workspaces/{id}/start
+```
+
+## 3. SSH
+
+```
+GET /me/ssh-keys                       → 没有就 POST /me/ssh-keys
+GET /workspaces/{id}/ssh-config        → 200 才能连
+GET /workspaces/{id}/connection
+```
+
+`ssh_access` 不是 `granted`（且不是 owner/admin）时 config 为 403。让用户：
+
+```
+POST /projects/{pid}/ssh-access-request
+```
+
+owner/admin 批准：
+
+```
+POST /projects/{pid}/members/{uid}/ssh-access/approve
+```
+
+或 `PUT /projects/{pid}/members/{uid}` `{"ssh_access":"granted"}`。
+
+config 里 `Host ha-<8位>-et` 走 EasyTier 虚网（`10.129.129.253`），不占 42 公网带宽。
+
+## 4. 拉人 / 邀请 / 转让
+
+```
+POST /projects/{pid}/members
+  {"username":"alice","role":"developer"}     → 201；已存在 409
+
+PUT /projects/{pid}/members/{uid}
+  {"role":"admin"}                            → owner 才能提到 admin
+
+POST /projects/{pid}/invitations
+  {"email":"bob@x.com","role":"viewer"}       → 把 token 给对方
+POST /invitations/accept
+  {"token":"..."}                             → 必须是邀请邮箱对应的账号
+
+POST /projects/{pid}/transfer-ownership
+  {"new_owner_user_id":"<uuid>"}              → 仅当前 owner；自己降为 developer
+```
+
+踢人：`DELETE /projects/{pid}/members/{uid}`（不能踢 owner）。developer 不能拉人。
+
+## 5. 公共域 `*.apps`
+
+```
+GET /ingress/meta                      → shared_zones / zones，记下 zone_id
+POST /workspaces/{id}/ingress/shared
+  {"zone_id":"...","mode":"random","port":8088}
+POST /workspaces/{id}/ingress/shared
+  {"zone_id":"...","mode":"custom","prefix":"myapp","port":8090,"confirm_second_port":true}
+```
+
+同一主机第二端口必须确认。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。特殊自有域走 `POST /workspaces/{id}/ingress`，要审批。
+
+## 6. 升配 / 销毁
+
+```
+POST /workspaces/{id}/resize
+  {"cpu_milli":4000,"mem_bytes":4294967296,"disk_bytes":21474836480}
+POST /workspaces/{id}/resize/approve      # owner/admin
+POST /workspaces/{id}/resize/reject
+```
+
+销毁（两段）：
+
+```
+POST /workspaces/{id}/destroy-request              # 申请人
+POST /workspaces/{id}/destroy-request/approve      # 项目 owner/admin 初审
+POST /admin/dangerous-approvals/{id}/approve       # 仅平台角色终审
+```
+
+`DELETE /workspaces/{id}` 对普通用户等于发起销毁申请；`platform_admin` 才会直接删。
+
+## 7. 平台（仅 staff）
+
+```
+POST /admin/join-tokens          {"use_lan_depot":false}
+GET  /nodes
+PATCH /nodes/{id}                {"machine_type":"self","remark":"...","tags":["gpu"]}
+GET  /capacity
+GET  /audit-logs
+GET  /admin/docker-registries
+GET  /admin/ingress-domains
+POST /users/batch
+POST /users/{id}/suspend
+```
+
+join token 不要发给普通项目成员。目标机：`curl install.sh | sudo bash -s join --token 'ha://join/...'`。

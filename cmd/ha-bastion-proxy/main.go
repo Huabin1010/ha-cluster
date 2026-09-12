@@ -66,7 +66,14 @@ func main() {
 		args = append([]string{"-tt"}, args...)
 	}
 	if id := getenv("HA_BASTION_IDENTITY", ""); id != "" {
-		args = append(args, "-i", id)
+		// OpenSSH rejects group-readable private keys; stage a 0600 copy for this session.
+		staged, err := stageIdentity(id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bastion: identity: %v\n", err)
+			os.Exit(1)
+		}
+		defer os.Remove(staged)
+		args = append(args, "-i", staged)
 	}
 	args = append(args, sshUser+"@"+host)
 	if remoteCmd != "" {
@@ -83,6 +90,34 @@ func main() {
 		fmt.Fprintf(os.Stderr, "bastion: connect %s via %s failed: %v\n", addr, via, err)
 		os.Exit(1)
 	}
+}
+
+func stageIdentity(src string) (string, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+	out, err := os.CreateTemp("", "ha-bastion-id-*")
+	if err != nil {
+		return "", err
+	}
+	path := out.Name()
+	if err := out.Chmod(0o600); err != nil {
+		_ = out.Close()
+		_ = os.Remove(path)
+		return "", err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(path)
+		return "", err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }
 
 func sessionUser() string {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -192,10 +193,18 @@ func (s *Server) generateJoinToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	used := []string{}
+	if nodes, err := s.App.Store.ListNodes(r.Context()); err == nil {
+		for _, n := range nodes {
+			if ip := strings.TrimSpace(n.FabricIP); ip != "" {
+				used = append(used, ip)
+			}
+		}
+	}
 	out, err := service.IssueJoinToken(service.JoinTokenInput{
 		Cluster: body.Cluster, Secret: body.Secret,
 		API: body.API, DepotPublic: body.DepotPublic,
-		FabricIP: body.FabricIP, UseLANDepot: body.UseLANDepot,
+		FabricIP: body.FabricIP, UsedFabricIPs: used, UseLANDepot: body.UseLANDepot,
 	})
 	if err != nil {
 		writeAPIErr(w, err)

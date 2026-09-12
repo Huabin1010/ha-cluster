@@ -39,11 +39,24 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       HA_NODE_TOKEN: ${HA_NODE_TOKEN}
       HA_INTERNAL_TOKEN: ${HA_INTERNAL_TOKEN}
-      HA_BASTION_HOST: ${HA_BASTION_HOST:-bastion.cl.qzsyzn.com}
+      HA_ET_SECRET: ${HA_ET_SECRET}
+      HA_BASTION_HOST: ${HA_BASTION_HOST:-ssh.cl.qzsyzn.com}
       HA_BASTION_PORT: ${HA_BASTION_PORT:-8099}
+      HA_BASTION_FABRIC_HOST: ${HA_BASTION_FABRIC_HOST:-10.129.129.253}
       HA_RUNTIME: ${HA_RUNTIME:-incus}
+      HA_INGRESS_DIR: /var/lib/ha-ingress
+      HA_INGRESS_RELOAD: "true"
+      HA_INGRESS_PUBLIC_HOST: apps.cl.qzsyzn.com
+      HA_INGRESS_PUBLIC_IP: ${HA_INGRESS_PUBLIC_IP:-42.193.236.123}
+      HA_PUBLIC_API: ${HA_PUBLIC_API:-https://cl.qzsyzn.com/api}
+      HA_PUBLIC_CONSOLE: ${HA_PUBLIC_CONSOLE:-https://cl.qzsyzn.com}
+      HA_WEBSHELL_KEY_FILE: /etc/ha-cluster/bastion_ws_ed25519
     ports:
+      # 本机 Bastion / 运维直连 API（不对公网）
       - "127.0.0.1:${HA_HOST_PORT:-18082}:8080"
+    volumes:
+      - ha-ingress-conf:/var/lib/ha-ingress
+      - /etc/ha-cluster/bastion_ws_ed25519:/etc/ha-cluster/bastion_ws_ed25519:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,8 +71,56 @@ services:
         limits:
           memory: 768M
 
+  # 公网唯一反代目标：宝塔 443 → 127.0.0.1:18080，按 Host 分流
+  edge-nginx:
+    image: nginx:1.27-alpine
+    container_name: ha-edge
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /etc/nginx/ha-ingress
+        nginx -g 'daemon off;' &
+        NGINX_PID=$!
+        while true; do
+          sleep 5
+          nginx -s reload 2>/dev/null || true
+        done &
+        wait $$NGINX_PID
+    volumes:
+      - ./edge/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ha-ingress-conf:/etc/nginx/ha-ingress:ro
+    ports:
+      - "127.0.0.1:${HA_EDGE_PORT:-18080}:80"
+      # EasyTier：虚网用户直打 .253，不走 42 公网网卡
+      - "10.129.129.253:${HA_EDGE_PORT:-18080}:80"
+    depends_on:
+      - ha-api
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # 虚网 DNS：已入 EasyTier 的客户端把 *.cl.qzsyzn.com 解析到 .253
+  fabric-dns:
+    image: coredns/coredns:1.11.3
+    container_name: ha-fabric-dns
+    restart: unless-stopped
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./edge/Corefile:/etc/coredns/Corefile:ro
+    ports:
+      - "10.129.129.253:53:53/udp"
+      - "10.129.129.253:53:53/tcp"
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
 volumes:
   ha-pg-data:
+  ha-ingress-conf:
 
 networks:
   default:

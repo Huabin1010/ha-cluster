@@ -9,20 +9,21 @@ import (
 )
 
 type JoinSpec struct {
-	Token    string
-	Cluster  string
-	ETNet    string
-	ETPeer   string
-	API      string
-	K3S      string
-	Depot        string
-	DepotPublic  string
-	Role     string
-	Power    string
-	Class    string
-	FabricIP string
-	NodeToken string
-	RootDir  string
+	Token       string
+	Cluster     string
+	ETNet       string
+	ETPeer      string
+	ETSecret    string
+	API         string
+	K3S         string
+	Depot       string
+	DepotPublic string
+	Role        string
+	Power       string
+	Class       string
+	FabricIP    string
+	NodeToken   string
+	RootDir     string
 }
 
 func ParseJoinToken(raw string) (JoinSpec, error) {
@@ -49,6 +50,7 @@ func ParseJoinToken(raw string) (JoinSpec, error) {
 		Cluster:     cluster,
 		ETNet:       q.Get("et_net"),
 		ETPeer:      q.Get("et_peer"),
+		ETSecret:    q.Get("et_secret"),
 		API:         q.Get("api"),
 		K3S:         q.Get("k3s"),
 		Depot:       q.Get("depot"),
@@ -81,19 +83,31 @@ func WriteJoinFiles(spec JoinSpec) error {
 	if class == "" {
 		class = "desktop"
 	}
-	fabric := spec.FabricIP
-	if fabric == "" {
-		fabric = "10.129.129.210"
+	fabric, err := NormalizeStaticIPv4(spec.FabricIP)
+	if err != nil {
+		return err
+	}
+	spec.FabricIP = fabric
+	if err := CheckFabricIPConflict(fabric); err != nil {
+		return err
 	}
 	nodeTok := spec.NodeToken
 	if nodeTok == "" {
 		nodeTok = os.Getenv("HA_NODE_TOKEN")
 	}
 	depot := effectiveDepot(spec)
-	env := fmt.Sprintf("HA_CLUSTER=%s\nHA_ET_NET=%s\nHA_ET_PEER=%s\nHA_API=%s\nHA_K3S=%s\nHA_DEPOT=%s\nHA_DEPOT_PUBLIC=%s\nHA_ROLE=%s\nHA_POWER=%s\nHA_CLASS=%s\nHA_FABRIC_IP=%s\nHA_NODE_TOKEN=%s\n",
-		spec.Cluster, spec.ETNet, spec.ETPeer, spec.API, spec.K3S, depot, spec.DepotPublic, spec.Role, power, class, fabric, nodeTok)
+	etSecret := strings.TrimSpace(spec.ETSecret)
+	if etSecret == "" {
+		etSecret = strings.TrimSpace(os.Getenv("HA_ET_SECRET"))
+	}
+	env := fmt.Sprintf("HA_CLUSTER=%s\nHA_ET_NET=%s\nHA_ET_PEER=%s\nHA_ET_SECRET=%s\nHA_API=%s\nHA_K3S=%s\nHA_DEPOT=%s\nHA_DEPOT_PUBLIC=%s\nHA_ROLE=%s\nHA_POWER=%s\nHA_CLASS=%s\nHA_FABRIC_IP=%s\nHA_NODE_TOKEN=%s\n",
+		spec.Cluster, spec.ETNet, spec.ETPeer, etSecret, spec.API, spec.K3S, depot, spec.DepotPublic, spec.Role, power, class, fabric, nodeTok)
 	if err := os.WriteFile(filepath.Join(root, "join.env"), []byte(env), 0600); err != nil {
 		return err
+	}
+	execStart := "ExecStart=/usr/local/bin/easytier-core --ipv4 ${HA_FABRIC_IP}/24 --network-name ${HA_ET_NET} --peers ${HA_ET_PEER}"
+	if etSecret != "" {
+		execStart += " --network-secret ${HA_ET_SECRET}"
 	}
 	unit := `[Unit]
 Description=ha-cluster EasyTier
@@ -102,7 +116,7 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=` + filepath.Join(root, "join.env") + `
-ExecStart=/usr/local/bin/easytier-core --ipv4 ${HA_FABRIC_IP} --network-name ${HA_ET_NET} --peers ${HA_ET_PEER}
+` + execStart + `
 Restart=always
 
 [Install]
@@ -127,10 +141,18 @@ WantedBy=multi-user.target
 }
 
 func EasyTierCommand(spec JoinSpec, ipv4 string) []string {
-	return []string{
+	addr := strings.TrimSpace(ipv4)
+	if addr != "" && !strings.Contains(addr, "/") {
+		addr += "/24"
+	}
+	cmd := []string{
 		"easytier-core",
-		"--ipv4", ipv4,
+		"--ipv4", addr,
 		"--network-name", spec.ETNet,
 		"--peers", spec.ETPeer,
 	}
+	if secret := strings.TrimSpace(spec.ETSecret); secret != "" {
+		cmd = append(cmd, "--network-secret", secret)
+	}
+	return cmd
 }

@@ -99,6 +99,9 @@ func TestIngressDomainZonesAndSharedClaim(t *testing.T) {
 	if len(zones) < 2 {
 		t.Fatalf("expected enabled zones in meta, got %#v", meta["zones"])
 	}
+	if meta["fabric_host"] == "" || meta["fabric_dns"] == "" {
+		t.Fatalf("expected fabric_host/dns in meta, got %#v", meta)
+	}
 
 	// shared custom claim → active
 	r1, err := app.ClaimSharedIngress(ctx, ClaimSharedIngressInput{

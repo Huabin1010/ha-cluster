@@ -109,6 +109,46 @@ func TestCreateWorkspaceRollbackOnRuntimeFailure(t *testing.T) {
 	}
 }
 
+func TestNormalizeWorkspaceArch(t *testing.T) {
+	cases := map[string]string{
+		"":        models.ArchAny,
+		"any":     models.ArchAny,
+		"amd64":   models.ArchAMD64,
+		"x86_64":  models.ArchAMD64,
+		"X64":     models.ArchAMD64,
+		"arm64":   models.ArchARM64,
+		"aarch64": models.ArchARM64,
+		"mips":    "",
+		"riscv":   "",
+	}
+	for in, want := range cases {
+		if got := normalizeWorkspaceArch(in); got != want {
+			t.Fatalf("%q: got %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestCreateWorkspaceRejectsUnknownArch(t *testing.T) {
+	app, owner := setupApp(t)
+	ctx := context.Background()
+	p, _ := app.CreateProject(ctx, owner.ID, "p", "p-arch")
+	_, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "bad", Plan: "nano", Arch: "mips", Actor: *owner,
+	})
+	if !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("mips want invalid, got %v", err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "alias", Plan: "nano", Arch: "x86_64", Actor: *owner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.Arch != models.ArchAMD64 {
+		t.Fatalf("x86_64 should normalize to amd64, got %s", ws.Arch)
+	}
+}
+
 func TestViewerCannotCreateWorkspace(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()

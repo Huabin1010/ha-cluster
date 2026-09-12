@@ -7,6 +7,8 @@ import (
 
 	"ha-cluster/internal/bastion"
 	"ha-cluster/internal/models"
+
+	"github.com/google/uuid"
 )
 
 type sshConnInfo struct {
@@ -36,6 +38,13 @@ func workspaceSSHUser() string {
 		return v
 	}
 	return "root"
+}
+
+func bastionFabricHost() string {
+	if v := strings.TrimSpace(os.Getenv("HA_BASTION_FABRIC_HOST")); v != "" {
+		return v
+	}
+	return "10.129.129.253"
 }
 
 func buildSSHConnection(ws *models.Workspace, n *models.Node, actor *models.User, mem *models.Membership) sshConnInfo {
@@ -76,7 +85,7 @@ func buildDirectSSHConnection(ws *models.Workspace, n *models.Node, actor *model
 }
 
 func buildBastionSSHConnection(ws *models.Workspace, actor *models.User) sshConnInfo {
-	host := bastionHost()
+	host := bastionPublicHost(ws)
 	port := bastionSSHPort()
 	user := actor.Username
 	cmd := "ssh " + user + "@" + host + " -p " + strconv.Itoa(port) + " -t " + ws.ID.String()
@@ -89,7 +98,8 @@ func buildBastionSSHConnection(ws *models.Workspace, actor *models.User) sshConn
 		Port:       port,
 		User:       user,
 		Mode:       "bastion",
-		Note:       "每台机器是独立隔离环境（独立进程/文件系统/网络）。添加自己的 SSH 公钥后即可连接跳板；可用 scp 上传文件，主机内已预装 Docker，允许自行拉取镜像。",
+		Note: "每台机器是独立隔离环境。已加入 EasyTier 时请用 Host ha-<短码>-et（HostName=" +
+			bastionFabricHost() + "），流量走虚网、不经 42 公网出口。公网用户仍用 *.ssh.cl.qzsyzn.com。连接用户名为平台账号。",
 	}
 }
 
@@ -108,10 +118,13 @@ func buildSSHConfig(ws *models.Workspace, n *models.Node, actor *models.User, me
 			"  Port " + strconv.Itoa(info.Port) + "\n" +
 			"  ForwardAgent yes\n"
 	}
-	host := bastionHost()
+	host := bastionPublicHost(ws)
 	port := bastionSSHPort()
 	user := actor.Username
+	fab := bastionFabricHost()
 	return "# Isolated workspace " + ws.ID.String() + "\n" +
+		"# 公网: ssh -p " + strconv.Itoa(port) + " " + user + "@" + host + " -t " + ws.ID.String() + "\n" +
+		"# EasyTier 虚网（不经 42 公网出口）: ssh -p " + strconv.Itoa(port) + " " + user + "@" + fab + " -t " + ws.ID.String() + "\n" +
 		"# scp: scp -P " + strconv.Itoa(port) + " -o RequestTTY=force -o RemoteCommand=" + ws.ID.String() +
 		" ./file " + user + "@" + host + ":/root/\n" +
 		"Host " + alias + "\n" +
@@ -120,5 +133,37 @@ func buildSSHConfig(ws *models.Workspace, n *models.Node, actor *models.User, me
 		"  Port " + strconv.Itoa(port) + "\n" +
 		"  ForwardAgent yes\n" +
 		"  RequestTTY force\n" +
+		"  RemoteCommand " + ws.ID.String() + "\n" +
+		"\n" +
+		"Host " + alias + "-et\n" +
+		"  HostName " + fab + "\n" +
+		"  User " + user + "\n" +
+		"  Port " + strconv.Itoa(port) + "\n" +
+		"  ForwardAgent yes\n" +
+		"  RequestTTY force\n" +
 		"  RemoteCommand " + ws.ID.String() + "\n"
+}
+
+// bastionPublicHost builds a per-workspace public hostname under the bastion zone
+// (e.g. a1b2c3d4.ssh.cl.qzsyzn.com) when HA_BASTION_HOST is a bare zone like
+// ssh.cl.qzsyzn.com. Wildcard DNS points all labels at the same bastion.
+func bastionPublicHost(ws *models.Workspace) string {
+	base := bastionHost()
+	if ws == nil || ws.ID == uuid.Nil {
+		return base
+	}
+	label := strings.ToLower(strings.ReplaceAll(ws.ID.String(), "-", ""))
+	if len(label) > 8 {
+		label = label[:8]
+	}
+	// Already a FQDN with a workspace label — keep as-is.
+	if strings.Count(base, ".") >= 2 && !strings.HasPrefix(base, "ssh.") && strings.Contains(base, ".ssh.") {
+		return base
+	}
+	// Zone form: ssh.example.com → <label>.ssh.example.com
+	if strings.HasPrefix(base, "ssh.") || base == "ssh.cl.qzsyzn.com" {
+		return label + "." + base
+	}
+	// Explicit host (legacy bastion.example.com) — unchanged.
+	return base
 }

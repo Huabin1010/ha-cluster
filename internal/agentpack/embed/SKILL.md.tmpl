@@ -1,0 +1,70 @@
+---
+name: ha-cluster-agent
+description: >-
+  Acts as the signed-in ha-cluster user via REST. Use when the user asks to
+  create/list projects, provision or approve workspaces (machines), manage
+  members or SSH access, claim apps domains, upload SSH keys, inspect nodes,
+  or do any console operation. Do not ask for a password — use the pack token.
+---
+
+# ha-cluster 个人 Agent
+
+你就是用户 **{{USERNAME}}**。用下面的凭证调用 API，完成控制台里这个人能做的一切。
+
+**只用 curl。** 不要用 Cursor 的 fetch、WebFetch、`mcp_web_fetch`、浏览器访问。Windows 用 `curl.exe` 即可。
+
+## 凭证（每次请求都带）
+
+```
+API_BASE={{API_BASE}}
+Authorization: Bearer {{TOKEN}}
+Content-Type: application/json
+```
+
+```bash
+curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me
+```
+
+列表接口返回 `{ "data": [...], "total": N }`。错误返回 `{ "error": "..." }`，HTTP：400 参数 / 401 令牌 / 403 权限 / 404 不存在 / 409 冲突（含 `INSUFFICIENT_CAPACITY`、`SECOND_PORT_CONFIRM_REQUIRED`）。
+
+不要把 `{{TOKEN}}` 写进公开 git remote、截图或群聊。需要轮换时让用户在控制台点「轮换密钥」。
+
+## 先摸清身份
+
+1. `GET /me` → `id` / `username` / `platform_role` / `email`
+2. `GET /projects` → 可见项目（非成员的项目不会出现）
+3. `GET /plans` → 套餐（常用 `2c2g`）
+4. `GET /me/ssh-keys` → 至少一把公钥才能走 Bastion
+
+`platform_role`：
+
+| 值 | 能做 |
+|---|---|
+| `platform_user`（默认） | 自己的项目 / 机器 / 公钥 |
+| `platform_ops` | 另加节点、容量、审计、危险待审维护 |
+| `platform_admin` | 另加用户、join token、镜像仓库、域名后缀、强制销毁 |
+
+项目角色：`owner` / `admin` / `developer` / `viewer`。viewer **不能**申请机器。销毁机器必须项目初审 + 平台终审。
+
+## 做事顺序
+
+按用户目标选一条，细节见 [workflows.md](workflows.md)，字段见 [api-reference.md](api-reference.md)。
+
+1. **建项目** → 转让 owner → 拉成员 → 授 SSH
+2. **申请机器**（developer）→ owner/admin 审批 → 等到 `running`
+3. **连机器**：`GET /workspaces/{id}/ssh-config`（网页终端走 JWT+WS，不需要本机私钥）
+4. **暴露 HTTP**：工作区内自己起服务 → `POST /workspaces/{id}/ingress/shared`
+5. **邀请同事**：`POST /projects/{id}/invitations`（按邮箱；accept 必须邮箱匹配）
+
+## 硬约束
+
+- 不要编造项目/机器 ID，先 list 再操作。
+- 不要对非 `running` 的机器 claim 域名或假设 SSH 可用。
+- 第二端口必须 `confirm_second_port: true`，否则 409。
+- 磁盘不能缩。`arch` 只接受 `amd64` / `arm64` / `any`（`x86_64` 会归一成 `amd64`）。
+- 重复加人返回 409，不要当成功。
+- 平台接口都在 `/admin/...`，普通用户 403 是正常的。
+
+## 给用户回传时
+
+用中文。状态枚举先说人话（运行中 / 待审批 / 失败），需要排障再附原始 `status`。

@@ -101,10 +101,6 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 		_ = r.Destroy(context.Background(), w.ID)
 		return Instance{}, err
 	}
-	if err := r.waitContainerIPv4(ctx, name); err != nil {
-		_ = r.Destroy(context.Background(), w.ID)
-		return Instance{}, fmt.Errorf("container network: %w", err)
-	}
 	if err := r.applyRootSize(ctx, name, diskSizeArg(spec.DiskBytes)); err != nil {
 		_ = r.Destroy(context.Background(), w.ID)
 		return Instance{}, err
@@ -157,6 +153,10 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 	if err := r.installWorkspaceDocker(ctx, name); err != nil {
 		_ = r.Destroy(context.Background(), w.ID)
 		return Instance{}, fmt.Errorf("install workspace docker: %w", err)
+	}
+	if err := r.ensureDockerCompose(ctx, name); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, fmt.Errorf("install docker compose: %w", err)
 	}
 	if len(lc.DockerRegistries) > 0 {
 		if err := r.injectDockerRegistries(ctx, name, lc.DockerRegistries); err != nil {
@@ -298,7 +298,7 @@ systemctl restart systemd-networkd 2>/dev/null || true
 	if err != nil {
 		return fmt.Errorf("configure eth0 dhcp: %w: %s", err, out)
 	}
-	return nil
+	return r.waitContainerIPv4(ctx, name)
 }
 
 // waitContainerIPv4 等 eth0 DHCP。不在这里 ping 外网：docker 尚未启动时 NAT 偶发未就绪，
@@ -328,12 +328,7 @@ func workspaceDebsDir() string {
 
 func (r *IncusRuntime) installWorkspaceDocker(ctx context.Context, name string) error {
 	if _, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "--version").CombinedOutput(); err == nil {
-		_ = r.cmd(ctx, "exec", name, "--", "systemctl", "unmask", "docker").Run()
-		_ = r.cmd(ctx, "exec", name, "--", "systemctl", "enable", "--now", "docker").Run()
-		_ = r.cmd(ctx, "exec", name, "--", "service", "docker", "start").Run()
-		if _, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "info").CombinedOutput(); err != nil {
-			time.Sleep(2 * time.Second)
-		}
+		_ = r.ensureNestedDockerStorage(ctx, name)
 		return nil
 	}
 
@@ -380,6 +375,71 @@ func (r *IncusRuntime) installWorkspaceDocker(ctx context.Context, name string) 
 	}
 	if out, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "--version").CombinedOutput(); err != nil {
 		return fmt.Errorf("docker not available after offline install: %w: %s", err, out)
+	}
+	_ = r.ensureNestedDockerStorage(ctx, name)
+	return nil
+}
+
+// ensureNestedDockerStorage switches the in-container engine off overlayfs.
+// Incus already uses overlay; Docker-in-container overlay+userxattr fails extract
+// ("invalid argument") so pulls appear to download then die. vfs (or fuse-overlayfs)
+// is the reliable nested driver.
+func (r *IncusRuntime) ensureNestedDockerStorage(ctx context.Context, name string) error {
+	script := `set -e
+mkdir -p /etc/docker
+want=vfs
+if [ -x /usr/bin/fuse-overlayfs ] || command -v fuse-overlayfs >/dev/null 2>&1; then
+  want=fuse-overlayfs
+fi
+cur=$(docker info --format '{{.Driver}}' 2>/dev/null || true)
+if [ "$cur" = "$want" ] && docker info >/dev/null 2>&1; then
+  exit 0
+fi
+printf '%s\n' "{\"storage-driver\":\"$want\"}" > /etc/docker/daemon.json
+systemctl unmask docker 2>/dev/null || true
+systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
+systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+for i in $(seq 1 20); do
+  if docker info >/dev/null 2>&1; then exit 0; fi
+  sleep 1
+done
+exit 0
+`
+	out, err := r.cmd(ctx, "exec", name, "--", "bash", "-lc", script).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("nested docker storage: %w: %s", err, out)
+	}
+	return nil
+}
+
+func composePluginHostPath() string {
+	if p := strings.TrimSpace(os.Getenv("HA_DOCKER_COMPOSE_BIN")); p != "" {
+		return p
+	}
+	return "/var/lib/ha-cluster/docker-compose"
+}
+
+// ensureDockerCompose installs the Compose v2 CLI plugin so `docker compose` works
+// inside the workspace (the baked image only has docker.io, no plugin).
+func (r *IncusRuntime) ensureDockerCompose(ctx context.Context, name string) error {
+	if _, err := r.cmd(ctx, "exec", name, "--", "docker", "compose", "version").CombinedOutput(); err == nil {
+		return nil
+	}
+	hostBin := composePluginHostPath()
+	if st, err := os.Stat(hostBin); err != nil || st.IsDir() || st.Size() < 1024 {
+		return fmt.Errorf("docker compose plugin missing on worker (%s); place linux-x86_64 binary there", hostBin)
+	}
+	if out, err := r.cmd(ctx, "exec", name, "--", "mkdir", "-p", "/usr/local/lib/docker/cli-plugins").CombinedOutput(); err != nil {
+		return fmt.Errorf("mkdir compose plugin dir: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "file", "push", hostBin, name+"/usr/local/lib/docker/cli-plugins/docker-compose").CombinedOutput(); err != nil {
+		return fmt.Errorf("push compose plugin: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "exec", name, "--", "chmod", "755", "/usr/local/lib/docker/cli-plugins/docker-compose").CombinedOutput(); err != nil {
+		return fmt.Errorf("chmod compose plugin: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "exec", name, "--", "docker", "compose", "version").CombinedOutput(); err != nil {
+		return fmt.Errorf("docker compose still missing: %w: %s", err, out)
 	}
 	return nil
 }
@@ -451,41 +511,41 @@ func (r *IncusRuntime) ensureSSH(ctx context.Context, name string) error {
 		return fmt.Errorf("ssh-keygen -A: %w: %s", err, out)
 	}
 	// After cold start, systemd/dbus is often not ready yet; retry then fall back
-	// to starting sshd without systemctl so Start is not falsely failed.
+	// to starting sshd without systemctl. Always verify :22 is listening before success
+	// (systemctl enable --now can return 0 while sshd never binds).
 	script := `set -e
+listening() { ss -lnt 2>/dev/null | grep -qE ':22[[:space:]]' || pgrep -x sshd >/dev/null 2>&1; }
+# Ensure openssh-server exists (minimal images may lack it).
+if ! command -v sshd >/dev/null 2>&1 && [ ! -x /usr/sbin/sshd ]; then
+  export DEBIAN_FRONTEND=noninteractive
+  (apt-get update -qq && apt-get install -y -qq openssh-server) >/tmp/ha-ssh-apt.log 2>&1 || true
+fi
 for i in $(seq 1 45); do
-  if systemctl is-system-running >/dev/null 2>&1; then
-    break
-  fi
+  if listening; then exit 0; fi
+  if systemctl is-system-running >/dev/null 2>&1; then break; fi
   if [ -S /run/systemd/private ] || [ -S /run/dbus/system_bus_socket ] || [ -S /var/run/dbus/system_bus_socket ]; then
     break
   fi
-  # Already listening is enough (re-start / already-running paths).
-  if ss -lnt 2>/dev/null | grep -qE ':22\\s' || pgrep -x sshd >/dev/null 2>&1; then
-    exit 0
-  fi
   sleep 1
 done
-systemctl reset-failed ssh.service ssh.socket 2>/dev/null || true
-if systemctl enable --now ssh 2>/dev/null \
-  || systemctl enable --now sshd 2>/dev/null \
-  || systemctl start ssh 2>/dev/null \
-  || systemctl start sshd 2>/dev/null; then
-  exit 0
-fi
+systemctl reset-failed ssh.service ssh.socket sshd.service 2>/dev/null || true
+systemctl enable --now ssh 2>/dev/null || true
+systemctl enable --now sshd 2>/dev/null || true
+systemctl start ssh 2>/dev/null || true
+systemctl start sshd 2>/dev/null || true
 if command -v service >/dev/null 2>&1; then
   service ssh start 2>/dev/null || service sshd start 2>/dev/null || true
 fi
-if pgrep -x sshd >/dev/null 2>&1; then
-  exit 0
-fi
 if [ -x /usr/sbin/sshd ]; then
-  /usr/sbin/sshd || true
+  pgrep -x sshd >/dev/null 2>&1 || /usr/sbin/sshd || true
 fi
-if pgrep -x sshd >/dev/null 2>&1 || ss -lnt 2>/dev/null | grep -qE ':22\\s'; then
-  exit 0
-fi
-echo "failed to start sshd" >&2
+for i in $(seq 1 20); do
+  if listening; then exit 0; fi
+  sleep 1
+done
+echo "failed to start sshd (nothing listening on :22)" >&2
+ss -lnt 2>/dev/null || true
+systemctl status ssh sshd --no-pager 2>/dev/null || true
 exit 1
 `
 	out, err := r.cmd(ctx, "exec", name, "--", "bash", "-lc", script).CombinedOutput()

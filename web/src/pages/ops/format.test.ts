@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   actionLabel,
+  auditActorLabel,
   auditChangeSummary,
+  auditResourceName,
   auditResourceTitle,
   fmtBytes,
   fmtCPU,
@@ -102,5 +104,18 @@ describe("audit change summary", () => {
   it("falls back when meta is empty", () => {
     expect(auditChangeSummary("user.login")).toBe("");
     expect(auditResourceTitle("user", "00000000-1111-2222-3333-444444444444")).toBe("用户 00000000…");
+  });
+
+  it("prefers project / workspace / display names over ids", () => {
+    expect(auditResourceTitle("project", "7d9a6cd4-xxxx", { project_name: "办公室故事" })).toBe("项目 办公室故事");
+    expect(auditResourceName("project", "7d9a6cd4-xxxx", {}, "办公室故事")).toBe("办公室故事");
+    expect(auditResourceTitle("workspace", "9031b376-xxxx", { workspace_name: "开发机" })).toBe("服务器 开发机");
+    expect(auditResourceTitle("user", "00000000-xxxx", { display_name: "黄华斌", username: "huanghuabin" })).toBe("用户 黄华斌");
+  });
+
+  it("shows actor display name and falls back to username", () => {
+    expect(auditActorLabel("黄华斌", "huanghuabin", "uid")).toBe("黄华斌");
+    expect(auditActorLabel("  ", "admin", "uid")).toBe("admin");
+    expect(auditActorLabel("", "", "00000000-1111-2222-3333-444444444444")).toBe("00000000…");
   });
 });

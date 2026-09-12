@@ -112,8 +112,49 @@ func TestAuditActorUsernameAndIP(t *testing.T) {
 	if login.ActorUsername != "auditadmin" {
 		t.Fatalf("actor_username=%q", login.ActorUsername)
 	}
+	if login.ResourceName != "auditadmin" {
+		t.Fatalf("resource_name=%q", login.ResourceName)
+	}
 	if login.IP != "192.0.2.1" {
 		t.Fatalf("ip=%q", login.IP)
+	}
+
+	var me models.User
+	rr = doJSON(t, h, http.MethodGet, "/me", tok, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatal(rr.Body.String())
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &me)
+	rr = doJSON(t, h, http.MethodPatch, "/users/"+me.ID.String(), tok, map[string]string{"display_name": "审计管理员"})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("patch display_name %d %s", rr.Code, rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "办公室故事", "slug": "office-story"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodGet, "/audit-logs", tok, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatal(rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	var created *models.AuditLog
+	for i := range out.Data {
+		if out.Data[i].Action == "project.create" {
+			created = &out.Data[i]
+			break
+		}
+	}
+	if created == nil {
+		t.Fatalf("no project.create in %#v", out.Data)
+	}
+	if created.ResourceName != "办公室故事" {
+		t.Fatalf("project resource_name=%q", created.ResourceName)
+	}
+	if created.ActorDisplayName != "审计管理员" {
+		t.Fatalf("actor_display_name=%q", created.ActorDisplayName)
 	}
 }
 
@@ -151,6 +192,9 @@ func TestWorkspaceAuditHTTP(t *testing.T) {
 			found = true
 			if l.ActorUsername != "wsaudit" {
 				t.Fatalf("actor_username=%q", l.ActorUsername)
+			}
+			if l.ResourceName != "wa-ws" {
+				t.Fatalf("workspace resource_name=%q", l.ResourceName)
 			}
 			break
 		}
@@ -1289,5 +1333,64 @@ func TestAccessTokenQueryOnlyOnTerminal(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer hdr")
 	if got := accessTokenFromRequest(req); got != "hdr" {
 		t.Fatalf("bearer %q", got)
+	}
+}
+
+func TestAgentPackIssueFetchAndAuth(t *testing.T) {
+	h := testServer(t)
+	jwt := registerLogin(t, h, "packuser", "pack@example.com")
+	rr := doJSON(t, h, http.MethodGet, "/me/agent-pack", jwt, nil)
+	if rr.Code != http.StatusCreated && rr.Code != http.StatusOK {
+		t.Fatalf("issue %d %s", rr.Code, rr.Body.String())
+	}
+	var issued struct {
+		URL    string `json:"url"`
+		Prompt string `json:"prompt"`
+		Prefix string `json:"prefix"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &issued); err != nil || issued.URL == "" || issued.Prompt == "" {
+		t.Fatalf("issue body %s", rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodGet, "/me/agent-pack", jwt, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reget want 200 got %d %s", rr.Code, rr.Body.String())
+	}
+	token := issued.URL[strings.LastIndex(issued.URL, "/")+1:]
+	rr = doJSON(t, h, http.MethodGet, "/agent-pack/"+token, "", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("public pack %d %s", rr.Code, rr.Body.String())
+	}
+	var pack struct {
+		Files map[string]string `json:"files"`
+		Auth  struct {
+			Token    string `json:"token"`
+			Username string `json:"username"`
+		} `json:"auth"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &pack); err != nil {
+		t.Fatal(err)
+	}
+	if pack.Auth.Username != "packuser" || pack.Auth.Token != token {
+		t.Fatalf("auth %+v", pack.Auth)
+	}
+	if pack.Files[".cursor/skills/ha-cluster-agent/SKILL.md"] == "" {
+		t.Fatal("missing skill file")
+	}
+	rr = doJSON(t, h, http.MethodGet, "/me", token, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("agent token as bearer %d %s", rr.Code, rr.Body.String())
+	}
+	var me models.User
+	_ = json.Unmarshal(rr.Body.Bytes(), &me)
+	if me.Username != "packuser" {
+		t.Fatalf("me %+v", me)
+	}
+	rr = doJSON(t, h, http.MethodPost, "/me/agent-pack", jwt, map[string]any{"rotate": true})
+	if rr.Code != http.StatusCreated && rr.Code != http.StatusOK {
+		t.Fatalf("rotate %d %s", rr.Code, rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodGet, "/agent-pack/"+token, "", nil)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("old pack should 404, got %d", rr.Code)
 	}
 }

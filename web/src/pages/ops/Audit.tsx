@@ -11,7 +11,7 @@ import { Elevated } from "@/lib/elevated";
 import { ApiError, friendlyError } from "@/providers";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
-import { actionLabel, auditChangeSummary, auditResourceName, fmtTime, resourceTypeLabel, shortId } from "./format";
+import { actionLabel, auditActorLabel, auditChangeSummary, auditResourceName, fmtTime, resourceTypeLabel } from "./format";
 import { useClientPager } from "@/lib/use-client-pager";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,8 @@ type AuditLog = {
   id: number;
   actor_user_id: string;
   actor_username?: string;
+  actor_display_name?: string;
+  resource_name?: string;
   action: string;
   resource_type: string;
   resource_id: string;
@@ -79,14 +81,13 @@ function actionVariant(action: string): "default" | "outline" | "ok" | "warn" | 
 
 function AuditTargetCell({ log }: { log: AuditLog }) {
   const change = auditChangeSummary(log.action, log.meta);
+  const name = auditResourceName(log.resource_type, log.resource_id, log.meta, log.resource_name);
   return (
     <Hint label={log.resource_id} className="font-mono">
       <div className="flex flex-col gap-0.5 min-w-0 cursor-help">
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap min-w-0">
           <span className="text-muted-foreground shrink-0">{resourceTypeLabel(log.resource_type)}</span>
-          <span className="font-medium text-foreground truncate">
-            {auditResourceName(log.resource_type, log.resource_id, log.meta)}
-          </span>
+          <span className="font-medium text-foreground truncate">{name}</span>
         </span>
         {change ? (
           <span className="text-foreground break-words min-w-0 leading-snug">{change}</span>
@@ -265,13 +266,13 @@ function AuditList() {
                     {fmtTime(l.created_at)}
                   </TableCell>
                   <TableCell className="py-2.5 whitespace-nowrap">
-                    <Hint label={l.actor_user_id} className="font-mono">
+                    <Hint label={l.actor_username?.trim() || l.actor_user_id} className="font-mono">
                       <span
                         data-testid="audit-actor"
                         className="cursor-help inline-flex items-center gap-1.5 font-medium text-foreground"
                       >
                         <User className="size-3 opacity-60 shrink-0" />
-                        {l.actor_username?.trim() || shortId(l.actor_user_id)}
+                        {auditActorLabel(l.actor_display_name, l.actor_username, l.actor_user_id)}
                       </span>
                     </Hint>
                   </TableCell>

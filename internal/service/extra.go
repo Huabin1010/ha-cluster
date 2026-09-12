@@ -68,7 +68,10 @@ func (a *App) PatchProject(ctx context.Context, actor models.User, id uuid.UUID,
 	if err := a.Store.UpdateProject(ctx, p); err != nil {
 		return nil, err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "project.update", ResourceType: "project", ResourceID: p.ID.String()})
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "project.update", ResourceType: "project", ResourceID: p.ID.String(),
+		Meta: projectAuditMeta(p),
+	})
 	return p, nil
 }
 
@@ -76,7 +79,8 @@ func (a *App) DeleteProject(ctx context.Context, actor models.User, id uuid.UUID
 	if _, err := a.RequireMembership(ctx, actor, id, models.RoleOwner); err != nil {
 		return err
 	}
-	if _, err := a.Store.GetProject(ctx, id); err != nil {
+	p, err := a.Store.GetProject(ctx, id)
+	if err != nil {
 		return err
 	}
 	wss, err := a.Store.ListWorkspaces(ctx, &id)
@@ -94,7 +98,10 @@ func (a *App) DeleteProject(ctx context.Context, actor models.User, id uuid.UUID
 	if err := a.Store.DeleteProject(ctx, id); err != nil {
 		return err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "project.delete", ResourceType: "project", ResourceID: id.String()})
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "project.delete", ResourceType: "project", ResourceID: id.String(),
+		Meta: projectAuditMeta(p),
+	})
 	return nil
 }
 
@@ -220,7 +227,14 @@ func (a *App) Invite(ctx context.Context, actor models.User, projectID uuid.UUID
 	if err := a.Store.CreateInvitation(ctx, inv); err != nil {
 		return nil, err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "invite.create", ResourceType: "project", ResourceID: projectID.String()})
+	meta := map[string]any{}
+	if p, err := a.Store.GetProject(ctx, projectID); err == nil {
+		meta = projectAuditMeta(p)
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "invite.create", ResourceType: "project", ResourceID: projectID.String(),
+		Meta: meta,
+	})
 	return inv, nil
 }
 
@@ -234,6 +248,9 @@ func (a *App) AcceptInvite(ctx context.Context, user models.User, token string) 
 	}
 	if !strings.EqualFold(strings.TrimSpace(user.Email), strings.TrimSpace(inv.Email)) {
 		return uuid.Nil, store.ErrForbidden
+	}
+	if _, err := a.Store.GetMembership(ctx, inv.ProjectID, user.ID); err == nil {
+		return uuid.Nil, store.ErrConflict
 	}
 	if err := a.Store.AcceptInvitation(ctx, token); err != nil {
 		return uuid.Nil, err
@@ -296,7 +313,16 @@ func (a *App) AuthorizedKeys(ctx context.Context, username string) (string, erro
 	}
 	var b strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&b, "%s\n", strings.TrimSpace(k.PublicKey))
+		line := strings.TrimSpace(k.PublicKey)
+		if line == "" {
+			continue
+		}
+		// Ensure OpenSSH comment carries platform username for auth logs.
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			line = parts[0] + " " + parts[1] + " ha-user:" + u.Username
+		}
+		fmt.Fprintf(&b, "%s\n", line)
 	}
 	return b.String(), nil
 }
@@ -363,14 +389,20 @@ func (a *App) TransferOwnership(ctx context.Context, actor models.User, projectI
 		models.NormalizeMembershipSSH(&old)
 		_ = a.Store.UpdateMembership(ctx, old)
 	}
+	meta := map[string]any{
+		"new_owner":     newOwnerUserID.String(),
+		"from_username": actor.Username,
+		"to_username":   a.usernameOf(ctx, newOwnerUserID),
+	}
+	if p, err := a.Store.GetProject(ctx, projectID); err == nil {
+		for k, v := range projectAuditMeta(p) {
+			meta[k] = v
+		}
+	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "project.transfer_ownership",
 		ResourceType: "project", ResourceID: projectID.String(),
-		Meta: map[string]any{
-			"new_owner":     newOwnerUserID.String(),
-			"from_username": actor.Username,
-			"to_username":   a.usernameOf(ctx, newOwnerUserID),
-		},
+		Meta: meta,
 	})
 	return nil
 }
@@ -393,8 +425,15 @@ func (a *App) membershipChangeMeta(ctx context.Context, projectID, userID uuid.U
 		"from_ssh_mode":   before.SSHMode,
 		"to_ssh_mode":     after.SSHMode,
 	}
-	if name := a.usernameOf(ctx, userID); name != "" {
-		meta["target_username"] = name
+	if u, err := a.Store.GetUserByID(ctx, userID); err == nil {
+		meta["target_username"] = u.Username
+		if name := strings.TrimSpace(u.DisplayName); name != "" {
+			meta["target_display_name"] = name
+		}
+	}
+	if p, err := a.Store.GetProject(ctx, projectID); err == nil {
+		meta["project_name"] = p.Name
+		meta["project_slug"] = p.Slug
 	}
 	return meta
 }

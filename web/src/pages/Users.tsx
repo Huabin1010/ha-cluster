@@ -21,12 +21,19 @@ import { canManageUsers } from "@/lib/permissions";
 import { roleChipLabel } from "@/pages/members/roles";
 import { BatchCreateUsersDialog } from "@/pages/members/BatchCreateUsersDialog";
 import { matchesUserQuery, platformRoleLabel, userStatusLabel } from "@/pages/users/format";
-import { type ActionKind, type PlatformUser, type Project, UserActionDialogs, UserRowActions } from "@/pages/users/actions";
+import {
+  type ActionKind,
+  type PlatformUser,
+  type Project,
+  type UserProject,
+  UserActionDialogs,
+  UserRowActions,
+} from "@/pages/users/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Hint } from "@/components/ui/tooltip";
+import { Hint, Tooltip } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
@@ -36,6 +43,62 @@ import { Loading } from "@/ui";
 import { copyText, fmtTime } from "@/ui/format";
 import { useClientPager } from "@/lib/use-client-pager";
 import { cn } from "@/lib/utils";
+
+const PROJECTS_VISIBLE = 1;
+
+function ProjectChip({ project }: { project: UserProject }) {
+  return (
+    <Hint label={`${roleChipLabel(project.role)} · ${project.slug || project.id}`}>
+      <Link
+        to={`/projects/${project.id}/members`}
+        className="inline-flex max-w-[140px] items-center gap-1 whitespace-nowrap shrink-0 rounded-md border border-border/70 bg-surface-2/60 px-1.5 py-0.5 text-[11px] text-foreground hover:border-primary/40 hover:text-primary"
+      >
+        <FolderKanban className="size-3 shrink-0 opacity-70" />
+        <span className="min-w-0 truncate">{project.name}</span>
+      </Link>
+    </Hint>
+  );
+}
+
+function UserProjectsCell({ projects }: { projects: UserProject[] }) {
+  if (projects.length === 0) {
+    return <span className="text-xs text-muted-foreground">尚未加入项目</span>;
+  }
+
+  const visible = projects.slice(0, PROJECTS_VISIBLE);
+  const overflow = projects.length - visible.length;
+
+  return (
+    <div className="inline-flex max-w-[220px] items-center gap-1 min-w-0">
+      {visible.map((p) => (
+        <ProjectChip key={p.id} project={p} />
+      ))}
+      {overflow > 0 ? (
+        <Tooltip
+          side="bottom"
+          content={
+            <div className="flex max-h-56 max-w-[260px] flex-col gap-1 overflow-y-auto py-0.5">
+              {projects.map((p) => (
+                <div key={p.id} className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+                  <FolderKanban className="size-3 shrink-0 opacity-70" />
+                  <span className="min-w-0 truncate">{p.name}</span>
+                  <span className="shrink-0 opacity-70">· {roleChipLabel(p.role)}</span>
+                </div>
+              ))}
+            </div>
+          }
+        >
+          <span
+            className="inline-flex items-center whitespace-nowrap shrink-0 rounded-md border border-border/70 bg-surface-2/60 px-1.5 py-0.5 text-[11px] text-muted-foreground cursor-default"
+            aria-label={`还有 ${overflow} 个项目`}
+          >
+            +{overflow}…
+          </span>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
+}
 
 function Forbidden() {
   return (
@@ -357,24 +420,8 @@ export function UsersPage() {
                         )}
                       </Hint>
                     </TableCell>
-                    <TableCell className="py-2.5">
-                      {u.projects && u.projects.length > 0 ? (
-                        <div className="flex flex-wrap items-center gap-1">
-                          {u.projects.map((p) => (
-                            <Hint key={p.id} label={`${roleChipLabel(p.role)} · ${p.slug || p.id}`}>
-                              <Link
-                                to={`/projects/${p.id}/members`}
-                                className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded-md border border-border/70 bg-surface-2/60 px-1.5 py-0.5 text-[11px] text-foreground hover:border-primary/40 hover:text-primary"
-                              >
-                                <FolderKanban className="size-3 shrink-0 opacity-70" />
-                                {p.name}
-                              </Link>
-                            </Hint>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">尚未加入项目</span>
-                      )}
+                    <TableCell className="py-2.5 whitespace-nowrap">
+                      <UserProjectsCell projects={u.projects ?? []} />
                     </TableCell>
                     <TableCell className="py-2.5 whitespace-nowrap text-xs text-muted-foreground">
                       {fmtTime(u.created_at)}

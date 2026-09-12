@@ -53,6 +53,12 @@ var ingressDomainZonesSQL string
 //go:embed sql/012_user_display_name.sql
 var userDisplayNameSQL string
 
+//go:embed sql/013_ssh_key_per_user_fingerprint.sql
+var sshKeyPerUserFingerprintSQL string
+
+//go:embed sql/014_agent_tokens.sql
+var agentTokensSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -112,6 +118,14 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, userDisplayNameSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, sshKeyPerUserFingerprintSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, agentTokensSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -322,10 +336,12 @@ func (s *Store) ListProjectsForUser(ctx context.Context, userID uuid.UUID) ([]mo
 
 func (s *Store) AddMembership(ctx context.Context, m models.Membership) error {
 	models.NormalizeMembershipSSH(&m)
-	_, err := s.db.ExecContext(ctx, `INSERT INTO memberships (project_id,user_id,role,ssh_access,ssh_mode) VALUES ($1,$2,$3,$4,$5)
-		ON CONFLICT (project_id,user_id) DO UPDATE SET role=EXCLUDED.role, ssh_access=EXCLUDED.ssh_access, ssh_mode=EXCLUDED.ssh_mode`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO memberships (project_id,user_id,role,ssh_access,ssh_mode) VALUES ($1,$2,$3,$4,$5)`,
 		m.ProjectID, m.UserID, m.Role, m.SSHAccess, m.SSHMode)
-	return err
+	if err != nil {
+		return store.ErrConflict
+	}
+	return nil
 }
 
 func (s *Store) UpdateMembership(ctx context.Context, m models.Membership) error {
@@ -811,13 +827,47 @@ func (s *Store) AddAudit(ctx context.Context, l models.AuditLog) error {
 	return err
 }
 
+const auditSelect = `
+SELECT a.id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.ip, a.created_at,
+  COALESCE(u.username, ''),
+  COALESCE(NULLIF(TRIM(u.display_name), ''), ''),
+  a.meta,
+  COALESCE(
+    NULLIF(TRIM(a.meta->>'project_name'), ''),
+    NULLIF(TRIM(a.meta->>'workspace_name'), ''),
+    NULLIF(TRIM(a.meta->>'name'), ''),
+    NULLIF(TRIM(a.meta->>'target_display_name'), ''),
+    NULLIF(TRIM(a.meta->>'target_username'), ''),
+    NULLIF(TRIM(a.meta->>'username'), ''),
+    NULLIF(TRIM(a.meta->>'domain'), ''),
+    CASE a.resource_type
+      WHEN 'project' THEN NULLIF(TRIM(p.name), '')
+      WHEN 'workspace' THEN NULLIF(TRIM(w.name), '')
+      WHEN 'user' THEN COALESCE(NULLIF(TRIM(tu.display_name), ''), NULLIF(TRIM(tu.username), ''))
+      WHEN 'membership' THEN COALESCE(NULLIF(TRIM(tu.display_name), ''), NULLIF(TRIM(tu.username), ''))
+      WHEN 'node' THEN NULLIF(TRIM(n.name), '')
+      WHEN 'docker_registry' THEN NULLIF(TRIM(dr.name), '')
+      WHEN 'ingress' THEN NULLIF(TRIM(ir.domain), '')
+    END,
+    ''
+  )
+FROM audit_logs a
+LEFT JOIN users u ON u.id = a.actor_user_id
+LEFT JOIN projects p ON a.resource_type = 'project' AND p.id::text = a.resource_id
+LEFT JOIN workspaces w ON a.resource_type = 'workspace' AND w.id::text = a.resource_id
+LEFT JOIN users tu ON a.resource_type IN ('user', 'membership') AND tu.id::text = a.resource_id
+LEFT JOIN nodes n ON a.resource_type = 'node' AND n.id::text = a.resource_id
+LEFT JOIN docker_registries dr ON a.resource_type = 'docker_registry' AND dr.id::text = a.resource_id
+LEFT JOIN ingress_routes ir ON a.resource_type = 'ingress' AND ir.id::text = a.resource_id
+`
+
 func scanAuditRows(rows *sql.Rows) ([]models.AuditLog, error) {
 	defer rows.Close()
 	var out []models.AuditLog
 	for rows.Next() {
 		var l models.AuditLog
 		var metaRaw []byte
-		if err := rows.Scan(&l.ID, &l.ActorUserID, &l.Action, &l.ResourceType, &l.ResourceID, &l.IP, &l.CreatedAt, &l.ActorUsername, &metaRaw); err != nil {
+		if err := rows.Scan(&l.ID, &l.ActorUserID, &l.Action, &l.ResourceType, &l.ResourceID, &l.IP, &l.CreatedAt, &l.ActorUsername, &l.ActorDisplayName, &metaRaw, &l.ResourceName); err != nil {
 			return nil, err
 		}
 		if len(metaRaw) > 0 && string(metaRaw) != "null" {
@@ -832,10 +882,7 @@ func (s *Store) ListAudit(ctx context.Context, limit int) ([]models.AuditLog, er
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `
-SELECT a.id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.ip, a.created_at, COALESCE(u.username, ''), a.meta
-FROM audit_logs a
-LEFT JOIN users u ON u.id = a.actor_user_id
+	rows, err := s.db.QueryContext(ctx, auditSelect+`
 ORDER BY a.id DESC
 LIMIT $1`, limit)
 	if err != nil {
@@ -851,10 +898,7 @@ func (s *Store) ListAuditByResource(ctx context.Context, resourceID string, limi
 	if limit > 500 {
 		limit = 500
 	}
-	rows, err := s.db.QueryContext(ctx, `
-SELECT a.id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.ip, a.created_at, COALESCE(u.username, ''), a.meta
-FROM audit_logs a
-LEFT JOIN users u ON u.id = a.actor_user_id
+	rows, err := s.db.QueryContext(ctx, auditSelect+`
 WHERE a.resource_id = $1
    OR COALESCE(a.meta->>'workspace', '') = $1
 ORDER BY a.id DESC

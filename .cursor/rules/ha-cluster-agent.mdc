@@ -1,0 +1,12 @@
+---
+description: 以登录用户身份调用 ha-cluster API（控制台「复制专属链接」安装的个人 Agent）。开发本仓库时不必始终应用。
+alwaysApply: false
+---
+
+# ha-cluster 个人 Agent
+
+用户从控制台侧栏复制的 pack 会把本规则写成 `alwaysApply: true`，并写入真实 `Bearer haagt_…`。
+
+在本仓库改 API / 工作流说明时，改 `internal/agentpack/embed/`，并同步 `.cursor/skills/ha-cluster-agent/`。
+
+口头词：「机器 / 服务器」= Workspace。先 `curl /me` 再操作。403 是权限不足，不要换别人的号。细节见 skill `ha-cluster-agent`。**只用 curl，禁止 Cursor fetch / WebFetch。**

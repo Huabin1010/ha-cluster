@@ -3,12 +3,14 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/authz"
+	"ha-cluster/internal/models"
 	"ha-cluster/internal/service"
 	"ha-cluster/internal/store"
 )
@@ -167,5 +169,16 @@ func (s *Server) claimSharedIngress(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
+	attachIngressFabric(rt)
 	writeJSON(w, http.StatusCreated, rt)
+}
+
+func attachIngressFabric(rt *models.IngressRoute) {
+	if rt == nil {
+		return
+	}
+	host := service.FabricEdgeHost()
+	rt.FabricHost = host
+	rt.FabricDNS = host
+	rt.FabricHTTP = "http://" + host + ":" + strconv.Itoa(service.FabricHTTPPort())
 }

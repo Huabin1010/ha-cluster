@@ -29,6 +29,19 @@ func validProjectSlug(slug string) bool {
 	return projectSlugRE.MatchString(slug)
 }
 
+func normalizeWorkspaceArch(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", models.ArchAny:
+		return models.ArchAny
+	case models.ArchAMD64, "x86_64", "x64":
+		return models.ArchAMD64
+	case models.ArchARM64, "aarch64", "arm":
+		return models.ArchARM64
+	default:
+		return ""
+	}
+}
+
 type App struct {
 	Store     store.Store
 	Ledger    *ledger.Service
@@ -82,7 +95,10 @@ func (a *App) Register(ctx context.Context, username, email, password string) (*
 	if err := a.Store.CreateUser(ctx, u); err != nil {
 		return nil, err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: u.ID, Action: "user.register", ResourceType: "user", ResourceID: u.ID.String()})
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: u.ID, Action: "user.register", ResourceType: "user", ResourceID: u.ID.String(),
+		Meta: userAuditMeta(u),
+	})
 	return u, nil
 }
 
@@ -98,7 +114,10 @@ func (a *App) Login(ctx context.Context, username, password string) (string, *mo
 	if err != nil {
 		return "", nil, err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: u.ID, Action: "user.login", ResourceType: "user", ResourceID: u.ID.String()})
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: u.ID, Action: "user.login", ResourceType: "user", ResourceID: u.ID.String(),
+		Meta: userAuditMeta(u),
+	})
 	return tok, u, nil
 }
 
@@ -115,7 +134,10 @@ func (a *App) CreateProject(ctx context.Context, actor uuid.UUID, name, slug str
 	if err := a.Store.CreateProject(ctx, p, models.RoleOwner); err != nil {
 		return nil, err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor, Action: "project.create", ResourceType: "project", ResourceID: p.ID.String()})
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor, Action: "project.create", ResourceType: "project", ResourceID: p.ID.String(),
+		Meta: projectAuditMeta(p),
+	})
 	return p, nil
 }
 
@@ -151,9 +173,9 @@ func (a *App) CreateWorkspace(ctx context.Context, in CreateWorkspaceInput) (*mo
 	if err != nil {
 		return nil, store.ErrInvalidInput
 	}
-	arch := in.Arch
+	arch := normalizeWorkspaceArch(in.Arch)
 	if arch == "" {
-		arch = models.ArchAny
+		return nil, store.ErrInvalidInput
 	}
 	vis := in.Visibility
 	if vis == "" {
@@ -663,7 +685,10 @@ func (a *App) executeDestroy(ctx context.Context, actor models.User, w *models.W
 	w.Status = models.WSDestroyed
 	w.UpdatedAt = time.Now()
 	_ = a.Store.UpdateWorkspace(ctx, w)
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "workspace.destroy", ResourceType: "workspace", ResourceID: w.ID.String()})
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "workspace.destroy", ResourceType: "workspace", ResourceID: w.ID.String(),
+		Meta: workspaceAuditMeta(w),
+	})
 	return nil
 }
 
@@ -701,6 +726,7 @@ func (a *App) StopWorkspace(ctx context.Context, actor models.User, id uuid.UUID
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "workspace.stop",
 		ResourceType: "workspace", ResourceID: id.String(),
+		Meta: workspaceAuditMeta(w),
 	})
 	return nil
 }
@@ -733,6 +759,7 @@ func (a *App) StartWorkspace(ctx context.Context, actor models.User, id uuid.UUI
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "workspace.start",
 		ResourceType: "workspace", ResourceID: id.String(),
+		Meta: workspaceAuditMeta(w),
 	})
 	return nil
 }
@@ -801,6 +828,38 @@ func (a *App) Heartbeat(ctx context.Context, n models.Node) (*models.Node, error
 	}
 	out, err := a.Store.GetNodeByName(ctx, n.Name)
 	return out, err
+}
+
+func userAuditMeta(u *models.User) map[string]any {
+	if u == nil {
+		return nil
+	}
+	meta := map[string]any{"username": u.Username}
+	if name := strings.TrimSpace(u.DisplayName); name != "" {
+		meta["display_name"] = name
+	}
+	return meta
+}
+
+func projectAuditMeta(p *models.Project) map[string]any {
+	if p == nil {
+		return nil
+	}
+	return map[string]any{"project_name": p.Name, "project_slug": p.Slug}
+}
+
+func workspaceAuditMeta(w *models.Workspace) map[string]any {
+	if w == nil {
+		return nil
+	}
+	meta := map[string]any{}
+	if w.Name != "" {
+		meta["workspace_name"] = w.Name
+	}
+	if w.ProjectID != uuid.Nil {
+		meta["project_id"] = w.ProjectID.String()
+	}
+	return meta
 }
 
 func resizeAuditMeta(w *models.Workspace, from, to models.Plan, kind string) map[string]any {

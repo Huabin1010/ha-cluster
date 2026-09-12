@@ -25,6 +25,28 @@ func PublicIngressHost() string {
 	return "106.52.109.127"
 }
 
+// FabricEdgeHost is the EasyTier VIP of the control/edge peer (42).
+// ET-joined clients should resolve *.cl.qzsyzn.com here so HTTPS/HTTP
+// stays on the overlay and does not consume the 42 public NIC.
+func FabricEdgeHost() string {
+	if v := strings.TrimSpace(os.Getenv("HA_FABRIC_EDGE_HOST")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("HA_BASTION_FABRIC_HOST")); v != "" {
+		return v
+	}
+	return "10.129.129.253"
+}
+
+func FabricHTTPPort() int {
+	if v := strings.TrimSpace(os.Getenv("HA_EDGE_PORT")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 18080
+}
+
 type CreateIngressInput struct {
 	WorkspaceID       uuid.UUID
 	Domain            string
@@ -380,10 +402,15 @@ func (a *App) IngressPublicInfo(ctx context.Context) map[string]any {
 			})
 		}
 	}
+	fab := FabricEdgeHost()
 	return map[string]any{
-		"public_host": PublicIngressHost(),
-		"presets":     ingress.Presets(),
-		"zones":       zonesOut,
-		"note":        "用户将自己的域名 A 记录指到该公网入口；平台按 Host 分流到对应隔离主机。默认每个主机只暴露一个服务端口，多站点请在主机内用 nginx 做路径路由。",
+		"public_host":      PublicIngressHost(),
+		"presets":          ingress.Presets(),
+		"zones":            zonesOut,
+		"fabric_host":      fab,
+		"fabric_http_port": FabricHTTPPort(),
+		"fabric_dns":       fab,
+		"note": "公网 A 记录仍指入口机；已加入 EasyTier 时把 DNS 指向 fabric_dns（仅 cl.qzsyzn.com 后缀），" +
+			"域名不变、流量走虚网、不经 42 公网网卡。默认每个主机只暴露一个服务端口。",
 	}
 }

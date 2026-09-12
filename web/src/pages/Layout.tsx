@@ -37,6 +37,7 @@ import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { ProjectSubSidebar } from "@/pages/projects/ProjectSubSidebar";
 import { WorkspaceSubSidebar } from "@/pages/workspaces/WorkspaceSubSidebar";
 import { HaBrand, HaLogo } from "@/components/brand/HaLogo";
+import { AgentPackButton } from "@/components/agent-pack-button";
 
 const ENV_LABEL = import.meta.env.PROD ? "prod" : "dev";
 const SIDEBAR_COLLAPSED_KEY = "ha_sidebar_collapsed";
@@ -342,6 +343,8 @@ export function Layout({ children }: PropsWithChildren) {
             ))}
           </nav>
         </ScrollArea>
+
+        <AgentPackButton rail={rail} />
 
         <Separator className="w-full opacity-60" />
 

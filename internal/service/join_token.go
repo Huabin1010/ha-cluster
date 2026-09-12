@@ -27,6 +27,8 @@ type JoinTokenInput struct {
 	API         string
 	DepotPublic string
 	FabricIP    string
+	// UsedFabricIPs are already assigned node addresses; used to pick/check a static IP.
+	UsedFabricIPs []string
 	// UseLANDepot forces LAN RustFS root when DepotPublic is empty.
 	UseLANDepot bool
 	// IncludeOverlayDepot adds token depot= (EasyTier 内加速，可选).
@@ -69,14 +71,14 @@ func DefaultDepotLAN() string {
 	return envOr("HA_DEPOT_LAN", defaultJoinDepotLAN)
 }
 
-func randomLocalFabricIP() (string, error) {
-	// 本地 / PVE 测试段 10.129.129.205–.252；.253 保留给生产控制面/入口。
-	var b [1]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
+func resolveJoinFabricIP(in JoinTokenInput) (string, error) {
+	if strings.TrimSpace(in.FabricIP) != "" {
+		if err := FabricIPConflict(in.FabricIP, in.UsedFabricIPs); err != nil {
+			return "", err
+		}
+		return NormalizeStaticFabricIP(in.FabricIP)
 	}
-	n := 208 + int(b[0]%45) // 208..252
-	return fmt.Sprintf("10.129.129.%d", n), nil
+	return NextStaticFabricIP(in.UsedFabricIPs, chooseFabricPool(in.UseLANDepot, in.API))
 }
 
 func apiHost(apiURL string) string {
@@ -150,13 +152,9 @@ func IssueJoinToken(in JoinTokenInput) (*JoinTokenResult, error) {
 	}
 	depot = strings.TrimRight(depot, "/")
 
-	fabric := strings.TrimSpace(in.FabricIP)
-	if fabric == "" {
-		ip, err := randomLocalFabricIP()
-		if err != nil {
-			return nil, err
-		}
-		fabric = ip
+	fabric, err := resolveJoinFabricIP(in)
+	if err != nil {
+		return nil, err
 	}
 
 	etNet := envOr("HA_ET_NET", defaultJoinETNet)
@@ -170,6 +168,9 @@ func IssueJoinToken(in JoinTokenInput) (*JoinTokenResult, error) {
 	q.Set("fabric_ip", fabric)
 	if nodeTok := strings.TrimSpace(os.Getenv("HA_NODE_TOKEN")); nodeTok != "" {
 		q.Set("node_token", nodeTok)
+	}
+	if etSecret := strings.TrimSpace(os.Getenv("HA_ET_SECRET")); etSecret != "" {
+		q.Set("et_secret", etSecret)
 	}
 	if in.IncludeOverlayDepot || strings.TrimSpace(os.Getenv("HA_JOIN_INCLUDE_DEPOT")) == "1" {
 		overlay := envOr("HA_DEPOT", defaultJoinDepotOverlay)

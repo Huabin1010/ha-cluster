@@ -56,8 +56,15 @@
 | 当前用户名 | `current-user` | 已登录 |
 | 退出 | `logout-button` | 已登录 |
 | 主题 | `theme-toggle` | 登录页与壳 |
+| Agent 接入卡片 | `nav-agent-pack-card` | 已登录（侧栏展开） |
+| 复制专属链接 | `nav-agent-pack` | 已登录 |
+| 轮换 Agent 密钥 | `nav-agent-pack-rotate` | 已登录 |
 
 无权限的侧栏项会被 accessControl 藏掉，不要按「代码里有路由」硬点。
+
+### Agent 接入（复制给 Cursor）
+
+侧栏导航和底栏用户区之间。「复制专属链接」把一段 **agent-friendly** 说明写入剪贴板：要求 **只用 curl**（禁止 Cursor fetch / WebFetch）执行 `curl -fsSL /api/agent-pack/{haagt_…}`。对方 Agent 无需登录，按返回的 `files` 写入 `.cursor/rules/ha-cluster-agent.mdc` 与 `.cursor/skills/ha-cluster-agent/`，之后继续用 curl + 同一 token 作为 `Authorization: Bearer` 代替用户操作。轮换后旧链接 404。
 
 相关 E2E：`web/e2e/pw1-auth-shell/`。
 
@@ -426,7 +433,7 @@
 
 ### 子功能
 
-刷日志、平台对账 reconcile、看行（操作人、动作、资源）。
+刷日志、平台对账 reconcile、看行（操作人默认显示姓名、悬停看用户名；资源列显示项目/服务器/用户名称，悬停看 ID）。
 
 ### 快捷键
 

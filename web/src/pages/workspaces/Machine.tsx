@@ -160,6 +160,7 @@ const INGRESS_CUSTOM_SOURCE = "__custom__";
 type WsAudit = {
   id: number;
   actor_username?: string;
+  actor_display_name?: string;
   action: string;
   ip?: string;
   created_at: string;
@@ -890,8 +891,12 @@ export function MachinePage() {
                                     {actionLabel(row.action)}
                                   </span>
                                 </Hint>
-                                {row.actor_username && (
-                                  <span className="truncate text-xs text-muted-foreground">{row.actor_username}</span>
+                                {(row.actor_display_name || row.actor_username) && (
+                                  <Hint label={row.actor_username || row.actor_display_name} className="font-mono">
+                                    <span className="truncate text-xs text-muted-foreground">
+                                      {row.actor_display_name?.trim() || row.actor_username}
+                                    </span>
+                                  </Hint>
                                 )}
                               </div>
                               {via && (
@@ -1240,7 +1245,15 @@ export function MachinePage() {
                             <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                               {formatTime(row.created_at)}
                             </TableCell>
-                            <TableCell className="font-medium">{row.actor_username || "—"}</TableCell>
+                            <TableCell className="font-medium">
+                              {row.actor_display_name || row.actor_username ? (
+                                <Hint label={row.actor_username || row.actor_display_name} className="font-mono">
+                                  <span className="cursor-help">{row.actor_display_name?.trim() || row.actor_username}</span>
+                                </Hint>
+                              ) : (
+                                "—"
+                              )}
+                            </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1.5">
                                 <Badge variant={isConnectAction(row.action) ? "ok" : "outline"}>

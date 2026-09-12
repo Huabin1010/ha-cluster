@@ -1,0 +1,114 @@
+# API 参考
+
+`{{API_BASE}}`。未标「公开」的都要 `Authorization: Bearer {{TOKEN}}`。
+
+## 公开
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/healthz` `/readyz` | 探活 |
+| POST | `/auth/register` | `{username,email,password}` → 201 |
+| POST | `/auth/login` | `{username,password}` → `{token,refresh_token,user}` |
+| POST | `/auth/refresh` | `{refresh_token}` |
+| POST | `/auth/logout` | `{refresh_token}` |
+| GET | `/agent-pack/{token}` | 本 pack；`?format=md` 为 Markdown |
+
+登录 JWT 约 15 分钟；**本 Agent 令牌长期有效**，不要混用短 JWT。
+
+## 我
+
+| 方法 | 路径 | 体 / 说明 |
+|---|---|---|
+| GET | `/me` | 当前用户 |
+| GET | `/me/ssh-keys` | 列表 |
+| POST | `/me/ssh-keys` | `{name,public_key}` → 201/409 |
+| DELETE | `/me/ssh-keys/{id}` | 204 |
+| GET | `/me/agent-pack` | 复制用 `{url,prompt,prefix}` |
+| POST | `/me/agent-pack` | `{rotate:true}` 轮换 |
+
+## 项目
+
+| 方法 | 路径 | 体 / 说明 |
+|---|---|---|
+| GET | `/projects` | 仅成员可见 |
+| POST | `/projects` | `{name,slug}` slug=`[a-z0-9]+(-[a-z0-9]+)*` |
+| GET | `/projects/{id}` | |
+| PATCH | `/projects/{id}` | `{name?,slug?,budget_cpu_milli?,budget_mem_bytes?,budget_disk_bytes?}` |
+| DELETE | `/projects/{id}` | owner |
+| GET | `/projects/{id}/usage` | |
+| GET | `/projects/{id}/members` | |
+| POST | `/projects/{id}/members` | `{username,role}` role=`admin\|developer\|viewer` |
+| PUT | `/projects/{id}/members/{uid}` | `{role?,ssh_access?,ssh_mode?}` |
+| DELETE | `/projects/{id}/members/{uid}` | |
+| POST | `/projects/{id}/ssh-access-request` | 自己申请 |
+| POST | `/projects/{id}/members/{uid}/ssh-access/approve` | admin |
+| POST | `/projects/{id}/transfer-ownership` | `{new_owner_user_id}` |
+| POST | `/projects/{id}/invitations` | `{email,role}` |
+| POST | `/invitations/accept` | `{token}` 邮箱必须匹配；已是成员 409 |
+
+`ssh_access`：`none` / `pending` / `granted` / `revoked`。`ssh_mode`：`read_write` / `read_only`。
+
+## 工作区（机器）
+
+| 方法 | 路径 | 体 / 说明 |
+|---|---|---|
+| GET | `/workspaces` | `?project_id=` |
+| GET | `/workspaces/{id}` | |
+| POST | `/projects/{id}/workspaces` | `{name,plan,arch,visibility,cpu_milli?,mem_bytes?,disk_bytes?}` |
+| POST | `/workspaces/{id}/approve` | admin；`requested`→开通 |
+| POST | `/workspaces/{id}/reject` | `{reason?}` |
+| POST | `/workspaces/{id}/stop` `/start` | |
+| POST | `/workspaces/{id}/resize` | `{cpu_milli,mem_bytes,disk_bytes}` |
+| POST | `/workspaces/{id}/resize/approve` `/reject` | |
+| POST | `/workspaces/{id}/destroy-request` | |
+| POST | `/workspaces/{id}/destroy-request/approve` | 项目初审 |
+| DELETE | `/workspaces/{id}` | 普通用户=申请销毁 |
+| GET | `/workspaces/{id}/ssh-config` | text/plain |
+| GET | `/workspaces/{id}/connection` | |
+| GET | `/workspaces/{id}/ssh-target` | |
+| GET | `/workspaces/{id}/terminal` | WebSocket；可 `?access_token=` |
+| GET | `/workspaces/{id}/audit` | |
+
+`plan` 常用：`nano` `small` `2c2g` `medium` `large` `xlarge`。`arch`：`amd64` `arm64` `any`（`x86_64`/`aarch64` 会归一）。`visibility`：`shared` `private`。
+
+状态人话：`requested` 待审批 / `provisioning` 开通中 / `running` 运行中 / `stopped` 已停止 / `failed` 失败 / `destroy_requested` 待项目审销毁 / `destroy_pending_platform` 待平台终审。
+
+## 入口
+
+| 方法 | 路径 | 体 / 说明 |
+|---|---|---|
+| GET | `/ingress/meta` | zones、`fabric_dns`、presets |
+| GET | `/workspaces/{id}/ingress` | |
+| POST | `/workspaces/{id}/ingress/shared` | `{zone_id,mode:random\|custom,prefix?,port,confirm_second_port?}` |
+| POST | `/workspaces/{id}/ingress` | 自有域，多需审批 |
+| POST | `/ingress/{id}/approve` `/reject` | |
+| DELETE | `/ingress/{id}` | |
+
+## 平台 `/admin` 与运维
+
+| 方法 | 路径 | 谁 |
+|---|---|---|
+| GET | `/nodes` `PATCH /nodes/{id}` | staff |
+| GET | `/capacity` `/plans` | 登录 |
+| GET | `/audit-logs` | staff |
+| POST | `/admin/join-tokens` | admin |
+| GET/POST/PATCH/DELETE | `/admin/docker-registries` | admin |
+| GET/POST/PATCH/DELETE | `/admin/ingress-domains` | admin |
+| GET | `/admin/dangerous-approvals` | staff |
+| POST | `/admin/dangerous-approvals/{id}/approve` | 终审 |
+| GET | `/users` `POST /users/batch` | admin |
+| POST | `/users/{id}/suspend` `/unsuspend` `/reset-password` | admin |
+| PATCH/DELETE | `/users/{id}` | admin |
+| POST | `/allocations/{id}/release` | staff |
+
+## 控制台对照
+
+| 侧栏 | 路径 |
+|---|---|
+| 项目 | `/projects` |
+| 服务器 | `/workspaces` |
+| 成员 | 项目详情成员 Tab |
+| SSH 公钥 | `/ssh-keys` |
+| 节点 / 容量 | `/nodes` `/capacity` |
+| 审计 / 危险待审 | `/audit` `/dangerous` |
+| 镜像仓库 / 域名配置 | `/docker-registries` `/ingress-domains` |

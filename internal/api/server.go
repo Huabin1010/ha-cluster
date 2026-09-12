@@ -121,6 +121,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 	r.Post("/auth/login", s.login)
 	r.Post("/auth/refresh", s.refresh)
 	r.Post("/auth/logout", s.logout)
+	r.Get("/agent-pack/{token}", s.publicAgentPack)
 	r.Post("/nodes/heartbeat", s.heartbeat)
 	r.Get("/internal/authorized-keys", s.authorizedKeys)
 	r.Get("/internal/ssh-target", s.internalSSHTarget)
@@ -131,6 +132,8 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/me/ssh-keys", s.listKeys)
 		r.Post("/me/ssh-keys", s.addKey)
 		r.Delete("/me/ssh-keys/{id}", s.deleteKey)
+		r.Get("/me/agent-pack", s.meAgentPack)
+		r.Post("/me/agent-pack", s.meAgentPack)
 
 		r.Get("/projects", s.listProjects)
 		r.Post("/projects", s.createProject)
@@ -274,6 +277,15 @@ func (s *Server) authn(next http.Handler) http.Handler {
 		raw := accessTokenFromRequest(r)
 		if raw == "" {
 			writeErr(w, http.StatusUnauthorized, store.ErrUnauthorized)
+			return
+		}
+		if strings.HasPrefix(raw, models.AgentTokenPrefix) {
+			u, _, err := s.App.LookupAgentUser(r.Context(), raw)
+			if err != nil {
+				writeErr(w, http.StatusUnauthorized, store.ErrUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(contextWithUser(r.Context(), u)))
 			return
 		}
 		c, err := auth.ParseAccess(s.App.JWT, raw)
@@ -609,6 +621,10 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 	m := models.Membership{ProjectID: id, UserID: u.ID, Role: body.Role, SSHAccess: body.SSHAccess, SSHMode: body.SSHMode}
 	models.NormalizeMembershipSSH(&m)
 	if err := s.App.Store.AddMembership(r.Context(), m); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			writeErr(w, http.StatusConflict, err)
+			return
+		}
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
@@ -837,7 +853,7 @@ func bastionHost() string {
 	if v := strings.TrimSpace(os.Getenv("HA_BASTION_HOST")); v != "" {
 		return v
 	}
-	return "bastion.mnnumath.vip"
+	return "ssh.cl.qzsyzn.com"
 }
 
 func bastionSSHPort() int {

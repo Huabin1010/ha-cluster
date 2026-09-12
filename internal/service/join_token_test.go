@@ -33,8 +33,8 @@ func TestIssueJoinTokenAutoSecret(t *testing.T) {
 	if !strings.Contains(out.Token, "fabric_ip=10.129.129.") {
 		t.Fatalf("token missing fabric_ip: %s", out.Token)
 	}
-	if out.FabricIP == "" || !strings.HasPrefix(out.FabricIP, "10.129.129.") {
-		t.Fatalf("fabric_ip: %s", out.FabricIP)
+	if out.FabricIP != "10.129.129.10" {
+		t.Fatalf("prod pool should start at .10, got %s", out.FabricIP)
 	}
 	if !strings.Contains(out.Command, "curl -fsSL '"+out.InstallURL+"'") {
 		t.Fatalf("command should curl install.sh from depot: %s", out.Command)
@@ -65,6 +65,29 @@ func TestIssueJoinTokenLANDepot(t *testing.T) {
 	}
 	if !strings.Contains(out.Token, "192.168.1.60") {
 		t.Fatalf("token api/peer: %s", out.Token)
+	}
+	if out.FabricIP != "10.129.129.205" {
+		t.Fatalf("lab pool should start at .205, got %s", out.FabricIP)
+	}
+}
+
+func TestIssueJoinTokenSkipsUsedAndRejectsConflict(t *testing.T) {
+	out, err := IssueJoinToken(JoinTokenInput{
+		API: "https://cl.qzsyzn.com/api", UsedFabricIPs: []string{"10.129.129.10", "10.129.129.11"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.FabricIP != "10.129.129.12" {
+		t.Fatalf("next free: %s", out.FabricIP)
+	}
+	_, err = IssueJoinToken(JoinTokenInput{FabricIP: "10.129.129.10", UsedFabricIPs: []string{"10.129.129.10"}})
+	if err == nil || !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("want conflict, got %v", err)
+	}
+	_, err = IssueJoinToken(JoinTokenInput{FabricIP: "dhcp"})
+	if err == nil {
+		t.Fatal("dhcp must be rejected")
 	}
 }
 

@@ -104,4 +104,10 @@ type Store interface {
 	UpdateDockerRegistry(ctx context.Context, r *models.DockerRegistry) error
 	DeleteDockerRegistry(ctx context.Context, id uuid.UUID) error
 	ListAutoInjectDockerRegistries(ctx context.Context) ([]models.DockerRegistry, error)
+
+	UpsertAgentToken(ctx context.Context, t *models.AgentToken) error
+	GetAgentTokenByToken(ctx context.Context, token string) (*models.AgentToken, error)
+	GetAgentTokenByUser(ctx context.Context, userID uuid.UUID) (*models.AgentToken, error)
+	TouchAgentToken(ctx context.Context, id uuid.UUID) error
+	DeleteAgentTokenByUser(ctx context.Context, userID uuid.UUID) error
 }

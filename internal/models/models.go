@@ -187,15 +187,38 @@ type Workspace struct {
 }
 
 type AuditLog struct {
-	ID            int64          `json:"id"`
-	ActorUserID   uuid.UUID      `json:"actor_user_id"`
-	ActorUsername string         `json:"actor_username,omitempty"`
-	Action        string         `json:"action"`
-	ResourceType  string         `json:"resource_type"`
-	ResourceID    string         `json:"resource_id"`
-	IP            string         `json:"ip,omitempty"`
-	Meta          map[string]any `json:"meta,omitempty"`
-	CreatedAt     time.Time      `json:"created_at"`
+	ID               int64          `json:"id"`
+	ActorUserID      uuid.UUID      `json:"actor_user_id"`
+	ActorUsername    string         `json:"actor_username,omitempty"`
+	ActorDisplayName string         `json:"actor_display_name,omitempty"`
+	ResourceName     string         `json:"resource_name,omitempty"`
+	Action           string         `json:"action"`
+	ResourceType     string         `json:"resource_type"`
+	ResourceID       string         `json:"resource_id"`
+	IP               string         `json:"ip,omitempty"`
+	Meta             map[string]any `json:"meta,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+}
+
+func UserVisibleName(displayName, username string) string {
+	if name := strings.TrimSpace(displayName); name != "" {
+		return name
+	}
+	return strings.TrimSpace(username)
+}
+
+func AuditResourceNameFromMeta(meta map[string]any) string {
+	if meta == nil {
+		return ""
+	}
+	for _, key := range []string{"project_name", "workspace_name", "name", "target_display_name", "target_username", "username", "domain"} {
+		if s, ok := meta[key].(string); ok {
+			if name := strings.TrimSpace(s); name != "" {
+				return name
+			}
+		}
+	}
+	return ""
 }
 
 type Plan struct {
@@ -510,5 +533,23 @@ type IngressRoute struct {
 	RejectReason    string     `json:"reject_reason,omitempty"`
 	NginxPreview    string     `json:"nginx_preview,omitempty"`
 	DNSHint         string     `json:"dns_hint,omitempty"`
+	FabricHost      string     `json:"fabric_host,omitempty"`
+	FabricHTTP      string     `json:"fabric_http,omitempty"`
+	FabricDNS       string     `json:"fabric_dns,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+}
+
+// AgentTokenPrefix is the public bearer / pack-URL prefix. Same secret is used
+// to fetch the Cursor pack (no header) and to call the API as that user.
+const AgentTokenPrefix = "haagt_"
+
+// AgentToken is a long-lived personal token. One active row per user.
+// The raw Token is stored so the console can re-copy the pack URL.
+type AgentToken struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"user_id"`
+	Token      string     `json:"-"`
+	Prefix     string     `json:"prefix"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
