@@ -34,6 +34,9 @@ ha_fetch_lab_script incus-offline.sh
 ha_fetch_lab_script install-incus-online.sh
 
 ha_sanitize_env() {
+  HA_INSTALL_MODE="${HA_INSTALL_MODE:-auto}"
+  HA_APT_MIRROR="${HA_APT_MIRROR:-}"
+  SKIP_INCUS="${SKIP_INCUS:-0}"
   HA_INSTALL_MODE="${HA_INSTALL_MODE//$'\r'/}"
   HA_APT_MIRROR="${HA_APT_MIRROR//$'\r'/}"
   SKIP_INCUS="${SKIP_INCUS//$'\r'/}"

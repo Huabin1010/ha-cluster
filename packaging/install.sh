@@ -29,21 +29,27 @@ lab_base="${DEPOT_PUBLIC}/lab"
 mkdir -p "${SETUP_DIR}" "${CACHE}"
 cd "${SETUP_DIR}"
 
-if [[ ! -x ./ha-setup ]]; then
+# 始终重拉 ha-setup，避免上次失败留下的旧二进制继续用废弃默认 fabric（如 10.88.0.10）
+fetch_ha_setup() {
   echo ">> fetching ha-setup (${goarch}) ..."
-  if ! curl -fsSL "${setup_url}" -o ha-setup; then
-    curl -fsSL "${DEPOT_PUBLIC}/ha-setup-linux-${goarch}" -o ha-setup
+  local tmp="${SETUP_DIR}/.ha-setup.download"
+  if ! curl -fsSL "${setup_url}" -o "${tmp}"; then
+    curl -fsSL "${DEPOT_PUBLIC}/ha-setup-linux-${goarch}" -o "${tmp}"
   fi
-  chmod +x ha-setup
-fi
+  chmod +x "${tmp}"
+  mv -f "${tmp}" "${SETUP_DIR}/ha-setup"
+}
 
 cmd="${1:-}"
 shift || true
 
 case "${cmd}" in
   join)
+    fetch_ha_setup
     echo ">> ha-setup join ..."
     export HA_DEPOT_PUBLIC
+    # 生产 join 未拉 lab.defaults 时也给 apt 默认，避免 set -u 炸
+    export HA_APT_MIRROR="${HA_APT_MIRROR:-tuna}"
     ./ha-setup join "$@"
 
     if [[ -f "${SETUP_DIR}/join.env" ]]; then
@@ -72,6 +78,7 @@ case "${cmd}" in
     exec bash "${INSTALL_ROOT}/worker-install.sh"
     ;;
   detect)
+    fetch_ha_setup
     tmp="$(mktemp)"
     curl -fsSL "${lab_base}/os-detect.sh" -o "${tmp}"
     # shellcheck disable=SC1090
@@ -82,6 +89,9 @@ case "${cmd}" in
     exec ./ha-setup detect
     ;;
   *)
+    if [[ ! -x ./ha-setup ]]; then
+      fetch_ha_setup
+    fi
     # legacy: 仅拉 payload + ha-setup 子命令
     if [[ -n "${HA_PAYLOAD_FILE:-}" && -f "${HA_PAYLOAD_FILE}" ]]; then
       export HA_PAYLOAD_FILE

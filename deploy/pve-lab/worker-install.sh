@@ -10,6 +10,12 @@ INSTALL_ROOT="${HA_INSTALL_ROOT:-/tmp/ha-pve-lab-install}"
 mkdir -p "${INSTALL_ROOT}"
 
 ha_sanitize_env() {
+  # set -u 下未定义变量不可展开；先给默认再剥 Windows CR
+  HA_INSTALL_MODE="${HA_INSTALL_MODE:-auto}"
+  HA_APT_MIRROR="${HA_APT_MIRROR:-}"
+  SKIP_INCUS="${SKIP_INCUS:-0}"
+  SKIP_EASYTIER="${SKIP_EASYTIER:-0}"
+  HA_VERIFY_EGRESS="${HA_VERIFY_EGRESS:-}"
   HA_INSTALL_MODE="${HA_INSTALL_MODE//$'\r'/}"
   HA_APT_MIRROR="${HA_APT_MIRROR//$'\r'/}"
   SKIP_INCUS="${SKIP_INCUS//$'\r'/}"
