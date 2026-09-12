@@ -32,6 +32,21 @@ func TestPlansHaveLarge(t *testing.T) {
 	}
 }
 
+func TestProvisioningLiveAndWorkspaceClosed(t *testing.T) {
+	if !ProvisioningLive(WSProvisioning) {
+		t.Fatal("provisioning should be live")
+	}
+	if ProvisioningLive(WSDestroyed) || ProvisioningLive(WSFailed) || ProvisioningLive(WSRunning) {
+		t.Fatal("terminal statuses must not be live")
+	}
+	if !WorkspaceClosed(WSDestroyed) || !WorkspaceClosed(WSDestroying) || !WorkspaceClosed(WSRejected) {
+		t.Fatal("closed statuses")
+	}
+	if WorkspaceClosed(WSRunning) || WorkspaceClosed(WSProvisioning) {
+		t.Fatal("live statuses must not be closed")
+	}
+}
+
 func TestResolveSpecCustomAndCatalog(t *testing.T) {
 	p, err := ResolveSpec("nano", 0, 0, 0)
 	if err != nil || p.Name != "nano" {

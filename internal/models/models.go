@@ -27,19 +27,19 @@ const (
 	AllocActive   = "active"
 	AllocReleased = "released"
 
-	WSRequested    = "requested"
-	WSProvisioning = "provisioning"
-	WSRunning      = "running"
-	WSStopped      = "stopped"
-	WSFailed       = "failed"
-	WSRejected     = "rejected"
-	WSDestroyRequested         = "destroy_requested"
-	WSDestroyPendingPlatform   = "destroy_pending_platform"
-	WSDestroying               = "destroying"
-	WSDestroyed                = "destroyed"
-	WSNodeLost     = "node_lost"
-	WSDegraded     = "fabric_degraded"
-	WSSuspended    = "suspended"
+	WSRequested              = "requested"
+	WSProvisioning           = "provisioning"
+	WSRunning                = "running"
+	WSStopped                = "stopped"
+	WSFailed                 = "failed"
+	WSRejected               = "rejected"
+	WSDestroyRequested       = "destroy_requested"
+	WSDestroyPendingPlatform = "destroy_pending_platform"
+	WSDestroying             = "destroying"
+	WSDestroyed              = "destroyed"
+	WSNodeLost               = "node_lost"
+	WSDegraded               = "fabric_degraded"
+	WSSuspended              = "suspended"
 
 	ResizePending   = "pending"
 	ResizeUpgrade   = "upgrade"
@@ -113,21 +113,21 @@ type Membership struct {
 }
 
 type Node struct {
-	ID              uuid.UUID `json:"id"`
-	Name            string    `json:"name"`
-	Arch            string    `json:"arch"`
-	Class           string    `json:"class"`
-	Power           string    `json:"power"`
-	Role            string    `json:"role"`
-	FabricIP        string    `json:"fabric_ip"`
-	LanIP           string    `json:"lan_ip,omitempty"`
-	BreakglassSSH   string    `json:"breakglass_ssh,omitempty"`
-	AllocatableCPU  int64     `json:"allocatable_cpu_milli"`
-	AllocatableMem  int64     `json:"allocatable_mem_bytes"`
-	AllocatableDisk int64     `json:"allocatable_disk_bytes"`
-	UsedCPU         int64     `json:"used_cpu_milli"`
-	UsedMem         int64     `json:"used_mem_bytes"`
-	UsedDisk        int64     `json:"used_disk_bytes"`
+	ID                uuid.UUID `json:"id"`
+	Name              string    `json:"name"`
+	Arch              string    `json:"arch"`
+	Class             string    `json:"class"`
+	Power             string    `json:"power"`
+	Role              string    `json:"role"`
+	FabricIP          string    `json:"fabric_ip"`
+	LanIP             string    `json:"lan_ip,omitempty"`
+	BreakglassSSH     string    `json:"breakglass_ssh,omitempty"`
+	AllocatableCPU    int64     `json:"allocatable_cpu_milli"`
+	AllocatableMem    int64     `json:"allocatable_mem_bytes"`
+	AllocatableDisk   int64     `json:"allocatable_disk_bytes"`
+	UsedCPU           int64     `json:"used_cpu_milli"`
+	UsedMem           int64     `json:"used_mem_bytes"`
+	UsedDisk          int64     `json:"used_disk_bytes"`
 	FabricPath        string    `json:"fabric_path,omitempty"`
 	FabricRTTMS       int64     `json:"fabric_rtt_ms,omitempty"`
 	HealthStatus      string    `json:"health_status,omitempty"`
@@ -177,24 +177,24 @@ type Workspace struct {
 	PendingCPUMilli  int64     `json:"pending_cpu_milli,omitempty"`
 	PendingMemBytes  int64     `json:"pending_mem_bytes,omitempty"`
 	PendingDiskBytes int64     `json:"pending_disk_bytes,omitempty"`
-	ResizeStatus       string    `json:"resize_status,omitempty"`
-	ResizeKind         string    `json:"resize_kind,omitempty"`
-	LastActivityAt     time.Time `json:"last_activity_at,omitempty"`
-	IdleSuspendHours   int       `json:"idle_suspend_hours,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ResizeStatus     string    `json:"resize_status,omitempty"`
+	ResizeKind       string    `json:"resize_kind,omitempty"`
+	LastActivityAt   time.Time `json:"last_activity_at,omitempty"`
+	IdleSuspendHours int       `json:"idle_suspend_hours,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type AuditLog struct {
-	ID             int64          `json:"id"`
-	ActorUserID    uuid.UUID      `json:"actor_user_id"`
-	ActorUsername  string         `json:"actor_username,omitempty"`
-	Action         string         `json:"action"`
-	ResourceType   string         `json:"resource_type"`
-	ResourceID     string         `json:"resource_id"`
-	IP             string         `json:"ip,omitempty"`
-	Meta           map[string]any `json:"meta,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
+	ID            int64          `json:"id"`
+	ActorUserID   uuid.UUID      `json:"actor_user_id"`
+	ActorUsername string         `json:"actor_username,omitempty"`
+	Action        string         `json:"action"`
+	ResourceType  string         `json:"resource_type"`
+	ResourceID    string         `json:"resource_id"`
+	IP            string         `json:"ip,omitempty"`
+	Meta          map[string]any `json:"meta,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
 }
 
 type Plan struct {
@@ -329,6 +329,23 @@ func ValidSSHAccess(a string) bool {
 func ValidSSHMode(m string) bool {
 	switch m {
 	case SSHModeReadWrite, SSHModeReadOnly, "":
+		return true
+	default:
+		return false
+	}
+}
+
+// ProvisioningLive is true only while an in-flight Launch may still commit.
+// Destroy / reject / fail must win over a late provision result.
+func ProvisioningLive(status string) bool {
+	return status == WSProvisioning
+}
+
+// WorkspaceClosed is true once the workspace must not be started, stopped, or
+// otherwise treated as a live machine (destroy in flight or already gone).
+func WorkspaceClosed(status string) bool {
+	switch status {
+	case WSDestroyed, WSDestroying, WSDestroyRequested, WSDestroyPendingPlatform, WSRejected:
 		return true
 	default:
 		return false

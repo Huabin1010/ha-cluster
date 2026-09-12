@@ -142,6 +142,37 @@ func (r *MemoryRuntime) GetKeys(id uuid.UUID) []string {
 
 func FailLaunchOnce() Runtime { return &failOnce{inner: NewMemoryRuntime()} }
 
+// BlockableRuntime holds Launch until Release is closed. It ignores context
+// cancel so tests can simulate Incus finishing after the user already destroyed
+// the workspace.
+func NewBlockableRuntime() *BlockableRuntime {
+	return &BlockableRuntime{
+		MemoryRuntime: NewMemoryRuntime(),
+		Started:       make(chan struct{}),
+		Release:       make(chan struct{}),
+	}
+}
+
+type BlockableRuntime struct {
+	*MemoryRuntime
+	Started   chan struct{}
+	Release   chan struct{}
+	FailAfter bool
+}
+
+func (b *BlockableRuntime) Launch(ctx context.Context, w models.Workspace, node models.Node, keys []string) (Instance, error) {
+	select {
+	case <-b.Started:
+	default:
+		close(b.Started)
+	}
+	<-b.Release
+	if b.FailAfter {
+		return Instance{}, fmt.Errorf("incus launch failed")
+	}
+	return b.MemoryRuntime.Launch(ctx, w, node, keys)
+}
+
 type failOnce struct {
 	inner  *MemoryRuntime
 	failed bool

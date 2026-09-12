@@ -66,6 +66,10 @@ type Store interface {
 	GetWorkspace(ctx context.Context, id uuid.UUID) (*models.Workspace, error)
 	ListWorkspaces(ctx context.Context, projectID *uuid.UUID) ([]models.Workspace, error)
 	UpdateWorkspace(ctx context.Context, w *models.Workspace) error
+	// UpdateWorkspaceIfStatus writes w only when the current row status matches
+	// fromStatus. Returns ErrConflict if the row is missing or the status changed
+	// (e.g. force-destroy during provision).
+	UpdateWorkspaceIfStatus(ctx context.Context, w *models.Workspace, fromStatus string) error
 
 	AddAudit(ctx context.Context, l models.AuditLog) error
 	ListAudit(ctx context.Context, limit int) ([]models.AuditLog, error)

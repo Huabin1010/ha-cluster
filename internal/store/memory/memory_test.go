@@ -2,13 +2,39 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
 )
+
+func TestUpdateWorkspaceIfStatus(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	w := &models.Workspace{
+		ID: uuid.New(), ProjectID: uuid.New(), Name: "ws", Plan: "nano",
+		Status: models.WSProvisioning, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := s.CreateWorkspace(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	w.Status = models.WSDestroyed
+	if err := s.UpdateWorkspaceIfStatus(ctx, w, models.WSProvisioning); err != nil {
+		t.Fatal(err)
+	}
+	w.Status = models.WSRunning
+	if err := s.UpdateWorkspaceIfStatus(ctx, w, models.WSProvisioning); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("want conflict after destroy, got %v", err)
+	}
+	got, err := s.GetWorkspace(ctx, w.ID)
+	if err != nil || got.Status != models.WSDestroyed {
+		t.Fatalf("status=%s err=%v", got.Status, err)
+	}
+}
 
 func TestReleaseIdempotent(t *testing.T) {
 	s := New()
@@ -127,5 +153,3 @@ func TestSnapshotSaveAndLoad(t *testing.T) {
 		t.Fatalf("project not restored: %+v, err=%v", pGot, err)
 	}
 }
-
-

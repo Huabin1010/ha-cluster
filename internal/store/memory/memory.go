@@ -734,6 +734,22 @@ func (s *Store) UpdateWorkspace(_ context.Context, w *models.Workspace) error {
 	return nil
 }
 
+func (s *Store) UpdateWorkspaceIfStatus(_ context.Context, w *models.Workspace, fromStatus string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur, ok := s.workspaces[w.ID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if cur.Status != fromStatus {
+		return store.ErrConflict
+	}
+	cp := *w
+	s.workspaces[w.ID] = &cp
+	s.saveSnapshotLocked()
+	return nil
+}
+
 func (s *Store) AddAudit(ctx context.Context, l models.AuditLog) error {
 	if l.IP == "" {
 		l.IP = requestmeta.ClientIP(ctx)

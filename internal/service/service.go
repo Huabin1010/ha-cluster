@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,6 +35,8 @@ type App struct {
 	Runtime   workspace.Runtime
 	JWT       []byte
 	AccessTTL time.Duration
+
+	provisionCancel sync.Map // workspace ID → context.CancelFunc
 }
 
 func New(st store.Store, rt workspace.Runtime, jwtSecret []byte) *App {
@@ -251,40 +254,74 @@ func (a *App) WorkspaceSSHKeys(ctx context.Context, w models.Workspace) []string
 	return a.collectWorkspacePubkeys(ctx, w)
 }
 
+func (a *App) dropAbortedProvision(id, allocID uuid.UUID) {
+	_ = a.Runtime.Destroy(context.Background(), id)
+	if allocID != uuid.Nil {
+		_ = a.Ledger.Release(context.Background(), allocID)
+	}
+}
+
+func (a *App) commitProvisioningStatus(latest *models.Workspace) error {
+	err := a.Store.UpdateWorkspaceIfStatus(context.Background(), latest, models.WSProvisioning)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, store.ErrConflict) {
+		_ = a.Runtime.Destroy(context.Background(), latest.ID)
+		return fmt.Errorf("provision aborted: %w", err)
+	}
+	return err
+}
+
 func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node models.Node, allocID, actorID uuid.UUID, action string) (*models.Workspace, error) {
 	pubs := a.collectWorkspacePubkeys(ctx, *w)
 	regs, err := a.CollectAutoInjectRegistryCreds(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("docker registries: %w", err)
 	}
-	ctx = workspace.WithLaunchContext(ctx, workspace.LaunchContext{
+	launchCtx := workspace.WithLaunchContext(ctx, workspace.LaunchContext{
 		SSHKeys: pubs, DockerRegistries: regs,
 	})
-	inst, err := a.Runtime.Launch(ctx, *w, node, pubs)
-	if err != nil {
-		w.Status = models.WSFailed
-		_ = a.Store.UpdateWorkspace(ctx, w)
-		_ = a.Ledger.Release(ctx, allocID)
-		return nil, fmt.Errorf("provision: %w", err)
+	inst, launchErr := a.Runtime.Launch(launchCtx, *w, node, pubs)
+
+	// Re-read after Launch: force-destroy during provisioning must not be
+	// overwritten by a late running/failed write (the machine "comes back").
+	latest, loadErr := a.Store.GetWorkspace(context.Background(), w.ID)
+	if loadErr != nil {
+		a.dropAbortedProvision(w.ID, allocID)
+		return nil, loadErr
 	}
-	if err := a.Store.ActivateAllocation(ctx, allocID); err != nil {
-		_ = a.Runtime.Destroy(ctx, w.ID)
-		_ = a.Ledger.Release(ctx, allocID)
+	if !models.ProvisioningLive(latest.Status) {
+		a.dropAbortedProvision(latest.ID, allocID)
+		return latest, fmt.Errorf("provision aborted: workspace is %s", latest.Status)
+	}
+
+	if launchErr != nil {
+		latest.Status = models.WSFailed
+		latest.UpdatedAt = time.Now()
+		if err := a.commitProvisioningStatus(latest); err != nil {
+			return latest, fmt.Errorf("provision: %w", launchErr)
+		}
+		_ = a.Ledger.Release(context.Background(), allocID)
+		return nil, fmt.Errorf("provision: %w", launchErr)
+	}
+	if err := a.Store.ActivateAllocation(context.Background(), allocID); err != nil {
+		a.dropAbortedProvision(latest.ID, allocID)
 		return nil, err
 	}
-	w.Status = models.WSRunning
-	w.SSHPort = inst.SSHPort
-	w.HostKeyFP = inst.HostKeyFP
-	w.UpdatedAt = time.Now()
-	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
-		return nil, err
+	latest.Status = models.WSRunning
+	latest.SSHPort = inst.SSHPort
+	latest.HostKeyFP = inst.HostKeyFP
+	latest.UpdatedAt = time.Now()
+	if err := a.commitProvisioningStatus(latest); err != nil {
+		return latest, err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{
+	_ = a.Store.AddAudit(context.Background(), models.AuditLog{
 		ActorUserID: actorID, Action: action,
-		ResourceType: "workspace", ResourceID: w.ID.String(),
-		Meta: map[string]any{"workspace_name": w.Name, "plan": w.Plan, "node": node.Name},
+		ResourceType: "workspace", ResourceID: latest.ID.String(),
+		Meta: map[string]any{"workspace_name": latest.Name, "plan": latest.Plan, "node": node.Name},
 	})
-	return w, nil
+	return latest, nil
 }
 
 func (a *App) ApproveWorkspace(ctx context.Context, actor models.User, id uuid.UUID) (*models.Workspace, error) {
@@ -612,11 +649,13 @@ func (a *App) ApproveDestroyPlatform(ctx context.Context, actor models.User, id 
 }
 
 func (a *App) executeDestroy(ctx context.Context, actor models.User, w *models.Workspace) error {
+	a.abortInFlightProvision(w.ID)
 	w.Status = models.WSDestroying
+	w.UpdatedAt = time.Now()
 	_ = a.Store.UpdateWorkspace(ctx, w)
 	a.dropWorkspaceIngress(ctx, w.ID)
+	_ = a.Runtime.Destroy(ctx, w.ID)
 	if w.AllocationID != uuid.Nil {
-		_ = a.Runtime.Destroy(ctx, w.ID)
 		if err := a.Ledger.Release(ctx, w.AllocationID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -648,7 +687,7 @@ func (a *App) StopWorkspace(ctx context.Context, actor models.User, id uuid.UUID
 	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
 		return err
 	}
-	if w.Status == models.WSRequested || w.Status == models.WSRejected {
+	if models.WorkspaceClosed(w.Status) || w.Status == models.WSRequested {
 		return store.ErrInvalidInput
 	}
 	if err := a.Runtime.Stop(ctx, id); err != nil {
@@ -674,7 +713,7 @@ func (a *App) StartWorkspace(ctx context.Context, actor models.User, id uuid.UUI
 	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
 		return err
 	}
-	if w.Status == models.WSRequested || w.Status == models.WSRejected {
+	if models.WorkspaceClosed(w.Status) || w.Status == models.WSRequested {
 		return store.ErrInvalidInput
 	}
 	if err := a.Runtime.Start(ctx, id); err != nil {

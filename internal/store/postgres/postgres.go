@@ -750,13 +750,36 @@ func (s *Store) ListWorkspaces(ctx context.Context, projectID *uuid.UUID) ([]mod
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateWorkspace(ctx context.Context, w *models.Workspace) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE workspaces SET name=$2,plan=$3,arch=$4,visibility=$5,status=$6,ssh_port=$7,host_key_fp=$8,updated_at=$9,node_id=$10,allocation_id=$11,
-		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18,resize_kind=$19,last_activity_at=$20,idle_suspend_hours=$21 WHERE id=$1`,
+const wsUpdateSET = `name=$2,plan=$3,arch=$4,visibility=$5,status=$6,ssh_port=$7,host_key_fp=$8,updated_at=$9,node_id=$10,allocation_id=$11,
+		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18,resize_kind=$19,last_activity_at=$20,idle_suspend_hours=$21`
+
+func workspaceUpdateArgs(w *models.Workspace) []any {
+	return []any{
 		w.ID, w.Name, w.Plan, w.Arch, w.Visibility, w.Status, w.SSHPort, w.HostKeyFP, w.UpdatedAt, w.NodeID, w.AllocationID,
-		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, w.ResizeKind, nullTime(w.LastActivityAt), w.IdleSuspendHours)
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, w.ResizeKind, nullTime(w.LastActivityAt), w.IdleSuspendHours,
+	}
+}
+
+func (s *Store) UpdateWorkspace(ctx context.Context, w *models.Workspace) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE workspaces SET `+wsUpdateSET+` WHERE id=$1`, workspaceUpdateArgs(w)...)
 	if err != nil {
 		return err
+	}
+	if w.AllocationID != uuid.Nil {
+		_, _ = s.db.ExecContext(ctx, `UPDATE allocations SET workspace_id=$2 WHERE id=$1`, w.AllocationID, w.ID)
+	}
+	return nil
+}
+
+func (s *Store) UpdateWorkspaceIfStatus(ctx context.Context, w *models.Workspace, fromStatus string) error {
+	args := append(workspaceUpdateArgs(w), fromStatus)
+	res, err := s.db.ExecContext(ctx, `UPDATE workspaces SET `+wsUpdateSET+` WHERE id=$1 AND status=$22`, args...)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return store.ErrConflict
 	}
 	if w.AllocationID != uuid.Nil {
 		_, _ = s.db.ExecContext(ctx, `UPDATE allocations SET workspace_id=$2 WHERE id=$1`, w.AllocationID, w.ID)

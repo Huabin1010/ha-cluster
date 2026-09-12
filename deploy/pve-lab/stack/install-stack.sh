@@ -20,7 +20,8 @@ if [[ -f postgres-image.tar.gz ]]; then
   docker load < postgres-image.tar.gz
 fi
 
-echo "==> starting stack"
+echo "==> starting stack (recreate api so a rebuilt image actually runs)"
+docker compose --env-file "${ENV_FILE}" up -d --force-recreate --no-deps api
 docker compose --env-file "${ENV_FILE}" up -d
 
 for i in $(seq 1 30); do

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
@@ -550,6 +551,154 @@ func TestRequestDestroySkipsApprovalsForAdmins(t *testing.T) {
 	if got.Status != models.WSDestroyed {
 		t.Fatalf("platform admin want destroyed, got %s", got.Status)
 	}
+}
+
+func TestForceDestroyWinsOverLateProvision(t *testing.T) {
+	assertForceDestroyBeatsLaunch(t, false)
+}
+
+func TestForceDestroyWinsOverLateFailedProvision(t *testing.T) {
+	assertForceDestroyBeatsLaunch(t, true)
+}
+
+func assertForceDestroyBeatsLaunch(t *testing.T, failLaunch bool) {
+	t.Helper()
+	rt := workspace.NewBlockableRuntime()
+	rt.FailAfter = failLaunch
+	st := memory.New()
+	app := New(st, rt, []byte("unit-test-secret-key-32b!!"))
+	ctx := context.Background()
+	u, err := app.Register(ctx, "alice", "alice@example.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const Gi = 1024 * 1024 * 1024
+	if err := st.UpsertNode(ctx, &models.Node{
+		ID: uuid.New(), Name: "pc1", Arch: models.ArchAMD64, Power: "mains", Role: "worker",
+		AllocatableCPU: 8000, AllocatableMem: 2 * Gi, AllocatableDisk: 100 * Gi, Ready: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := app.CreateProject(ctx, u.ID, "lab", "lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "cwp-lab", Plan: "nano", Arch: models.ArchAMD64, Actor: *u,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.Status != models.WSProvisioning {
+		t.Fatalf("want provisioning, got %s", ws.Status)
+	}
+
+	select {
+	case <-rt.Started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("launch did not start")
+	}
+
+	if err := app.RequestDestroyWorkspace(ctx, *u, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := app.Store.GetWorkspace(ctx, ws.ID)
+	if got.Status != models.WSDestroyed {
+		t.Fatalf("destroy want destroyed, got %s", got.Status)
+	}
+
+	close(rt.Release)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, _ = app.Store.GetWorkspace(ctx, ws.ID)
+		if got.Status == models.WSRunning || got.Status == models.WSFailed {
+			t.Fatalf("late launch resurrected workspace to %s", got.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	got, _ = app.Store.GetWorkspace(ctx, ws.ID)
+	if got.Status != models.WSDestroyed {
+		t.Fatalf("late launch must not resurrect workspace, got %s", got.Status)
+	}
+	if _, ok := rt.Get(ctx, ws.ID); ok {
+		t.Fatal("late launch instance must be destroyed")
+	}
+}
+
+type getHookStore struct {
+	store.Store
+	onGet func(*models.Workspace)
+}
+
+func (s *getHookStore) GetWorkspace(ctx context.Context, id uuid.UUID) (*models.Workspace, error) {
+	w, err := s.Store.GetWorkspace(ctx, id)
+	if err == nil && s.onGet != nil {
+		s.onGet(w)
+	}
+	return w, err
+}
+
+func TestForceDestroyWinsOverProvisionCommitRace(t *testing.T) {
+	inner := memory.New()
+	hs := &getHookStore{Store: inner}
+	rt := workspace.NewMemoryRuntime()
+	app := New(hs, rt, []byte("unit-test-secret-key-32b!!"))
+	ctx := context.Background()
+	u, err := app.Register(ctx, "alice", "alice@example.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const Gi = 1024 * 1024 * 1024
+	if err := inner.UpsertNode(ctx, &models.Node{
+		ID: uuid.New(), Name: "pc1", Arch: models.ArchAMD64, Power: "mains", Role: "worker",
+		AllocatableCPU: 8000, AllocatableMem: 2 * Gi, AllocatableDisk: 100 * Gi, Ready: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := app.CreateProject(ctx, u.ID, "lab", "lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var gets int
+	hs.onGet = func(w *models.Workspace) {
+		if w.Name != "cwp-cas" || w.Status != models.WSProvisioning {
+			return
+		}
+		gets++
+		if gets == 2 {
+			if err := app.RequestDestroyWorkspace(context.Background(), *u, w.ID); err != nil {
+				t.Errorf("destroy during commit: %v", err)
+			}
+		}
+	}
+
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "cwp-cas", Plan: "nano", Arch: models.ArchAMD64, Actor: *u,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		got, _ := app.Store.GetWorkspace(ctx, ws.ID)
+		if got.Status == models.WSRunning || got.Status == models.WSFailed {
+			t.Fatalf("commit race resurrected workspace to %s", got.Status)
+		}
+		if got.Status == models.WSDestroyed {
+			if _, ok := rt.Get(ctx, ws.ID); ok {
+				time.Sleep(20 * time.Millisecond)
+				continue
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	got, _ := app.Store.GetWorkspace(ctx, ws.ID)
+	t.Fatalf("want destroyed after commit race, got %s", got.Status)
 }
 
 func containsKey(keys []string, want string) bool {
