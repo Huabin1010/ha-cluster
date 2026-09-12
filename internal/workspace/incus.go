@@ -410,9 +410,22 @@ func (r *IncusRuntime) injectDockerRegistries(ctx context.Context, name string, 
 	return nil
 }
 
+func incusAlreadyRunning(out string) bool {
+	s := strings.ToLower(out)
+	return strings.Contains(s, "already running")
+}
+
+func incusAlreadyStopped(out string) bool {
+	s := strings.ToLower(out)
+	return strings.Contains(s, "already stopped") ||
+		strings.Contains(s, "isn't running") ||
+		strings.Contains(s, "is not running") ||
+		strings.Contains(s, "not running")
+}
+
 func (r *IncusRuntime) Stop(ctx context.Context, id uuid.UUID) error {
 	out, err := r.cmd(ctx, "stop", instName(id), "--force").CombinedOutput()
-	if err != nil {
+	if err != nil && !incusAlreadyStopped(string(out)) {
 		return fmt.Errorf("incus stop: %w: %s", err, out)
 	}
 	return nil
@@ -421,7 +434,7 @@ func (r *IncusRuntime) Stop(ctx context.Context, id uuid.UUID) error {
 func (r *IncusRuntime) Start(ctx context.Context, id uuid.UUID) error {
 	name := instName(id)
 	out, err := r.cmd(ctx, "start", name).CombinedOutput()
-	if err != nil {
+	if err != nil && !incusAlreadyRunning(string(out)) {
 		return fmt.Errorf("incus start: %w: %s", err, out)
 	}
 	if err := r.waitContainerExecReady(ctx, name); err != nil {
@@ -437,11 +450,47 @@ func (r *IncusRuntime) ensureSSH(ctx context.Context, name string) error {
 	if out, err := r.cmd(ctx, "exec", name, "--", "ssh-keygen", "-A").CombinedOutput(); err != nil {
 		return fmt.Errorf("ssh-keygen -A: %w: %s", err, out)
 	}
-	_ = r.cmd(ctx, "exec", name, "--", "systemctl", "reset-failed", "ssh.service", "ssh.socket").Run()
-	if out, err := r.cmd(ctx, "exec", name, "--", "systemctl", "enable", "--now", "ssh").CombinedOutput(); err != nil {
-		if out2, err2 := r.cmd(ctx, "exec", name, "--", "systemctl", "enable", "--now", "sshd").CombinedOutput(); err2 != nil {
-			return fmt.Errorf("enable ssh: %w / %s ; sshd: %v / %s", err, out, err2, out2)
-		}
+	// After cold start, systemd/dbus is often not ready yet; retry then fall back
+	// to starting sshd without systemctl so Start is not falsely failed.
+	script := `set -e
+for i in $(seq 1 45); do
+  if systemctl is-system-running >/dev/null 2>&1; then
+    break
+  fi
+  if [ -S /run/systemd/private ] || [ -S /run/dbus/system_bus_socket ] || [ -S /var/run/dbus/system_bus_socket ]; then
+    break
+  fi
+  # Already listening is enough (re-start / already-running paths).
+  if ss -lnt 2>/dev/null | grep -qE ':22\\s' || pgrep -x sshd >/dev/null 2>&1; then
+    exit 0
+  fi
+  sleep 1
+done
+systemctl reset-failed ssh.service ssh.socket 2>/dev/null || true
+if systemctl enable --now ssh 2>/dev/null \
+  || systemctl enable --now sshd 2>/dev/null \
+  || systemctl start ssh 2>/dev/null \
+  || systemctl start sshd 2>/dev/null; then
+  exit 0
+fi
+if command -v service >/dev/null 2>&1; then
+  service ssh start 2>/dev/null || service sshd start 2>/dev/null || true
+fi
+if pgrep -x sshd >/dev/null 2>&1; then
+  exit 0
+fi
+if [ -x /usr/sbin/sshd ]; then
+  /usr/sbin/sshd || true
+fi
+if pgrep -x sshd >/dev/null 2>&1 || ss -lnt 2>/dev/null | grep -qE ':22\\s'; then
+  exit 0
+fi
+echo "failed to start sshd" >&2
+exit 1
+`
+	out, err := r.cmd(ctx, "exec", name, "--", "bash", "-lc", script).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ensure ssh: %w: %s", err, out)
 	}
 	return nil
 }

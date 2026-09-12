@@ -168,42 +168,38 @@ func (r *RemoteAgentRuntime) Launch(ctx context.Context, w models.Workspace, nod
 	return inst, nil
 }
 
+func agentHostMissing(node *models.Node) bool {
+	return node == nil || agentReachHost(node) == ""
+}
+
 func (r *RemoteAgentRuntime) Stop(ctx context.Context, id uuid.UUID) error {
 	node, err := r.resolveNode(ctx, id)
-	if err != nil || node.FabricIP == "" {
+	if err != nil || agentHostMissing(node) {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Stop(ctx, id)
 		}
 		if err != nil {
 			return err
 		}
+		return fmt.Errorf("agent host for workspace %s not set", id)
 	}
-	if err := r.postJSON(ctx, node, "/v1/workspaces/stop", map[string]any{"workspace_id": id}, nil); err != nil {
-		if r.FallbackLocal != nil {
-			return r.FallbackLocal.Stop(ctx, id)
-		}
-		return err
-	}
-	return nil
+	// Agent answered (even with an error): never fall back to control-plane Incus —
+	// that hides the real worker error behind "incus daemon doesn't appear to be started".
+	return r.postJSON(ctx, node, "/v1/workspaces/stop", map[string]any{"workspace_id": id}, nil)
 }
 
 func (r *RemoteAgentRuntime) Start(ctx context.Context, id uuid.UUID) error {
 	node, err := r.resolveNode(ctx, id)
-	if err != nil || node.FabricIP == "" {
+	if err != nil || agentHostMissing(node) {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Start(ctx, id)
 		}
 		if err != nil {
 			return err
 		}
+		return fmt.Errorf("agent host for workspace %s not set", id)
 	}
-	if err := r.postJSON(ctx, node, "/v1/workspaces/start", map[string]any{"workspace_id": id}, nil); err != nil {
-		if r.FallbackLocal != nil {
-			return r.FallbackLocal.Start(ctx, id)
-		}
-		return err
-	}
-	return nil
+	return r.postJSON(ctx, node, "/v1/workspaces/start", map[string]any{"workspace_id": id}, nil)
 }
 
 func (r *RemoteAgentRuntime) Destroy(ctx context.Context, id uuid.UUID) error {
@@ -214,21 +210,16 @@ func (r *RemoteAgentRuntime) Destroy(ctx context.Context, id uuid.UUID) error {
 		r.mu.Unlock()
 	}()
 
-	if err != nil || node.FabricIP == "" {
+	if err != nil || agentHostMissing(node) {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Destroy(ctx, id)
 		}
 		if err != nil {
 			return err
 		}
+		return fmt.Errorf("agent host for workspace %s not set", id)
 	}
-	if err := r.postJSON(ctx, node, "/v1/workspaces/destroy", map[string]any{"workspace_id": id}, nil); err != nil {
-		if r.FallbackLocal != nil {
-			return r.FallbackLocal.Destroy(ctx, id)
-		}
-		return err
-	}
-	return nil
+	return r.postJSON(ctx, node, "/v1/workspaces/destroy", map[string]any{"workspace_id": id}, nil)
 }
 
 func (r *RemoteAgentRuntime) Resize(ctx context.Context, w models.Workspace) error {
@@ -240,21 +231,16 @@ func (r *RemoteAgentRuntime) Resize(ctx context.Context, w models.Workspace) err
 	} else {
 		node, err = r.resolveNode(ctx, w.ID)
 	}
-	if err != nil || node.FabricIP == "" {
+	if err != nil || agentHostMissing(node) {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.Resize(ctx, w)
 		}
 		if err != nil {
 			return err
 		}
+		return fmt.Errorf("agent host for workspace %s not set", w.ID)
 	}
-	if err := r.postJSON(ctx, node, "/v1/workspaces/resize", map[string]any{"workspace": w}, nil); err != nil {
-		if r.FallbackLocal != nil {
-			return r.FallbackLocal.Resize(ctx, w)
-		}
-		return err
-	}
-	return nil
+	return r.postJSON(ctx, node, "/v1/workspaces/resize", map[string]any{"workspace": w}, nil)
 }
 
 func (r *RemoteAgentRuntime) Get(ctx context.Context, id uuid.UUID) (Instance, bool) {
@@ -309,13 +295,14 @@ func (r *RemoteAgentRuntime) AgentReachable(ctx context.Context, node *models.No
 
 func (r *RemoteAgentRuntime) ExposePort(ctx context.Context, wsID, routeID uuid.UUID, containerPort int) (int, error) {
 	node, err := r.resolveNode(ctx, wsID)
-	if err != nil || node.FabricIP == "" {
+	if err != nil || agentHostMissing(node) {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.ExposePort(ctx, wsID, routeID, containerPort)
 		}
 		if err != nil {
 			return 0, err
 		}
+		return 0, fmt.Errorf("agent host for workspace %s not set", wsID)
 	}
 	var out struct {
 		HostPort int `json:"host_port"`
@@ -325,9 +312,6 @@ func (r *RemoteAgentRuntime) ExposePort(ctx context.Context, wsID, routeID uuid.
 		"route_id":       routeID,
 		"container_port": containerPort,
 	}, &out); err != nil {
-		if r.FallbackLocal != nil {
-			return r.FallbackLocal.ExposePort(ctx, wsID, routeID, containerPort)
-		}
 		return 0, err
 	}
 	return out.HostPort, nil
@@ -335,45 +319,35 @@ func (r *RemoteAgentRuntime) ExposePort(ctx context.Context, wsID, routeID uuid.
 
 func (r *RemoteAgentRuntime) UnexposePort(ctx context.Context, wsID, routeID uuid.UUID) error {
 	node, err := r.resolveNode(ctx, wsID)
-	if err != nil || node.FabricIP == "" {
+	if err != nil || agentHostMissing(node) {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.UnexposePort(ctx, wsID, routeID)
 		}
 		if err != nil {
 			return err
 		}
+		return fmt.Errorf("agent host for workspace %s not set", wsID)
 	}
-	if err := r.postJSON(ctx, node, "/v1/workspaces/unexpose-port", map[string]any{
+	return r.postJSON(ctx, node, "/v1/workspaces/unexpose-port", map[string]any{
 		"workspace_id": wsID,
 		"route_id":     routeID,
-	}, nil); err != nil {
-		if r.FallbackLocal != nil {
-			return r.FallbackLocal.UnexposePort(ctx, wsID, routeID)
-		}
-		return err
-	}
-	return nil
+	}, nil)
 }
 
 func (r *RemoteAgentRuntime) SyncKeys(ctx context.Context, id uuid.UUID, keys []string) error {
 	node, err := r.resolveNode(ctx, id)
-	if err != nil || node.FabricIP == "" {
+	if err != nil || agentHostMissing(node) {
 		if r.FallbackLocal != nil {
 			return r.FallbackLocal.SyncKeys(ctx, id, keys)
 		}
 		if err != nil {
 			return err
 		}
+		return fmt.Errorf("agent host for workspace %s not set", id)
 	}
 	payload := map[string]any{
 		"workspace_id": id,
 		"ssh_keys":     keys,
 	}
-	if err := r.postJSON(ctx, node, "/v1/workspaces/sync-keys", payload, nil); err != nil {
-		if r.FallbackLocal != nil {
-			return r.FallbackLocal.SyncKeys(ctx, id, keys)
-		}
-		return err
-	}
-	return nil
+	return r.postJSON(ctx, node, "/v1/workspaces/sync-keys", payload, nil)
 }
