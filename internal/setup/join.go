@@ -40,14 +40,15 @@ func ParseJoinToken(raw string) (JoinSpec, error) {
 		cluster = parts[0]
 	}
 	return JoinSpec{
-		Token:   raw,
-		Cluster: cluster,
-		ETNet:   q.Get("et_net"),
-		ETPeer:  q.Get("et_peer"),
-		API:     q.Get("api"),
-		K3S:     q.Get("k3s"),
+		Token:       raw,
+		Cluster:     cluster,
+		ETNet:       q.Get("et_net"),
+		ETPeer:      q.Get("et_peer"),
+		API:         q.Get("api"),
+		K3S:         q.Get("k3s"),
 		Depot:       q.Get("depot"),
 		DepotPublic: q.Get("depot_public"),
+		FabricIP:    q.Get("fabric_ip"),
 	}, nil
 }
 
@@ -76,7 +77,7 @@ func WriteJoinFiles(spec JoinSpec) error {
 	}
 	fabric := spec.FabricIP
 	if fabric == "" {
-		fabric = "10.88.0.10"
+		fabric = "10.129.129.210"
 	}
 	depot := effectiveDepot(spec)
 	env := fmt.Sprintf("HA_CLUSTER=%s\nHA_ET_NET=%s\nHA_ET_PEER=%s\nHA_API=%s\nHA_K3S=%s\nHA_DEPOT=%s\nHA_DEPOT_PUBLIC=%s\nHA_ROLE=%s\nHA_POWER=%s\nHA_CLASS=%s\nHA_FABRIC_IP=%s\nHA_NODE_TOKEN=%s\n",

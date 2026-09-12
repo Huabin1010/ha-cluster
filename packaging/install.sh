@@ -65,6 +65,8 @@ case "${cmd}" in
     chmod 0755 "${INSTALL_ROOT}/worker-install.sh"
     # shellcheck disable=SC1091
     source "${INSTALL_ROOT}/depot-paths.sh"
+    # shellcheck disable=SC1091
+    source "${INSTALL_ROOT}/os-detect.sh"
     ha_os_detect
     echo ">> detected: $(ha_os_suite_label) / ${HA_OS_DEB_ARCH}"
     exec bash "${INSTALL_ROOT}/worker-install.sh"

@@ -184,6 +184,7 @@ export function NodesPage() {
     et_net?: string;
     et_peer?: string;
     install_url?: string;
+    fabric_ip?: string;
   } | null>(null);
   const [useLanDepot, setUseLanDepot] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -201,6 +202,7 @@ export function NodesPage() {
         et_net?: string;
         et_peer?: string;
         install_url?: string;
+        fabric_ip?: string;
       }>("/admin/join-tokens", {
         method: "POST",
         body: JSON.stringify({
@@ -215,6 +217,7 @@ export function NodesPage() {
         et_net: out.et_net,
         et_peer: out.et_peer,
         install_url: out.install_url,
+        fabric_ip: out.fabric_ip,
       });
     } catch (err) {
       setJoinErr(friendlyError(err));
@@ -370,6 +373,12 @@ export function NodesPage() {
                                     {joinMeta.et_net} / {joinMeta.et_peer}
                                   </span>
                                 </li>
+                                {joinMeta.fabric_ip && (
+                                  <li className="break-words min-w-0">
+                                    <span className="text-foreground">Fabric IP</span> ·{" "}
+                                    <span className="font-mono">{joinMeta.fabric_ip}</span>
+                                  </li>
+                                )}
                               </ul>
                             )}
                             <p className="m-0 text-xs text-muted-foreground break-words min-w-0">

@@ -57,12 +57,14 @@ Commands:
 		spec.Role = role
 		spec.Power = power
 		spec.Class = class
-		spec.FabricIP = fabric
+		if fabric != "" {
+			spec.FabricIP = fabric
+		}
 		if err := setup.WriteJoinFiles(spec); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		ipv4 := or(fabric, "10.88.0.10")
+		ipv4 := or(spec.FabricIP, "10.129.129.210")
 		fmt.Printf("wrote join files under %s\npayload=%s\neasytier: %v\n",
 			or(root, "/var/lib/ha-setup"), setup.PayloadName(d.GOARCH), setup.EasyTierCommand(spec, ipv4))
 	case "add-node":

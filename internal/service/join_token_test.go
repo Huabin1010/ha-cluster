@@ -30,6 +30,12 @@ func TestIssueJoinTokenAutoSecret(t *testing.T) {
 	if !strings.Contains(out.Token, "depot_public=") || !strings.Contains(out.Token, "et_net=ha-cluster-easytier") {
 		t.Fatalf("token missing params: %s", out.Token)
 	}
+	if !strings.Contains(out.Token, "fabric_ip=10.129.129.") {
+		t.Fatalf("token missing fabric_ip: %s", out.Token)
+	}
+	if out.FabricIP == "" || !strings.HasPrefix(out.FabricIP, "10.129.129.") {
+		t.Fatalf("fabric_ip: %s", out.FabricIP)
+	}
 	if !strings.Contains(out.Command, "curl -fsSL '"+out.InstallURL+"'") {
 		t.Fatalf("command should curl install.sh from depot: %s", out.Command)
 	}
@@ -54,9 +60,11 @@ func TestIssueJoinTokenLANDepot(t *testing.T) {
 	if !strings.Contains(out.Command, defaultJoinDepotLAN+"/install.sh") {
 		t.Fatalf("command: %s", out.Command)
 	}
-	if !strings.Contains(out.Token, "api=http%3A%2F%2F192.168.1.60") &&
-		!strings.Contains(out.Token, "192.168.1.60") {
-		t.Fatalf("token api: %s", out.Token)
+	if !strings.Contains(out.ETPeer, "192.168.1.60:15010") {
+		t.Fatalf("lan et_peer should target lab hub: %s", out.ETPeer)
+	}
+	if !strings.Contains(out.Token, "192.168.1.60") {
+		t.Fatalf("token api/peer: %s", out.Token)
 	}
 }
 
