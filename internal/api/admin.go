@@ -181,6 +181,7 @@ func (s *Server) generateJoinToken(w http.ResponseWriter, r *http.Request) {
 		Secret      string `json:"secret"`
 		API         string `json:"api"`
 		DepotPublic string `json:"depot_public"`
+		FabricIP    string `json:"fabric_ip"`
 		UseLANDepot bool   `json:"use_lan_depot"`
 	}
 	if r.Body != nil {
@@ -194,7 +195,7 @@ func (s *Server) generateJoinToken(w http.ResponseWriter, r *http.Request) {
 	out, err := service.IssueJoinToken(service.JoinTokenInput{
 		Cluster: body.Cluster, Secret: body.Secret,
 		API: body.API, DepotPublic: body.DepotPublic,
-		UseLANDepot: body.UseLANDepot,
+		FabricIP: body.FabricIP, UseLANDepot: body.UseLANDepot,
 	})
 	if err != nil {
 		writeAPIErr(w, err)

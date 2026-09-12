@@ -70,12 +70,12 @@ func DefaultDepotLAN() string {
 }
 
 func randomLocalFabricIP() (string, error) {
-	// 本地 / PVE 测试段 10.129.129.205–.254；避开已占用的 .205–.207，从 .208 起随机。
+	// 本地 / PVE 测试段 10.129.129.205–.252；.253 保留给生产控制面/入口。
 	var b [1]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	n := 208 + int(b[0]%47) // 208..254
+	n := 208 + int(b[0]%45) // 208..252
 	return fmt.Sprintf("10.129.129.%d", n), nil
 }
 
@@ -168,6 +168,9 @@ func IssueJoinToken(in JoinTokenInput) (*JoinTokenResult, error) {
 	q.Set("api", apiURL)
 	q.Set("depot_public", depot)
 	q.Set("fabric_ip", fabric)
+	if nodeTok := strings.TrimSpace(os.Getenv("HA_NODE_TOKEN")); nodeTok != "" {
+		q.Set("node_token", nodeTok)
+	}
 	if in.IncludeOverlayDepot || strings.TrimSpace(os.Getenv("HA_JOIN_INCLUDE_DEPOT")) == "1" {
 		overlay := envOr("HA_DEPOT", defaultJoinDepotOverlay)
 		if overlay != "" {

@@ -21,6 +21,7 @@ type JoinSpec struct {
 	Power    string
 	Class    string
 	FabricIP string
+	NodeToken string
 	RootDir  string
 }
 
@@ -39,6 +40,10 @@ func ParseJoinToken(raw string) (JoinSpec, error) {
 	if len(parts) > 0 {
 		cluster = parts[0]
 	}
+	nodeTok := q.Get("node_token")
+	if nodeTok == "" {
+		nodeTok = q.Get("token")
+	}
 	return JoinSpec{
 		Token:       raw,
 		Cluster:     cluster,
@@ -49,6 +54,7 @@ func ParseJoinToken(raw string) (JoinSpec, error) {
 		Depot:       q.Get("depot"),
 		DepotPublic: q.Get("depot_public"),
 		FabricIP:    q.Get("fabric_ip"),
+		NodeToken:   nodeTok,
 	}, nil
 }
 
@@ -79,9 +85,13 @@ func WriteJoinFiles(spec JoinSpec) error {
 	if fabric == "" {
 		fabric = "10.129.129.210"
 	}
+	nodeTok := spec.NodeToken
+	if nodeTok == "" {
+		nodeTok = os.Getenv("HA_NODE_TOKEN")
+	}
 	depot := effectiveDepot(spec)
 	env := fmt.Sprintf("HA_CLUSTER=%s\nHA_ET_NET=%s\nHA_ET_PEER=%s\nHA_API=%s\nHA_K3S=%s\nHA_DEPOT=%s\nHA_DEPOT_PUBLIC=%s\nHA_ROLE=%s\nHA_POWER=%s\nHA_CLASS=%s\nHA_FABRIC_IP=%s\nHA_NODE_TOKEN=%s\n",
-		spec.Cluster, spec.ETNet, spec.ETPeer, spec.API, spec.K3S, depot, spec.DepotPublic, spec.Role, power, class, fabric, spec.Token)
+		spec.Cluster, spec.ETNet, spec.ETPeer, spec.API, spec.K3S, depot, spec.DepotPublic, spec.Role, power, class, fabric, nodeTok)
 	if err := os.WriteFile(filepath.Join(root, "join.env"), []byte(env), 0600); err != nil {
 		return err
 	}

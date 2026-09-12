@@ -19,6 +19,7 @@
 
 ## 宝塔
 - 统一计划账号：huanghuabin / `<password>`
+- 生产 42（cl.qzsyzn.com）：`HA_BT_PANEL=http://42.193.236.123:8888` · `HA_BT_KEY=<api-key>`
 - ginkgo 安装时随机号：用户 `<…>` 密码 `<…>` 端口 33144 入口 /f730fa4d
 - phone1：端口 24396 入口 /abaff8a4
 - vince：未装完

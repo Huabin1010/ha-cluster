@@ -1,0 +1,59 @@
+---
+description: 生产线上拓扑（42 控制面+入口、110 Hub、PVE Worker）与宝塔约束；改部署/域名/join 时必读
+alwaysApply: true
+---
+
+# 生产运行环境与宝塔
+
+与实验室（`pve-test-lab.mdc` / `192.168.1.60`）分离。**线上**以本规则为准。
+
+## 三机角色（定稿）
+
+| 主机 | 角色 | Fabric IP | 禁止 |
+|------|------|-----------|------|
+| `110.40.229.62` | **EasyTier Hub only**（容器 `easytier-server-ha-cluster`） | `10.129.129.1` | 不跑 ha-api、不跑用户 Workspace、不做 HTTP 业务反代 |
+| `42.193.236.123` | **控制面 + 公网入口** | **`10.129.129.253`（固定）** | 不跑用户 Workspace；内存紧，扩容前先加 swap |
+| PVE `192.168.1.8` | **唯一算力**（VM 经 join 纳管） | `.205–.252` 或线上 `.10+` | **勿占用 `.253`**；公网机不充当 Worker |
+
+```
+公网用户 → 42:443（宝塔 Nginx + TLS）
+              ├─ cl.qzsyzn.com → 127.0.0.1:18082（ha-api + 控制台）
+              └─ *.cl.qzsyzn.com →（后续 Relay / Host 分流）→ EasyTier → PVE Worker
+EasyTier Hub 始终在 110（.1）；42 以 peer 入网（.253，--no-listener）
+```
+
+## 控制台与部署路径
+
+| 项 | 值 |
+|----|-----|
+| 控制台 | `https://cl.qzsyzn.com` |
+| API | `https://cl.qzsyzn.com/api`（healthz：`/healthz` 或 `/api/healthz`） |
+| 部署目录 | `/www/wwwroot/cl.qzsyzn.com/docker` |
+| 本机 API 口 | **仅** `127.0.0.1:18082`（不对公网） |
+| Compose | [`deploy/prod/docker-compose.yaml`](deploy/prod/docker-compose.yaml) |
+| 运维说明 | [`deploy/prod/README.md`](deploy/prod/README.md) |
+| 管理员 | `admin`（密码只写 `docs/credentials.local.md`） |
+
+镜像：GHCR 若 unauthorized，用本地 `ha-cluster-api:local` `docker save` → 42 `docker load`。Compose 网段用 **`172.28.90.0/24`**（避免与宝塔 Docker ipset 冲突）。
+
+## Join / Worker（生产）
+
+- `et_peer=tcp://110.40.229.62:15010`，`api=https://cl.qzsyzn.com/api`，公网 Depot。
+- Token 须带 **`node_token=`**（与 42 上 `.env` 的 `HA_NODE_TOKEN` 一致）；`ha-setup` 写入 `join.env` 的是该共享令牌，**不是**整段 `ha://join/...` URI。
+- `fabric_ip`：PVE 用 `.205–.252`；**禁止**随机到 `.253`。
+- 写 `easytier-core` 须先下到 `/tmp` 再 `install`（进程占用会导致 `curl: (23)`）。
+
+## 宝塔（42）硬约束
+
+- **80/443 由宝塔 Nginx 占用**；站点/反代/SSL/**DNS 解析一律走宝塔 API**，禁止手改 `vhost` conf（会与面板状态漂移）。
+- 面板：`http://42.193.236.123:8888`（安全入口见本机凭据）；API 密钥写 `docs/credentials.local.md`（`HA_BT_PANEL` / `HA_BT_KEY`）。
+- DNS：面板 **DNSPod 插件**（腾讯云密钥在面板侧已绑定）；用插件 API 加 A 记录，不要假设「只能去域名商控制台点」。
+- 操作手册：项目 skill **baota-panel**（`.cursor/skills/baota-panel/`）；脚本 [`deploy/prod/baota_api.py`](deploy/prod/baota_api.py)。
+
+## 带宽与演进
+
+42 公网带宽有限：经 42 反代的 HTTPS **仍过 42 出口**。流量变大时把 **443 Edge** 迁走，42 只留控制面；Hub 仍只做 EasyTier。勿把 HTTP 入口压到 110。
+
+## 密钥
+
+EasyTier 密钥、宝塔 API Key、`.env`（JWT/DB/node token）**只写** `docs/credentials.local.md` 或服务器本地文件；禁止进 Git / 规则正文 / 聊天复述全文。

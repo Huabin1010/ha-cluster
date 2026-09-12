@@ -90,8 +90,9 @@ install -m 0755 /tmp/ha-agent.new /usr/local/bin/ha-agent
 rm -f /tmp/ha-agent.new
 
 if [[ "${SKIP_EASYTIER}" != "1" ]]; then
-  curl --connect-timeout 5 --max-time 120 -fsSL "$(ha_bin_url easytier-core)" -o /usr/local/bin/easytier-core
-  chmod 0755 /usr/local/bin/easytier-core
+  curl --connect-timeout 5 --max-time 120 -fsSL "$(ha_bin_url easytier-core)" -o /tmp/easytier-core.new
+  install -m 0755 /tmp/easytier-core.new /usr/local/bin/easytier-core
+  rm -f /tmp/easytier-core.new
 
   if [[ -f "${SETUP_DIR}/easytier.service" ]]; then
     echo "==> easytier from join.env (${SETUP_DIR})"

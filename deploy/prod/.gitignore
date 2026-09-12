@@ -1,0 +1,5 @@
+# 勿提交 — 本地生成的生产 .env / 镜像缓存
+
+*.env
+!*.env.example
+_bt_print_token.py
