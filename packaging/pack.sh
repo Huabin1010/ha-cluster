@@ -91,6 +91,9 @@ cp -f "${CACHE}/k3s/k3s-airgap-images-${ARCH}.tar.zst" \
   "${OUT}/k3s/k3s-airgap-images-${ARCH}.tar.zst"
 cp -f "${CACHE}/k3s/install.sh" "${OUT}/k3s/install.sh"
 chmod +x "${OUT}/k3s/install.sh"
+# 目标机禁止跑 payload 里的官方 install.sh（会出网）。单独打一份只含二进制+airgap 的离线包。
+echo "==> pack standalone k3s-offline (${ARCH})"
+python3 "${ROOT}/packaging/pack_k3s.py" "${ARCH}"
 
 cp -f "${CACHE}/easytier/easytier-core" "${OUT}/easytier/easytier-core"
 chmod +x "${OUT}/easytier/easytier-core"

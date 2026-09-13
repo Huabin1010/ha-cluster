@@ -27,12 +27,16 @@ BUNDLE_FILES: dict[str, dict[str, str]] = {
         "ha-worker-bundle-linux-amd64.tar.zst": "bundles/amd64/worker.tar.zst",
         "incus-offline-amd64.tar.zst": "bundles/amd64/incus-offline.tar.zst",
         "workspace-assets-amd64.tar.zst": "bundles/amd64/workspace-assets.tar.zst",
+        "ha-k3s-offline-linux-amd64.tar.gz": "bundles/amd64/k3s-offline.tar.gz",
+        "k3s-airgap-images-amd64.tar.zst": "bundles/amd64/k3s-airgap-images.tar.zst",
     },
     "arm64": {
         "ha-payload-linux-arm64.tar.zst": "bundles/arm64/payload.tar.zst",
         "ha-worker-bundle-linux-arm64.tar.zst": "bundles/arm64/worker.tar.zst",
         "incus-offline-arm64.tar.zst": "bundles/arm64/incus-offline.tar.zst",
         "workspace-assets-arm64.tar.zst": "bundles/arm64/workspace-assets.tar.zst",
+        "ha-k3s-offline-linux-arm64.tar.gz": "bundles/arm64/k3s-offline.tar.gz",
+        "k3s-airgap-images-arm64.tar.zst": "bundles/arm64/k3s-airgap-images.tar.zst",
     },
 }
 
@@ -43,12 +47,16 @@ BIN_FILES: dict[str, dict[str, str]] = {
         "ha-setup-linux-amd64": "bin/amd64/ha-setup",
         "ha-bastion-linux-amd64": "bin/amd64/ha-bastion",
         "easytier-core": "bin/amd64/easytier-core",
+        "k3s": "bin/amd64/k3s",
+        "docker-compose": "bin/amd64/docker-compose",
     },
     "arm64": {
         "ha-agent-linux-arm64": "bin/arm64/ha-agent",
         "ha-setup-linux-arm64": "bin/arm64/ha-setup",
         "ha-bastion-linux-arm64": "bin/arm64/ha-bastion",
         "easytier-core": "bin/arm64/easytier-core",
+        "k3s": "bin/arm64/k3s",
+        "docker-compose": "bin/arm64/docker-compose",
     },
 }
 
@@ -72,6 +80,7 @@ LAB_FILES = (
     "install-easytier.sh",
     "install-incus.sh",
     "install-incus-online.sh",
+    "install-k3s.sh",
     "incus-offline.sh",
     "os-detect.sh",
     "ubuntu-apt-mirror.sh",
@@ -121,6 +130,21 @@ def _find_bin(root: Path, dist: Path, lab_src: Path, arch: str, local_name: str)
                 root / "packaging" / "cache" / arch / "easytier" / "easytier-core",
             ]
         )
+    if local_name == "k3s":
+        candidates.extend(
+            [
+                dist / f"k3s-linux-{arch}",
+                dist / f"payload-linux-{arch}" / "k3s" / "k3s",
+                root / "packaging" / "cache" / arch / "k3s" / "k3s",
+            ]
+        )
+    if local_name == "docker-compose":
+        candidates.extend(
+            [
+                dist / f"docker-compose-linux-{arch}",
+                root / "packaging" / "cache" / arch / "docker-compose",
+            ]
+        )
     if local_name.startswith("ha-bastion"):
         candidates.append(dist / f"ha-bastion-linux-{arch}")
     for c in candidates:
@@ -143,10 +167,17 @@ def collect_uploads(dist: Path, root: Path, lab_src: Path) -> list[tuple[Path, s
 
     for arch, mapping in BUNDLE_FILES.items():
         for local_name, key in mapping.items():
-            for candidate in (dist / local_name, lab_src / local_name):
+            found = None
+            for candidate in (
+                dist / local_name,
+                lab_src / local_name,
+                cache_root / arch / "k3s" / local_name,
+            ):
                 if candidate.is_file():
-                    items.append((candidate, key, None))
+                    found = candidate
                     break
+            if found is not None:
+                items.append((found, key, None))
 
     for arch, mapping in BIN_FILES.items():
         for local_name, key in mapping.items():
@@ -164,12 +195,18 @@ def collect_uploads(dist: Path, root: Path, lab_src: Path) -> list[tuple[Path, s
             ct = "text/x-shellscript" if src.suffix == ".sh" else None
             items.append((src, key, ct))
 
-    if lab_src.is_dir():
+    seen_lab: set[str] = set()
+    for lab_dir in (lab_src, root / "deploy" / "pve-lab"):
+        if not lab_dir.is_dir():
+            continue
         for name in LAB_FILES:
-            p = lab_src / name
+            if name in seen_lab:
+                continue
+            p = lab_dir / name
             if p.is_file():
                 ct = "text/x-shellscript" if p.suffix == ".sh" else None
                 items.append((p, lab_key(name), ct))
+                seen_lab.add(name)
 
     for arch, key in WORKSPACE_IMAGE_KEYS.items():
         for candidate in (

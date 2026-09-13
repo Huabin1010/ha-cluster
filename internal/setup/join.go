@@ -16,6 +16,8 @@ type JoinSpec struct {
 	ETSecret    string
 	API         string
 	K3S         string
+	K3SToken    string
+	K3SRole     string
 	Depot       string
 	DepotPublic string
 	Role        string
@@ -53,6 +55,8 @@ func ParseJoinToken(raw string) (JoinSpec, error) {
 		ETSecret:    q.Get("et_secret"),
 		API:         q.Get("api"),
 		K3S:         q.Get("k3s"),
+		K3SToken:    q.Get("k3s_token"),
+		K3SRole:     q.Get("k3s_role"),
 		Depot:       q.Get("depot"),
 		DepotPublic: q.Get("depot_public"),
 		FabricIP:    q.Get("fabric_ip"),
@@ -100,8 +104,12 @@ func WriteJoinFiles(spec JoinSpec) error {
 	if etSecret == "" {
 		etSecret = strings.TrimSpace(os.Getenv("HA_ET_SECRET"))
 	}
-	env := fmt.Sprintf("HA_CLUSTER=%s\nHA_ET_NET=%s\nHA_ET_PEER=%s\nHA_ET_SECRET=%s\nHA_API=%s\nHA_K3S=%s\nHA_DEPOT=%s\nHA_DEPOT_PUBLIC=%s\nHA_ROLE=%s\nHA_POWER=%s\nHA_CLASS=%s\nHA_FABRIC_IP=%s\nHA_NODE_TOKEN=%s\n",
-		spec.Cluster, spec.ETNet, spec.ETPeer, etSecret, spec.API, spec.K3S, depot, spec.DepotPublic, spec.Role, power, class, fabric, nodeTok)
+	k3sRole := spec.K3SRole
+	if k3sRole == "" {
+		k3sRole = "auto"
+	}
+	env := fmt.Sprintf("HA_CLUSTER=%s\nHA_ET_NET=%s\nHA_ET_PEER=%s\nHA_ET_SECRET=%s\nHA_API=%s\nHA_K3S=%s\nHA_K3S_TOKEN=%s\nHA_K3S_ROLE=%s\nHA_DEPOT=%s\nHA_DEPOT_PUBLIC=%s\nHA_ROLE=%s\nHA_POWER=%s\nHA_CLASS=%s\nHA_FABRIC_IP=%s\nHA_NODE_TOKEN=%s\nHA_NODE_TAGS=\n",
+		spec.Cluster, spec.ETNet, spec.ETPeer, etSecret, spec.API, spec.K3S, spec.K3SToken, k3sRole, depot, spec.DepotPublic, spec.Role, power, class, fabric, nodeTok)
 	if err := os.WriteFile(filepath.Join(root, "join.env"), []byte(env), 0600); err != nil {
 		return err
 	}
@@ -131,7 +139,7 @@ After=network-online.target easytier.service
 
 [Service]
 EnvironmentFile=` + filepath.Join(root, "join.env") + `
-ExecStart=/usr/local/bin/ha-agent --api ${HA_API} --fabric-ip ${HA_FABRIC_IP} --power ${HA_POWER} --class ${HA_CLASS} --token ${HA_NODE_TOKEN} --once=false
+ExecStart=/usr/local/bin/ha-agent --api ${HA_API} --fabric-ip ${HA_FABRIC_IP} --power ${HA_POWER} --class ${HA_CLASS} --token ${HA_NODE_TOKEN} --tags ${HA_NODE_TAGS} --once=false
 Restart=always
 
 [Install]

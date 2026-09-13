@@ -28,6 +28,16 @@ func TestPostHeartbeat(t *testing.T) {
 	}
 }
 
+func TestParseTags(t *testing.T) {
+	got := ParseTags("k3s, both, K3S")
+	if len(got) != 2 || got[0] != "k3s" || got[1] != "both" {
+		t.Fatalf("%v", got)
+	}
+	if ParseTags("  ") != nil {
+		t.Fatal("empty should be nil")
+	}
+}
+
 func TestStatusJSONIncludesHostTotals(t *testing.T) {
 	st := Status{
 		Name:              "n1",

@@ -149,6 +149,14 @@ def main() -> int:
     lf_write(OUT / "easytier-start.sh", (ROOT / "deploy" / "easytier-start.sh").read_text(encoding="utf-8"))
     shutil.copy2(ROOT / "deploy" / "easytier.service", OUT / "easytier.service")
 
+    try:
+        sys.path.insert(0, str(ROOT / "packaging"))
+        from pack_k3s import pack_arch as pack_k3s_arch  # noqa: E402
+
+        pack_k3s_arch("amd64")
+    except SystemExit as e:
+        print(f"warn: k3s offline pack skipped: {e}", file=sys.stderr)
+
     build_incus_offline_tar("amd64")
 
     manifest = "\n".join(sorted(p.name for p in OUT.iterdir() if p.is_file()))

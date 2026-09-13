@@ -12,38 +12,64 @@ except ImportError:
     print("error: pip install boto3", file=sys.stderr)
     sys.exit(1)
 
-from depot_layout import PREFIX, collect_uploads, generate_index, public_base
+from depot_creds import require_depot_creds
+from depot_layout import LAB_FILES, PREFIX, collect_uploads, generate_index, public_base
+
+
+def lf_stage_lab() -> None:
+    """Windows 检出的 lab 脚本必须转 LF，否则目标机 shebang 会炸。"""
+    src = ROOT / "deploy" / "pve-lab"
+    dest = LAB
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in LAB_FILES:
+        p = src / name
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        (dest / name).write_text(text, encoding="utf-8", newline="\n")
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 LAB = DIST / "pve-lab"
 
-ENDPOINT = os.environ["HA_DEPOT_S3_ENDPOINT"]
-BUCKET = os.environ["HA_DEPOT_S3_BUCKET"]
-AK = os.environ["HA_DEPOT_S3_ACCESS_KEY"]
-SK = os.environ["HA_DEPOT_S3_SECRET_KEY"]
-REGION = os.environ.get("HA_DEPOT_S3_REGION", "us-east-1")
 
-s3 = boto3.client(
-    "s3",
-    endpoint_url=ENDPOINT,
-    aws_access_key_id=AK,
-    aws_secret_access_key=SK,
-    region_name=REGION,
-)
+def client():
+    return boto3.client(
+        "s3",
+        endpoint_url=os.environ["HA_DEPOT_S3_ENDPOINT"],
+        aws_access_key_id=os.environ["HA_DEPOT_S3_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["HA_DEPOT_S3_SECRET_KEY"],
+        region_name=os.environ.get("HA_DEPOT_S3_REGION", "us-east-1"),
+    )
 
 
-def put(local: Path, key: str, content_type: str | None = None) -> None:
+def put(s3, local: Path, key: str, content_type: str | None = None) -> None:
     extra = {}
     if content_type:
         extra["ContentType"] = content_type
-    s3.upload_file(str(local), BUCKET, f"{PREFIX}/{key}", ExtraArgs=extra or None)
-    mib = local.stat().st_size / (1024 * 1024)
-    print(f"  {key}  ({mib:.1f} MiB)" if mib >= 0.01 else f"  {key}  ({local.stat().st_size} B)")
+    bucket = os.environ["HA_DEPOT_S3_BUCKET"]
+    s3_key = f"{PREFIX}/{key}"
+    if local.suffix == ".sh" or local.name in {"install.sh", "lab.defaults.env"}:
+        data = local.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        extra["Body"] = data
+        extra["Key"] = s3_key
+        extra["Bucket"] = bucket
+        s3.put_object(**extra)
+        size = len(data)
+    else:
+        s3.upload_file(str(local), bucket, s3_key, ExtraArgs={k: v for k, v in extra.items() if k == "ContentType"} or None)
+        size = local.stat().st_size
+    mib = size / (1024 * 1024)
+    print(f"  {key}  ({mib:.1f} MiB)" if mib >= 0.01 else f"  {key}  ({size} B)")
 
 
 def main() -> None:
-    base = public_base(ENDPOINT, BUCKET)
+    require_depot_creds()
+    lf_stage_lab()
+    s3 = client()
+    endpoint = os.environ["HA_DEPOT_S3_ENDPOINT"]
+    bucket = os.environ["HA_DEPOT_S3_BUCKET"]
+    base = public_base(endpoint, bucket)
     uploads = collect_uploads(DIST, ROOT, LAB)
     index_path = DIST / "INDEX.md"
     index_path.write_text(generate_index(uploads, base), encoding="utf-8")
@@ -51,7 +77,7 @@ def main() -> None:
 
     print(f"==> upload {len(uploads)} objects → {PREFIX}/")
     for local, key, ct in uploads:
-        put(local, key, ct)
+        put(s3, local, key, ct)
 
     print(f"\nPublic: {base}")
     print(f"Index:  {base}/INDEX.md")
@@ -59,8 +85,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    for var in ("HA_DEPOT_S3_ENDPOINT", "HA_DEPOT_S3_BUCKET", "HA_DEPOT_S3_ACCESS_KEY", "HA_DEPOT_S3_SECRET_KEY"):
-        if var not in os.environ:
-            print(f"error: set {var}", file=sys.stderr)
-            sys.exit(2)
     main()

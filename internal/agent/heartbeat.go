@@ -6,29 +6,39 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"ha-cluster/internal/models"
 )
 
+// ParseTags splits a comma-separated HA_NODE_TAGS / -tags value.
+func ParseTags(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	return models.NormalizeNodeTags(strings.Split(raw, ","))
+}
+
 type Status struct {
-	Name            string `json:"name"`
-	Arch            string `json:"arch"`
-	Class           string `json:"class"`
-	Role            string `json:"role"`
-	Power           string `json:"power"`
-	FabricIP        string `json:"fabric_ip"`
-	LanIP           string `json:"lan_ip,omitempty"`
-	AllocatableCPU  int64  `json:"allocatable_cpu_milli"`
-	AllocatableMem  int64  `json:"allocatable_mem_bytes"`
-	AllocatableDisk int64  `json:"allocatable_disk_bytes"`
-	FabricPath        string  `json:"fabric_path"`
-	FabricRTTMS       int64   `json:"fabric_rtt_ms"`
-	CPUUsagePct       float64 `json:"cpu_usage_pct"`
-	MemAvailableBytes int64   `json:"mem_available_bytes"`
-	DiskFreeBytes     int64   `json:"disk_free_bytes"`
-	MemTotalBytes     int64   `json:"mem_total_bytes"`
-	DiskTotalBytes    int64   `json:"disk_total_bytes"`
+	Name              string   `json:"name"`
+	Arch              string   `json:"arch"`
+	Class             string   `json:"class"`
+	Role              string   `json:"role"`
+	Power             string   `json:"power"`
+	FabricIP          string   `json:"fabric_ip"`
+	LanIP             string   `json:"lan_ip,omitempty"`
+	AllocatableCPU    int64    `json:"allocatable_cpu_milli"`
+	AllocatableMem    int64    `json:"allocatable_mem_bytes"`
+	AllocatableDisk   int64    `json:"allocatable_disk_bytes"`
+	FabricPath        string   `json:"fabric_path"`
+	FabricRTTMS       int64    `json:"fabric_rtt_ms"`
+	CPUUsagePct       float64  `json:"cpu_usage_pct"`
+	MemAvailableBytes int64    `json:"mem_available_bytes"`
+	DiskFreeBytes     int64    `json:"disk_free_bytes"`
+	MemTotalBytes     int64    `json:"mem_total_bytes"`
+	DiskTotalBytes    int64    `json:"disk_total_bytes"`
+	Tags              []string `json:"tags,omitempty"`
 }
 
 func DetectStatus(name, fabricIP string, cpu, mem, disk int64, storagePath ...string) Status {

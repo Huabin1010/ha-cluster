@@ -36,6 +36,7 @@ services:
       HA_BASTION_DIRECT: ${HA_BASTION_DIRECT:-1}
       HA_SEED: ${HA_SEED:-1}
       HA_WEB_DIR: /app/web/dist
+      HA_KUBECONFIG: ${HA_KUBECONFIG:-}
     depends_on:
       postgres:
         condition: service_healthy

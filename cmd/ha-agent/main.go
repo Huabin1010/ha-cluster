@@ -15,11 +15,11 @@ import (
 
 func main() {
 	var (
-		api    = flag.String("api", env("HA_API", "http://127.0.0.1:8080"), "ha-api base URL")
-		name   = flag.String("name", hostname(), "node name")
-		fabric = flag.String("fabric-ip", env("HA_FABRIC_IP", ""), "EasyTier IPv4 (or LAN for debug)")
-		power  = flag.String("power", env("HA_POWER", "mains"), "mains|battery")
-		class  = flag.String("class", env("HA_CLASS", "desktop"), "phone|sbc|desktop|server|cloud")
+		api     = flag.String("api", env("HA_API", "http://127.0.0.1:8080"), "ha-api base URL")
+		name    = flag.String("name", hostname(), "node name")
+		fabric  = flag.String("fabric-ip", env("HA_FABRIC_IP", ""), "EasyTier IPv4 (or LAN for debug)")
+		power   = flag.String("power", env("HA_POWER", "mains"), "mains|battery")
+		class   = flag.String("class", env("HA_CLASS", "desktop"), "phone|sbc|desktop|server|cloud")
 		cpu     = flag.Int64("cpu-milli", 0, "allocatable millicores (0=auto)")
 		mem     = flag.Int64("mem-bytes", 0, "allocatable memory (0=auto)")
 		disk    = flag.Int64("disk-bytes", 0, "allocatable disk (0=auto probe with reserve)")
@@ -28,11 +28,13 @@ func main() {
 		once    = flag.Bool("once", false, "send one heartbeat and exit")
 		token   = flag.String("token", env("HA_NODE_TOKEN", env("HA_INTERNAL_TOKEN", "")), "node authentication token")
 		listen  = flag.String("listen", env("HA_AGENT_LISTEN", ":9091"), "orchestration listen address (empty or 'none' to disable)")
+		tags    = flag.String("tags", env("HA_NODE_TAGS", ""), "comma-separated node tags (e.g. k3s,both)")
 	)
 	flag.Parse()
 	st := agent.DetectStatus(*name, *fabric, *cpu, *mem, *disk, *storage)
 	st.Power = *power
 	st.Class = *class
+	st.Tags = agent.ParseTags(*tags)
 	if st.FabricIP == "" {
 		st.FabricIP = env("HA_FABRIC_IP", "127.0.0.1")
 	}
@@ -93,6 +95,7 @@ func main() {
 			st = agent.DetectStatus(*name, st.FabricIP, *cpu, *mem, *disk, *storage)
 			st.Power = *power
 			st.Class = *class
+			st.Tags = agent.ParseTags(*tags)
 			if err := agent.PostHeartbeat(nil, *api, st, *token); err != nil {
 				log.Printf("heartbeat: %v", err)
 			}

@@ -72,6 +72,8 @@ powershell -File deploy/pve-lab/use-pve-workers.ps1
 
 ## 节点与 Fabric IP
 
+PVE 测试 VM 一律 `--cpu host`（透传宿主机 AVX2；默认 kvm64 会让 Bun 1.4 空转）。已有机器：`python deploy/pve-lab/ensure-cpu-host.py`。
+
 | VMID | 名称 | Ubuntu | Fabric IP |
 |------|------|--------|-----------|
 | 110 | ha-test-jammy | 22.04 | `10.129.129.205` |
@@ -88,6 +90,35 @@ powershell -File deploy/pve-lab/use-pve-workers.ps1
 
 1. 在 `lab.env` 填写 `HA_ET_SECRET`，设 `SKIP_EASYTIER=0`
 2. 重新 `bootstrap.py`
+
+## k3s（离线，默认随 Worker 一起装）
+
+目标机**禁止** `curl get.k3s.io` / GitHub。维护者机 `python packaging/fetch_k3s.py amd64` 后打包上传，Worker 只从 Depot 拉：
+
+| S3 键 | 用途 |
+|-------|------|
+| `bin/<arch>/k3s` | 静态二进制 |
+| `bundles/<arch>/k3s-airgap-images.tar.zst` | airgap 镜像（k3s 直接加载，不必再解压） |
+| `bundles/<arch>/k3s-offline.tar.gz` | 上述二者打成一包（优先） |
+| `lab/install-k3s.sh` | 幂等安装 / 升级 |
+
+```powershell
+python packaging/fetch_k3s.py amd64
+python packaging/pack_k3s.py amd64
+python deploy/pve-lab/pack.py
+python packaging/upload-depot-s3.py   # 默认局域网 RustFS；凭据见 credentials.local.md
+
+# 空机全量（PVE 克隆 116 ha-k3s-lab）+ 已有无 k3s 节点 upgrade
+python deploy/pve-lab/test-k3s-install.py
+```
+
+已 join、还没有 k3s 的主机：
+
+```bash
+curl -fsSL "${DEPOT}/install.sh" | sudo bash -s upgrade
+```
+
+`SKIP_K3S=1` 可跳过。装完后心跳带 `k3s,both` 标签，控制台才能调度 `runtime=k8s` 工作区。
 
 ## Incus（Workspace 真起容器）
 

@@ -54,7 +54,13 @@ curl -fsSL https://rustfs.s.ggss.club:50000/typora/ha-cluster/install.sh \
 1. 识别 `uname -m` → `amd64` / `arm64`
 2. 下载 `ha-setup-linux-<arch>`（若本地无）
 3. 下载 `ha-payload-linux-<arch>.tar.zst` 并解压到缓存（可用 `HA_PAYLOAD_FILE` 跳过）
-4. 执行 `ha-setup join …`：**先 EasyTier，再离线装 k3s agent / Incus / ha-agent**
+4. 执行 `ha-setup join …`：**先 EasyTier，再离线装 Incus / k3s / ha-agent**（k3s 二进制与 airgap **只从 Depot 拉**，目标机不出网）
+
+已 join、尚未装 k3s 的主机用同一引导脚本升级（不重写 `join.env`）：
+
+```bash
+curl -fsSL https://rustfs.s.ggss.club:50000/typora/ha-cluster/install.sh | sudo bash -s upgrade
+```
 
 ### 3.2 环境变量（可选）
 

@@ -15,18 +15,20 @@ mkdir -p "${INSTALL_ROOT}"
 
 _user_skip_incus="${SKIP_INCUS:-}"
 _user_skip_et="${SKIP_EASYTIER:-}"
+_user_skip_k3s="${SKIP_K3S:-}"
 _user_api_base="${HA_API_BASE:-}"
 _user_et_secret="${HA_ET_SECRET:-}"
 _user_et_peers="${HA_ET_PEERS:-}"
 curl --connect-timeout 5 --max-time 30 -fsSL "${LAB_BASE}/lab.defaults.env" -o "${INSTALL_ROOT}/lab.defaults.env"
 # shellcheck disable=SC1091
 source "${INSTALL_ROOT}/lab.defaults.env"
-for _v in HA_INSTALL_MODE HA_APT_MIRROR SKIP_INCUS SKIP_EASYTIER; do
+for _v in HA_INSTALL_MODE HA_APT_MIRROR SKIP_INCUS SKIP_EASYTIER SKIP_K3S; do
   # shellcheck disable=SC2086
   eval "${_v}=\"\${${_v}//\$'\\r'/}\""
 done
 if [[ -n "${_user_skip_incus}" ]]; then SKIP_INCUS="${_user_skip_incus}"; fi
 if [[ -n "${_user_skip_et}" ]]; then SKIP_EASYTIER="${_user_skip_et}"; fi
+if [[ -n "${_user_skip_k3s}" ]]; then SKIP_K3S="${_user_skip_k3s}"; fi
 if [[ -n "${_user_api_base}" ]]; then HA_API_BASE="${_user_api_base}"; fi
 if [[ -n "${_user_et_secret}" ]]; then HA_ET_SECRET="${_user_et_secret}"; fi
 if [[ -n "${_user_et_peers}" ]]; then HA_ET_PEERS="${_user_et_peers}"; fi

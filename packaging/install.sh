@@ -2,8 +2,12 @@
 # ha-cluster 一键加节点（瘦引导 → Depot 分系统安装）
 #
 #   curl -fsSL "${HA_DEPOT_PUBLIC}/install.sh" | sudo bash -s join --token 'ha://join/...'
+#   curl -fsSL "${HA_DEPOT_PUBLIC}/install.sh" | sudo bash -s upgrade
 #
+# join：EasyTier + Incus + 离线 k3s + ha-agent（制品只从 Depot / S3 拉）
+# upgrade：已 join 主机重拉脚本，补装/升级 k3s，不重写 join.env
 # HA_INSTALL_MODE=auto|online|offline  （默认 auto：能连 Zabbly 则在线 apt 装 Incus）
+# SKIP_K3S=1 跳过 k3s
 set -euo pipefail
 
 DEPOT_PUBLIC="${HA_DEPOT_PUBLIC:-https://rustfs.s.ggss.club:50000/typora/ha-cluster}"
@@ -75,6 +79,31 @@ case "${cmd}" in
     source "${INSTALL_ROOT}/os-detect.sh"
     ha_os_detect
     echo ">> detected: $(ha_os_suite_label) / ${HA_OS_DEB_ARCH}"
+    exec bash "${INSTALL_ROOT}/worker-install.sh"
+    ;;
+  upgrade)
+    # 已 join：不重跑 ha-setup join（避免改 fabric_ip / 密钥），只刷新组件并补 k3s
+    if [[ ! -f "${SETUP_DIR}/join.env" ]]; then
+      echo "error: ${SETUP_DIR}/join.env missing — run join first" >&2
+      exit 1
+    fi
+    fetch_ha_setup
+    # shellcheck disable=SC1091
+    source "${SETUP_DIR}/join.env"
+    # 命令行/环境里的 Depot 优先于 join.env（实验室走局域网 RustFS）
+    export DEPOT_PUBLIC="${DEPOT_PUBLIC:-${HA_DEPOT_PUBLIC:-${DEPOT_PUBLIC}}}"
+    export STAGING="${STAGING:-${DEPOT_PUBLIC}}"
+    export HA_DEPOT_PUBLIC="${DEPOT_PUBLIC}"
+    export HA_INSTALL_MODE="${INSTALL_MODE}"
+    export HA_API_BASE="${HA_API:-${HA_API_BASE:-}}"
+    export HA_NODE_TOKEN="${HA_NODE_TOKEN:-}"
+    export HA_UPGRADE=1
+    echo ">> worker upgrade (k3s offline) from ${lab_base} ..."
+    INSTALL_ROOT="/tmp/ha-cluster-install"
+    mkdir -p "${INSTALL_ROOT}"
+    curl --connect-timeout 10 --max-time 60 -fsSL "${lab_base}/depot-paths.sh" -o "${INSTALL_ROOT}/depot-paths.sh"
+    curl --connect-timeout 10 --max-time 120 -fsSL "${lab_base}/worker-install.sh" -o "${INSTALL_ROOT}/worker-install.sh"
+    chmod 0755 "${INSTALL_ROOT}/worker-install.sh"
     exec bash "${INSTALL_ROOT}/worker-install.sh"
     ;;
   detect)

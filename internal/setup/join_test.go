@@ -8,12 +8,15 @@ import (
 )
 
 func TestParseAndWriteJoin(t *testing.T) {
-	raw := "ha://join/c1/secret?et_net=ha-c1&et_peer=tcp://server.mnnumath.vip:11010&et_secret=s3cr3t&api=https://10.88.0.1:8443&k3s=https://10.88.0.1:6443&depot=http://10.88.0.1:9090"
+	raw := "ha://join/c1/secret?et_net=ha-c1&et_peer=tcp://server.mnnumath.vip:11010&et_secret=s3cr3t&api=https://10.88.0.1:8443&k3s=https://10.88.0.1:6443&k3s_token=tok&k3s_role=agent&depot=http://10.88.0.1:9090"
 	spec, err := ParseJoinToken(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if spec.ETNet != "ha-c1" || spec.Cluster != "c1" || spec.ETSecret != "s3cr3t" {
+		t.Fatalf("%+v", spec)
+	}
+	if spec.K3S != "https://10.88.0.1:6443" || spec.K3SToken != "tok" || spec.K3SRole != "agent" {
 		t.Fatalf("%+v", spec)
 	}
 	dir := t.TempDir()
@@ -36,6 +39,12 @@ func TestParseAndWriteJoin(t *testing.T) {
 		t.Fatal(string(b))
 	}
 	if !strings.Contains(string(b), "HA_FABRIC_IP=") {
+		t.Fatal(string(b))
+	}
+	if !strings.Contains(string(b), "HA_K3S=https://10.88.0.1:6443") {
+		t.Fatal(string(b))
+	}
+	if !strings.Contains(string(b), "HA_K3S_ROLE=agent") || !strings.Contains(string(b), "HA_K3S_TOKEN=tok") {
 		t.Fatal(string(b))
 	}
 	unit, _ := os.ReadFile(filepath.Join(dir, "easytier.service"))

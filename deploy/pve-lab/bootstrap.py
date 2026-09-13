@@ -81,6 +81,7 @@ def install_one(env: dict[str, str], node: dict, staging: str, skip_reset: bool)
     token = env.get("HA_NODE_TOKEN", "ha-test-node-token-2026")
     skip_incus = env.get("SKIP_INCUS", "1")
     skip_et = env.get("SKIP_EASYTIER", "1")
+    skip_k3s = env.get("SKIP_K3S", "0")
     install_mode = env.get("HA_INSTALL_MODE", "offline")
     apt_mirror = env.get("HA_APT_MIRROR", "tuna")
     verify_egress = env.get("HA_VERIFY_EGRESS", "0")
@@ -98,7 +99,7 @@ def install_one(env: dict[str, str], node: dict, staging: str, skip_reset: bool)
         body = (
             f"export STAGING='{staging}' DEPOT_PUBLIC='{staging}' NODE_NAME='{name}' FABRIC_IP='{fabric}' "
             f"HA_API_BASE='{api}' HA_NODE_TOKEN='{token}' "
-            f"SKIP_INCUS='{skip_incus}' SKIP_EASYTIER='{skip_et}' "
+            f"SKIP_INCUS='{skip_incus}' SKIP_EASYTIER='{skip_et}' SKIP_K3S='{skip_k3s}' "
             f"HA_INSTALL_MODE='{install_mode}' HA_APT_MIRROR='{apt_mirror}' "
             f"HA_VERIFY_EGRESS='{verify_egress}' {et_extra}; "
             f"curl --connect-timeout 5 --max-time 30 -fsSL '{staging}/lab/{script}' -o /tmp/ha-i.sh && bash /tmp/ha-i.sh"
@@ -107,7 +108,7 @@ def install_one(env: dict[str, str], node: dict, staging: str, skip_reset: bool)
         body = (
             f"export STAGING='{staging}' DEPOT_PUBLIC='{staging}' NODE_NAME='{name}' FABRIC_IP='{fabric}' "
             f"HA_API_BASE='{api}' HA_NODE_TOKEN='{token}' "
-            f"SKIP_INCUS='{skip_incus}' SKIP_EASYTIER='{skip_et}' "
+            f"SKIP_INCUS='{skip_incus}' SKIP_EASYTIER='{skip_et}' SKIP_K3S='{skip_k3s}' "
             f"HA_INSTALL_MODE='{install_mode}' HA_APT_MIRROR='{apt_mirror}' "
             f"HA_VERIFY_EGRESS='{verify_egress}' {et_extra}; "
             f"curl --connect-timeout 5 --max-time 30 -fsSL '{staging}/lab/reinstall.sh' -o /tmp/ha-r.sh && bash /tmp/ha-r.sh"

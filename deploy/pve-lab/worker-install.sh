@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Worker 安装：EasyTier + Incus（在线/离线 auto）+ ha-agent
+# Worker 安装：EasyTier + Incus（在线/离线 auto）+ 离线 k3s + ha-agent
 # PVE 实验室：NODE_NAME / FABRIC_IP / STAGING / HA_ET_SECRET
 # 生产 join：先 ha-setup join 写 /var/lib/ha-setup/join.env，再 curl 本脚本
 set -euo pipefail
@@ -15,11 +15,15 @@ ha_sanitize_env() {
   HA_APT_MIRROR="${HA_APT_MIRROR:-}"
   SKIP_INCUS="${SKIP_INCUS:-0}"
   SKIP_EASYTIER="${SKIP_EASYTIER:-0}"
+  SKIP_K3S="${SKIP_K3S:-0}"
+  HA_UPGRADE="${HA_UPGRADE:-0}"
   HA_VERIFY_EGRESS="${HA_VERIFY_EGRESS:-}"
   HA_INSTALL_MODE="${HA_INSTALL_MODE//$'\r'/}"
   HA_APT_MIRROR="${HA_APT_MIRROR//$'\r'/}"
   SKIP_INCUS="${SKIP_INCUS//$'\r'/}"
   SKIP_EASYTIER="${SKIP_EASYTIER//$'\r'/}"
+  SKIP_K3S="${SKIP_K3S//$'\r'/}"
+  HA_UPGRADE="${HA_UPGRADE//$'\r'/}"
   HA_VERIFY_EGRESS="${HA_VERIFY_EGRESS//$'\r'/}"
 }
 
@@ -28,6 +32,11 @@ _pin_et_peers="${HA_ET_PEERS:-}"
 _pin_et_secret="${HA_ET_SECRET:-}"
 _pin_et_net="${HA_ET_NET:-}"
 _pin_api_base="${HA_API_BASE:-}"
+_pin_skip_incus="${SKIP_INCUS:-}"
+_pin_skip_et="${SKIP_EASYTIER:-}"
+_pin_skip_k3s="${SKIP_K3S:-}"
+_pin_staging="${STAGING:-}"
+_pin_depot="${DEPOT_PUBLIC:-${HA_DEPOT_PUBLIC:-}}"
 
 if [[ -f "${JOIN_ENV}" ]]; then
   # shellcheck disable=SC1091
@@ -38,6 +47,11 @@ if [[ -n "${_pin_et_peers}" ]]; then HA_ET_PEERS="${_pin_et_peers}"; fi
 if [[ -n "${_pin_et_secret}" ]]; then HA_ET_SECRET="${_pin_et_secret}"; fi
 if [[ -n "${_pin_et_net}" ]]; then HA_ET_NET="${_pin_et_net}"; fi
 if [[ -n "${_pin_api_base}" ]]; then HA_API_BASE="${_pin_api_base}"; fi
+if [[ -n "${_pin_skip_incus}" ]]; then SKIP_INCUS="${_pin_skip_incus}"; fi
+if [[ -n "${_pin_skip_et}" ]]; then SKIP_EASYTIER="${_pin_skip_et}"; fi
+if [[ -n "${_pin_skip_k3s}" ]]; then SKIP_K3S="${_pin_skip_k3s}"; fi
+if [[ -n "${_pin_staging}" ]]; then STAGING="${_pin_staging}"; fi
+if [[ -n "${_pin_depot}" ]]; then DEPOT_PUBLIC="${_pin_depot}"; HA_DEPOT_PUBLIC="${_pin_depot}"; fi
 
 STAGING="${STAGING:-${HA_DEPOT_PUBLIC:-${DEPOT_PUBLIC:-}}}"
 NODE_NAME="${NODE_NAME:-${HA_NODE_NAME:-$(hostname)}}"
@@ -49,7 +63,21 @@ HA_CLASS="${HA_CLASS:-desktop}"
 HA_INCUS_IMAGE="${HA_INCUS_IMAGE:-ha-ubuntu-24.04}"
 SKIP_INCUS="${SKIP_INCUS:-0}"
 SKIP_EASYTIER="${SKIP_EASYTIER:-0}"
+SKIP_K3S="${SKIP_K3S:-0}"
+HA_UPGRADE="${HA_UPGRADE:-0}"
 HA_INSTALL_MODE="${HA_INSTALL_MODE:-auto}"
+
+# 已纳管主机一键升级：未显式指定 SKIP_* 时，跳过已在跑的 Incus / EasyTier，只补 k3s
+if [[ "${HA_UPGRADE}" == "1" ]]; then
+  if [[ -z "${_pin_skip_incus}" ]] && { command -v incus >/dev/null 2>&1 || systemctl is-active --quiet incus 2>/dev/null; }; then
+    SKIP_INCUS=1
+    echo "==> upgrade: skip Incus (already present)"
+  fi
+  if [[ -z "${_pin_skip_et}" ]] && systemctl is-active --quiet easytier 2>/dev/null; then
+    SKIP_EASYTIER=1
+    echo "==> upgrade: skip EasyTier (already active)"
+  fi
+fi
 
 [[ -n "${STAGING}" ]] || { echo "error: STAGING or HA_DEPOT_PUBLIC required" >&2; exit 1; }
 [[ -n "${FABRIC_IP}" ]] || { echo "error: FABRIC_IP or HA_FABRIC_IP required" >&2; exit 1; }
@@ -77,7 +105,7 @@ curl --connect-timeout 5 --max-time 30 -fsSL "$(ha_lab_url ubuntu-apt-mirror.sh)
 # shellcheck disable=SC1091
 source "${INSTALL_ROOT}/ubuntu-apt-mirror.sh"
 ha_apt_mirror_apply "${HA_OS_CODENAME}" "${HA_OS_DEB_ARCH}" || true
-echo "==> [${NODE_NAME}] install from $(ha_depot_base) ($(ha_os_suite_label), incus=${HA_INSTALL_MODE:-auto}, apt=${HA_APT_MIRROR:-default})"
+echo "==> [${NODE_NAME}] install from $(ha_depot_base) ($(ha_os_suite_label), incus=${HA_INSTALL_MODE:-auto}, k3s=$([ "${SKIP_K3S}" = "1" ] && echo skip || echo offline), apt=${HA_APT_MIRROR:-default})"
 
 if [[ "${SKIP_EASYTIER}" != "1" && -z "${HA_ET_SECRET:-}" && ! -f "${SETUP_DIR}/easytier.service" ]]; then
   echo "error: set HA_ET_SECRET (lab) or run ha-setup join first (production)" >&2
@@ -123,9 +151,29 @@ if [[ "${SKIP_INCUS}" != "1" ]]; then
   # shellcheck disable=SC1091
   source "${INSTALL_ROOT}/install-incus.sh"
   ha_incus_install_worker "${INSTALL_ROOT}/incus-bundle"
+  # 工作区 Launch 会把该插件推进容器；缺了会 500
+  mkdir -p /var/lib/ha-cluster
+  if [[ ! -s /var/lib/ha-cluster/docker-compose ]]; then
+    echo "==> docker compose plugin from Depot"
+    curl --connect-timeout 10 --max-time 180 -fsSL "$(ha_bin_url docker-compose)" -o /tmp/docker-compose.new
+    install -m 0755 /tmp/docker-compose.new /var/lib/ha-cluster/docker-compose
+    rm -f /tmp/docker-compose.new
+  fi
+fi
+
+if [[ "${SKIP_K3S}" != "1" ]]; then
+  curl --connect-timeout 10 --max-time 60 -fsSL "$(ha_lab_url install-k3s.sh)" -o "${INSTALL_ROOT}/install-k3s.sh"
+  # shellcheck disable=SC1091
+  source "${INSTALL_ROOT}/install-k3s.sh"
+  ha_k3s_install_worker
 fi
 
 hostnamectl set-hostname "${NODE_NAME}" 2>/dev/null || hostname "${NODE_NAME}"
+
+HA_NODE_TAGS="${HA_NODE_TAGS:-}"
+if [[ -f "${SETUP_DIR}/k3s.ready" ]]; then
+  HA_NODE_TAGS="${HA_NODE_TAGS:-k3s,both}"
+fi
 
 if [[ -f "${SETUP_DIR}/ha-agent.service" ]]; then
   install -m 0644 "${SETUP_DIR}/ha-agent.service" /etc/systemd/system/ha-agent.service
@@ -139,6 +187,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=HA_INCUS_IMAGE=${HA_INCUS_IMAGE}
+Environment=HA_NODE_TAGS=${HA_NODE_TAGS}
 ExecStart=/usr/local/bin/ha-agent \\
   -api ${HA_API_BASE} \\
   -name ${NODE_NAME} \\
@@ -149,6 +198,7 @@ ExecStart=/usr/local/bin/ha-agent \\
   -mem-bytes 4294967296 \\
   -disk-bytes 34359738368 \\
   -token ${HA_NODE_TOKEN} \\
+  -tags ${HA_NODE_TAGS} \\
   -listen :9091 \\
   -interval 15s
 Restart=always
@@ -167,11 +217,12 @@ echo "==> verify installation"
 curl --connect-timeout 5 --max-time 30 -fsSL "$(ha_lab_url verify-worker.sh)" -o "${INSTALL_ROOT}/verify-worker.sh"
 chmod 0755 "${INSTALL_ROOT}/verify-worker.sh"
 export SKIP_EASYTIER="${SKIP_EASYTIER:-0}"
+export SKIP_K3S="${SKIP_K3S:-0}"
 export HA_VERIFY_EGRESS="${HA_VERIFY_EGRESS:-0}"
 bash "${INSTALL_ROOT}/verify-worker.sh"
 
 echo "==> heartbeat once"
-/usr/local/bin/ha-agent -api "${HA_API_BASE}" -name "${NODE_NAME}" -fabric-ip "${FABRIC_IP}" -token "${HA_NODE_TOKEN}" -once || true
+/usr/local/bin/ha-agent -api "${HA_API_BASE}" -name "${NODE_NAME}" -fabric-ip "${FABRIC_IP}" -token "${HA_NODE_TOKEN}" -tags "${HA_NODE_TAGS}" -once || true
 
 if [[ "${SKIP_EASYTIER}" != "1" ]]; then
   echo "==> ping hub (best effort)"
