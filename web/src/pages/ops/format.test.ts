@@ -3,13 +3,19 @@ import {
   actionLabel,
   auditActorLabel,
   auditChangeSummary,
+  auditResourceHref,
   auditResourceName,
   auditResourceTitle,
+  canOpenAuditResource,
+  findLastAction,
+  findLastLogin,
   fmtBytes,
   fmtCPU,
   fmtTime,
+  recentLogsForResource,
   resourceLabel,
   resourceTypeLabel,
+  uniqueResourceNames,
 } from "./format";
 
 describe("ops/format", () => {
@@ -49,6 +55,11 @@ describe("audit labels", () => {
     expect(actionLabel("ssh.deny")).toBe("SSH 拒绝");
     expect(actionLabel("ssh.session.open")).toBe("打开网页终端");
     expect(actionLabel("ssh.session.close")).toBe("关闭网页终端");
+    expect(actionLabel("ssh.exec")).toBe("SSH 执行命令");
+    expect(actionLabel("ssh.exec.deny")).toBe("SSH 执行失败");
+    expect(actionLabel("agent_token.issue")).toBe("签发 Agent 令牌");
+    expect(actionLabel("tls.issue")).toBe("签发 TLS 证书");
+    expect(actionLabel("ingress_domain_zone.create")).toBe("添加域名分区");
     expect(actionLabel("workspace.start")).toBe("启动服务器");
     expect(actionLabel("workspace.stop")).toBe("停止服务器");
     expect(actionLabel("node.join_token_issued")).toBe("签发节点加入令牌");
@@ -63,6 +74,7 @@ describe("audit labels", () => {
     expect(resourceTypeLabel("project")).toBe("项目");
     expect(resourceTypeLabel("workspace")).toBe("服务器");
     expect(resourceTypeLabel("membership")).toBe("成员");
+    expect(resourceTypeLabel("ingress_domain_zone")).toBe("域名分区");
     expect(resourceLabel("user", "b1556622-aaaa-bbbb-cccc-dddddddddddd")).toBe("用户:b1556622…");
     expect(resourceLabel("project", "abc")).toBe("项目:abc");
     expect(resourceLabel()).toBe("—");
@@ -117,5 +129,71 @@ describe("audit change summary", () => {
     expect(auditActorLabel("黄华斌", "huanghuabin", "uid")).toBe("黄华斌");
     expect(auditActorLabel("  ", "admin", "uid")).toBe("admin");
     expect(auditActorLabel("", "", "00000000-1111-2222-3333-444444444444")).toBe("00000000…");
+  });
+
+  it("shows ssh.exec command and deny error", () => {
+    expect(auditChangeSummary("ssh.exec", { command: "uname -a" })).toBe("uname -a");
+    expect(auditChangeSummary("ssh.exec.deny", { command: "rm -rf /", error: "permission denied" })).toBe(
+      "rm -rf / · 原因：permission denied",
+    );
+  });
+});
+
+describe("audit resource links", () => {
+  it("builds hrefs for known resource types", () => {
+    expect(auditResourceHref("workspace", "ws-1")).toBe("/workspaces/ws-1");
+    expect(auditResourceHref("project", "p-1")).toBe("/projects/p-1");
+    expect(auditResourceHref("membership", "u-1", { project_id: "p-9" })).toBe("/projects/p-9/members");
+    expect(auditResourceHref("user", "u-1")).toBe("/users?q=u-1");
+    expect(auditResourceHref("ingress", "r-1", { workspace: "ws-2" })).toBe("/workspaces/ws-2/ingress");
+    expect(auditResourceHref("unknown", "x")).toBe("");
+  });
+
+  it("lets platform admin open any mapped resource", () => {
+    expect(
+      canOpenAuditResource("workspace", "ws-1", undefined, { platformRole: "platform_admin" }),
+    ).toBe(true);
+    expect(canOpenAuditResource("user", "u-1", undefined, { platformRole: "platform_admin" })).toBe(true);
+  });
+
+  it("lets members open own project or workspace only", () => {
+    expect(
+      canOpenAuditResource("workspace", "ws-1", undefined, {
+        platformRole: "platform_ops",
+        visibleWorkspaceIds: ["ws-1"],
+      }),
+    ).toBe(true);
+    expect(
+      canOpenAuditResource("workspace", "ws-2", undefined, {
+        platformRole: "platform_ops",
+        visibleWorkspaceIds: ["ws-1"],
+      }),
+    ).toBe(false);
+    expect(
+      canOpenAuditResource("user", "me", undefined, { userId: "me", platformRole: "platform_user" }),
+    ).toBe(false);
+    expect(
+      canOpenAuditResource("user", "other", undefined, { userId: "me", platformRole: "platform_user" }),
+    ).toBe(false);
+  });
+});
+
+describe("audit hover summaries", () => {
+  const logs = [
+    { actor_user_id: "u1", action: "ssh.exec", resource_type: "workspace", resource_id: "ws-1", resource_name: "box-a", created_at: "2026-09-13T01:00:00Z" },
+    { actor_user_id: "u1", action: "user.login", resource_type: "user", resource_id: "u1", created_at: "2026-09-13T00:50:00Z" },
+    { actor_user_id: "u1", action: "ssh.exec.deny", resource_type: "workspace", resource_id: "ws-1", resource_name: "box-a", created_at: "2026-09-13T00:40:00Z" },
+    { actor_user_id: "u2", action: "user.login", resource_type: "user", resource_id: "u2", created_at: "2026-09-12T10:00:00Z" },
+  ];
+
+  it("finds last login and last action for a user", () => {
+    expect(findLastLogin(logs, "u1")).toBe("2026-09-13T00:50:00Z");
+    expect(findLastAction(logs, "u1")?.action).toBe("ssh.exec");
+    expect(findLastLogin(logs, "missing")).toBe("");
+  });
+
+  it("lists recent resource events and unique names", () => {
+    expect(recentLogsForResource(logs, "ws-1").map((l) => l.action)).toEqual(["ssh.exec", "ssh.exec.deny"]);
+    expect(uniqueResourceNames(logs, "u1", "workspace")).toEqual(["box-a"]);
   });
 });

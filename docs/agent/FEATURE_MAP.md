@@ -304,7 +304,7 @@
 ### 子功能
 
 - 查看全部平台账号与所属项目
-- 搜索姓名 / 用户名 / 邮箱 / ID
+- 搜索姓名 / 用户名 / 邮箱 / ID（`/users?q=` 预填搜索，供审计页跳转）
 - 批量创建用户（可选同时加入项目；格式：用户名 邮箱 [姓名] [密码]）
 - 配置账号：姓名、平台角色、停用 / 恢复、加入项目
 - 重置密码（生成一次性新密码，旧会话立即失效）
@@ -433,7 +433,7 @@
 
 ### 子功能
 
-刷日志、平台对账 reconcile、看行（操作人默认显示姓名、悬停看用户名；资源列显示项目/服务器/用户名称，悬停看 ID）。
+刷日志、平台对账 reconcile、看行。操作人悬停看最近登录、最近操作、加入的项目与名下服务器；操作对象有权限时悬停看状态/规格/最近变动，点击名称进入详情。
 
 ### 快捷键
 
@@ -446,6 +446,9 @@
 | 无权限页 | `audit-forbidden` |
 | 刷新 / 对账 | `audit-refresh` / `audit-reconcile` |
 | 表 / 行 / 操作人 | `audit-table` / `audit-row` / `audit-actor` |
+| 操作人悬停卡 | `audit-actor-hover` |
+| 可点击的操作对象 | `audit-target-link` |
+| 操作对象悬停卡 | `audit-target-hover` |
 
 角色门：`platform_admin` / `platform_ops`。reconcile 仅 `platform_admin`。
 

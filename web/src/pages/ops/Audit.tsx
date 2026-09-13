@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { CanAccess, useCustomMutation, useGetIdentity, useList } from "@refinedev/core";
 import { Activity, Clock, Globe, Hash, Layers, RefreshCw, Shield, User } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,10 +10,22 @@ import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
-import { ApiError, friendlyError } from "@/providers";
+import { canManageUsers } from "@/lib/permissions";
+import { ApiError, friendlyError, type AuthUser } from "@/providers";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
-import { actionLabel, auditActorLabel, auditChangeSummary, auditResourceName, fmtTime, resourceTypeLabel } from "./format";
+import { type Workspace } from "@/pages/workspaces/types";
+import {
+  actionLabel,
+  auditActorLabel,
+  auditChangeSummary,
+  auditResourceHref,
+  auditResourceName,
+  canOpenAuditResource,
+  fmtTime,
+  resourceTypeLabel,
+} from "./format";
+import { actorHoverUser, AuditActorHover, AuditTargetHover, type AuditHoverProject, type AuditHoverUser } from "./audit-hover";
 import { useClientPager } from "@/lib/use-client-pager";
 import { cn } from "@/lib/utils";
 
@@ -29,9 +43,12 @@ type AuditLog = {
   created_at: string;
 };
 
-type Identity = { platform_role?: string };
-
 type ReconcileResult = { released: number; stale_nodes: number };
+
+type VisibleSets = {
+  workspaces: Set<string>;
+  projects: Set<string>;
+};
 
 function Forbidden() {
   return (
@@ -79,33 +96,109 @@ function actionVariant(action: string): "default" | "outline" | "ok" | "warn" | 
   return "outline";
 }
 
-function AuditTargetCell({ log }: { log: AuditLog }) {
+function AuditTargetCell({
+  log,
+  me,
+  visible,
+  logs,
+  workspaces,
+  projects,
+}: {
+  log: AuditLog;
+  me?: AuthUser;
+  visible: VisibleSets;
+  logs: AuditLog[];
+  workspaces: Workspace[];
+  projects: AuditHoverProject[];
+}) {
   const change = auditChangeSummary(log.action, log.meta);
   const name = auditResourceName(log.resource_type, log.resource_id, log.meta, log.resource_name);
-  return (
-    <Hint label={log.resource_id} className="font-mono">
-      <div className="flex flex-col gap-0.5 min-w-0 cursor-help">
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap min-w-0">
-          <span className="text-muted-foreground shrink-0">{resourceTypeLabel(log.resource_type)}</span>
-          <span className="font-medium text-foreground truncate">{name}</span>
+  const href = auditResourceHref(log.resource_type, log.resource_id, log.meta);
+  const canOpen = canOpenAuditResource(log.resource_type, log.resource_id, log.meta, {
+    userId: me?.id,
+    platformRole: me?.platform_role,
+    visibleWorkspaceIds: visible.workspaces,
+    visibleProjectIds: visible.projects,
+  });
+  const to = canOpen && href ? href : "";
+  const workspace = workspaces.find((w) => w.id === log.resource_id);
+  const projectId = log.resource_type === "project" ? log.resource_id : workspace?.project_id;
+  const project = projects.find((p) => p.id === projectId);
+
+  const body = (
+    <div className={cn("flex flex-col gap-0.5 min-w-0", to ? "cursor-pointer" : "cursor-help")}>
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap min-w-0">
+        <span className="text-muted-foreground shrink-0">{resourceTypeLabel(log.resource_type)}</span>
+        <span
+          className={cn(
+            "font-medium truncate",
+            to ? "text-primary hover:underline underline-offset-2" : "text-foreground",
+          )}
+        >
+          {name}
         </span>
-        {change ? (
-          <span className="text-foreground break-words min-w-0 leading-snug">{change}</span>
-        ) : null}
-      </div>
-    </Hint>
+      </span>
+      {change ? (
+        <span className="text-foreground break-words min-w-0 leading-snug">{change}</span>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <AuditTargetHover
+      type={log.resource_type}
+      id={log.resource_id}
+      name={name}
+      canOpen={canOpen}
+      logs={logs}
+      workspace={workspace}
+      project={project}
+    >
+      {to ? (
+        <Link to={to} data-testid="audit-target-link" className="min-w-0 max-w-full block">
+          {body}
+        </Link>
+      ) : (
+        <div className="min-w-0">{body}</div>
+      )}
+    </AuditTargetHover>
   );
 }
 
 function AuditList() {
-  const { data: me } = useGetIdentity<Identity>();
+  const { data: me } = useGetIdentity<AuthUser>();
   const canReconcile = me?.platform_role === "platform_admin";
+  const canListUsers = canManageUsers(me?.platform_role);
   const { data, isLoading, error, refetch } = useList<AuditLog>({
     resource: "audit-logs",
     pagination: { mode: "off" },
     errorNotification: false,
     queryOptions: { retry: false },
   });
+  const { data: workspaceData } = useList<Workspace>({
+    resource: "workspaces",
+    pagination: { mode: "off" },
+  });
+  const { data: projectData } = useList<AuditHoverProject>({
+    resource: "projects",
+    pagination: { mode: "off" },
+  });
+  const { data: userData } = useList<AuditHoverUser>({
+    resource: "users",
+    pagination: { mode: "off" },
+    errorNotification: false,
+    queryOptions: { enabled: canListUsers, retry: false },
+  });
+  const workspaces = workspaceData?.data ?? [];
+  const projects = projectData?.data ?? [];
+  const users = userData?.data ?? [];
+  const visible = useMemo<VisibleSets>(
+    () => ({
+      workspaces: new Set(workspaces.map((w) => w.id)),
+      projects: new Set(projects.map((p) => p.id)),
+    }),
+    [workspaces, projects],
+  );
   const { mutate: reconcile, isLoading: reconciling } = useCustomMutation<ReconcileResult>();
 
   const forbidden = (error as ApiError | undefined)?.status === 403;
@@ -266,7 +359,14 @@ function AuditList() {
                     {fmtTime(l.created_at)}
                   </TableCell>
                   <TableCell className="py-2.5 whitespace-nowrap">
-                    <Hint label={l.actor_username?.trim() || l.actor_user_id} className="font-mono">
+                    <AuditActorHover
+                      userId={l.actor_user_id}
+                      displayName={l.actor_display_name}
+                      username={l.actor_username}
+                      logs={logs}
+                      user={actorHoverUser(users, l.actor_user_id)}
+                      workspaces={workspaces}
+                    >
                       <span
                         data-testid="audit-actor"
                         className="cursor-help inline-flex items-center gap-1.5 font-medium text-foreground"
@@ -274,7 +374,7 @@ function AuditList() {
                         <User className="size-3 opacity-60 shrink-0" />
                         {auditActorLabel(l.actor_display_name, l.actor_username, l.actor_user_id)}
                       </span>
-                    </Hint>
+                    </AuditActorHover>
                   </TableCell>
                   <TableCell className="py-2.5 whitespace-nowrap">
                     <Hint label={l.action} className="font-mono">
@@ -284,7 +384,14 @@ function AuditList() {
                     </Hint>
                   </TableCell>
                   <TableCell className="py-2.5 text-xs min-w-[220px] max-w-[420px]">
-                    <AuditTargetCell log={l} />
+                    <AuditTargetCell
+                      log={l}
+                      me={me}
+                      visible={visible}
+                      logs={logs}
+                      workspaces={workspaces}
+                      projects={projects}
+                    />
                   </TableCell>
                   <TableCell className="mono font-mono text-xs py-2.5 text-right pr-4 whitespace-nowrap text-foreground">
                     {l.ip?.trim() ? l.ip : "—"}

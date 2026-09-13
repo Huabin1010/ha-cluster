@@ -11,6 +11,7 @@ export type Workspace = {
   node_id?: string;
   node_name?: string;
   created_at?: string;
+  last_activity_at?: string;
   cpu_milli?: number;
   mem_bytes?: number;
   disk_bytes?: number;

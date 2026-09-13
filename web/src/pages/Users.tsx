@@ -1,5 +1,5 @@
-﻿import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+﻿import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useGetIdentity, useList } from "@refinedev/core";
 import {
   Check,
@@ -170,8 +170,13 @@ function platformRoleBadge(role?: string) {
 
 export function UsersPage() {
   const { data: me } = useGetIdentity<AuthUser>();
+  const [searchParams] = useSearchParams();
   const allowed = canManageUsers(me?.platform_role);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+
+  useEffect(() => {
+    setQuery(searchParams.get("q") ?? "");
+  }, [searchParams]);
   const [batchOpen, setBatchOpen] = useState(false);
   const [actionUser, setActionUser] = useState<PlatformUser | null>(null);
   const [action, setAction] = useState<ActionKind | null>(null);
