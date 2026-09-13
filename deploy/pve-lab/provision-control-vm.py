@@ -86,7 +86,7 @@ def provision(dry_run: bool) -> None:
           sleep 2
           qm destroy "$VMID" --purge
         fi
-        qm create "$VMID" --name "$NAME" --memory {memory} --cores {cores} --net0 virtio,bridge={BRIDGE}
+        qm create "$VMID" --name "$NAME" --memory {memory} --cores {cores} --cpu host --net0 virtio,bridge={BRIDGE}
         qm importdisk "$VMID" "$IMG" {STORAGE}
         qm set "$VMID" --scsihw virtio-scsi-pci --scsi0 {STORAGE}:${{VMID}}/vm-${{VMID}}-disk-0.raw
         qm set "$VMID" --ide2 {STORAGE}:cloudinit

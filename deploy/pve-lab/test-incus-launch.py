@@ -20,6 +20,7 @@ def test_vm(env: dict, vmid: int, name: str, codename: str) -> tuple[str, float]
         f"incus launch ha-ubuntu-24.04 {cname} --ephemeral; "
         f"incus exec {cname} -- hostname; "
         f"incus exec {cname} -- head -2 /etc/os-release; "
+        f"incus exec {cname} -- grep -qw avx2 /proc/cpuinfo; "
         f"incus delete {cname} --force; "
         f"echo launch_ok"
     )

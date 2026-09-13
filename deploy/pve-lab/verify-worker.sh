@@ -6,6 +6,7 @@ NODE_NAME="${NODE_NAME:-$(hostname)}"
 HA_INCUS_IMAGE="${HA_INCUS_IMAGE:-ha-ubuntu-24.04}"
 SKIP_INCUS="${SKIP_INCUS:-0}"
 SKIP_EASYTIER="${SKIP_EASYTIER:-0}"
+SKIP_K3S="${SKIP_K3S:-0}"
 FAIL=0
 
 check() {
@@ -21,6 +22,7 @@ check() {
 
 echo "==> verify worker ${NODE_NAME}"
 
+check "cpu avx2 (need cpu=host)" grep -qw avx2 /proc/cpuinfo
 check "ha-agent active" systemctl is-active --quiet ha-agent
 check "ha-agent binary" test -x /usr/local/bin/ha-agent
 if grep -qF docker_registries <<< "$(strings /usr/local/bin/ha-agent 2>/dev/null || true)"; then
@@ -40,6 +42,7 @@ if [[ "${SKIP_INCUS}" != "1" ]]; then
   check "incus daemon" sh -c "incus info >/dev/null 2>&1"
   check "incus image ${HA_INCUS_IMAGE}" sh -c "incus image list -c l --format csv | grep -Fx '${HA_INCUS_IMAGE}'"
   check "workspace image baked docker.io" test -f /var/lib/ha-cluster/workspace-image-docker
+  check "docker compose plugin" test -s /var/lib/ha-cluster/docker-compose
   check "incus network fixup unit" systemctl is-enabled --quiet ha-incus-network.service
 
   if [[ "${HA_VERIFY_EGRESS:-1}" == "0" ]]; then
@@ -67,6 +70,22 @@ if [[ "${SKIP_INCUS}" != "1" ]]; then
     echo "  FAIL incus ephemeral launch" >&2
     FAIL=1
   fi
+  fi
+fi
+
+if [[ "${SKIP_K3S}" != "1" ]]; then
+  check "k3s binary" test -x /usr/local/bin/k3s
+  check "k3s ready marker" test -f /var/lib/ha-setup/k3s.ready
+  if [[ -f /etc/systemd/system/k3s-agent.service ]]; then
+    check "k3s-agent active" systemctl is-active --quiet k3s-agent
+  else
+    check "k3s server active" systemctl is-active --quiet k3s
+    if /usr/local/bin/k3s kubectl get nodes --no-headers >/dev/null 2>&1; then
+      echo "  OK   kubectl get nodes"
+    else
+      echo "  FAIL kubectl get nodes" >&2
+      FAIL=1
+    fi
   fi
 fi
 

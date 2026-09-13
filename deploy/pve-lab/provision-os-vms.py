@@ -104,7 +104,7 @@ def provision_one(spec: dict, dry_run: bool) -> None:
           qm destroy "$VMID" --purge
         fi
         echo "==> create VM $VMID ($NAME / $CODENAME)"
-        qm create "$VMID" --name "$NAME" --memory {MEMORY} --cores {CORES} --net0 virtio,bridge={BRIDGE}
+        qm create "$VMID" --name "$NAME" --memory {MEMORY} --cores {CORES} --cpu host --net0 virtio,bridge={BRIDGE}
         qm importdisk "$VMID" "$IMG" {STORAGE}
         qm set "$VMID" --scsihw virtio-scsi-pci --scsi0 {STORAGE}:vm-${{VMID}}-disk-0
         qm set "$VMID" --ide2 {STORAGE}:cloudinit
