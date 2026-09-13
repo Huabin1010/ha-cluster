@@ -1,7 +1,60 @@
 # ha-cluster 生产控制面（42 / cl.qzsyzn.com）
 # 部署目录：/www/wwwroot/cl.qzsyzn.com/docker
-# API 仅本机绑定，由宝塔反代公网 443
+# API 仅本机绑定，由宝塔反代公网 443（18080 edge → 双活 ha-api-a/b）
 name: ha-cluster-prod
+
+x-ha-api: &ha-api
+  image: ${HA_API_IMAGE:-ghcr.io/huabin1010/ha-cluster/ha-api:latest}
+  restart: unless-stopped
+  env_file:
+    - .env
+  environment:
+    HA_API_ADDR: ":8080"
+    HA_JWT_SECRET: ${HA_JWT_SECRET}
+    HA_ADMIN_PASSWORD: ${HA_ADMIN_PASSWORD:-123456qq}
+    HA_SEED: ${HA_SEED:-1}
+    DATABASE_URL: ${DATABASE_URL}
+    HA_NODE_TOKEN: ${HA_NODE_TOKEN}
+    HA_INTERNAL_TOKEN: ${HA_INTERNAL_TOKEN}
+    HA_ET_SECRET: ${HA_ET_SECRET}
+    HA_BASTION_HOST: ${HA_BASTION_HOST:-ssh.cl.qzsyzn.com}
+    HA_BASTION_PORT: ${HA_BASTION_PORT:-8099}
+    HA_BASTION_FABRIC_HOST: ${HA_BASTION_FABRIC_HOST:-10.129.129.253}
+    HA_RUNTIME: ${HA_RUNTIME:-incus}
+    HA_INGRESS_DIR: /var/lib/ha-ingress
+    HA_INGRESS_RELOAD: "true"
+    HA_INGRESS_PUBLIC_HOST: apps.cl.qzsyzn.com
+    HA_INGRESS_PUBLIC_IP: ${HA_INGRESS_PUBLIC_IP:-42.193.236.123}
+    HA_PUBLIC_API: ${HA_PUBLIC_API:-https://cl.qzsyzn.com/api}
+    HA_PUBLIC_CONSOLE: ${HA_PUBLIC_CONSOLE:-https://cl.qzsyzn.com}
+    HA_WEBSHELL_KEY_FILE: /etc/ha-cluster/bastion_ws_ed25519
+    HA_TLS_DIR: /var/lib/ha-cluster/tls
+    HA_ACME_EMAIL: ${HA_ACME_EMAIL:-admin@cl.qzsyzn.com}
+    HA_ACME_ROOT_DOMAIN: ${HA_ACME_ROOT_DOMAIN:-qzsyzn.com}
+    HA_DNSPOD_ID: ${HA_DNSPOD_ID:-}
+    HA_DNSPOD_TOKEN: ${HA_DNSPOD_TOKEN:-}
+    HA_BT_PANEL: ${HA_BT_PANEL:-}
+    HA_BT_KEY: ${HA_BT_KEY:-}
+    HA_BT_SSL_SITE: ${HA_BT_SSL_SITE:-apps.cl.qzsyzn.com}
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - ha-ingress-conf:/var/lib/ha-ingress
+    - ha-tls-data:/var/lib/ha-cluster/tls
+    - /etc/ha-cluster/bastion_ws_ed25519:/etc/ha-cluster/bastion_ws_ed25519:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+    interval: 5s
+    timeout: 4s
+    retries: 12
+    start_period: 20s
+  deploy:
+    resources:
+      limits:
+        memory: 512M
 
 services:
   postgres:
@@ -14,7 +67,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-ha}
     volumes:
       - ha-pg-data:/var/lib/postgresql/data
-    # 不对公网；仅 compose 网络内可达
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -25,62 +77,17 @@ services:
         limits:
           memory: 512M
 
-  ha-api:
-    image: ${HA_API_IMAGE:-ghcr.io/huabin1010/ha-cluster/ha-api:latest}
-    container_name: ha-api
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      HA_API_ADDR: ":8080"
-      HA_JWT_SECRET: ${HA_JWT_SECRET}
-      HA_ADMIN_PASSWORD: ${HA_ADMIN_PASSWORD:-123456qq}
-      HA_SEED: ${HA_SEED:-1}
-      DATABASE_URL: ${DATABASE_URL}
-      HA_NODE_TOKEN: ${HA_NODE_TOKEN}
-      HA_INTERNAL_TOKEN: ${HA_INTERNAL_TOKEN}
-      HA_ET_SECRET: ${HA_ET_SECRET}
-      HA_BASTION_HOST: ${HA_BASTION_HOST:-ssh.cl.qzsyzn.com}
-      HA_BASTION_PORT: ${HA_BASTION_PORT:-8099}
-      HA_BASTION_FABRIC_HOST: ${HA_BASTION_FABRIC_HOST:-10.129.129.253}
-      HA_RUNTIME: ${HA_RUNTIME:-incus}
-      HA_INGRESS_DIR: /var/lib/ha-ingress
-      HA_INGRESS_RELOAD: "true"
-      HA_INGRESS_PUBLIC_HOST: apps.cl.qzsyzn.com
-      HA_INGRESS_PUBLIC_IP: ${HA_INGRESS_PUBLIC_IP:-42.193.236.123}
-      HA_PUBLIC_API: ${HA_PUBLIC_API:-https://cl.qzsyzn.com/api}
-      HA_PUBLIC_CONSOLE: ${HA_PUBLIC_CONSOLE:-https://cl.qzsyzn.com}
-      HA_WEBSHELL_KEY_FILE: /etc/ha-cluster/bastion_ws_ed25519
-      HA_TLS_DIR: /var/lib/ha-cluster/tls
-      HA_ACME_EMAIL: ${HA_ACME_EMAIL:-admin@cl.qzsyzn.com}
-      HA_ACME_ROOT_DOMAIN: ${HA_ACME_ROOT_DOMAIN:-qzsyzn.com}
-      HA_DNSPOD_ID: ${HA_DNSPOD_ID:-}
-      HA_DNSPOD_TOKEN: ${HA_DNSPOD_TOKEN:-}
-      HA_BT_PANEL: ${HA_BT_PANEL:-}
-      HA_BT_KEY: ${HA_BT_KEY:-}
-      HA_BT_SSL_SITE: ${HA_BT_SSL_SITE:-apps.cl.qzsyzn.com}
+  ha-api-a:
+    <<: *ha-api
+    container_name: ha-api-a
     ports:
-      # 本机 Bastion / 运维直连 API（不对公网）
       - "127.0.0.1:${HA_HOST_PORT:-18082}:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ha-ingress-conf:/var/lib/ha-ingress
-      - ha-tls-data:/var/lib/ha-cluster/tls
-      - /etc/ha-cluster/bastion_ws_ed25519:/etc/ha-cluster/bastion_ws_ed25519:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 768M
+
+  ha-api-b:
+    <<: *ha-api
+    container_name: ha-api-b
+    ports:
+      - "127.0.0.1:${HA_HOST_PORT_B:-18084}:8080"
 
   # 公网唯一反代目标：宝塔 443 → 127.0.0.1:18080，按 Host 分流
   edge-nginx:
@@ -104,16 +111,17 @@ services:
       - ha-ingress-conf:/etc/nginx/ha-ingress:ro
     ports:
       - "127.0.0.1:${HA_EDGE_PORT:-18080}:80"
-      # EasyTier：虚网用户直打 .253，不走 42 公网网卡
       - "10.129.129.253:${HA_EDGE_PORT:-18080}:80"
     depends_on:
-      - ha-api
+      ha-api-a:
+        condition: service_started
+      ha-api-b:
+        condition: service_started
     deploy:
       resources:
         limits:
           memory: 128M
 
-  # 虚网 DNS：已入 EasyTier 的客户端把 *.cl.qzsyzn.com 解析到 .253
   fabric-dns:
     image: coredns/coredns:1.11.3
     container_name: ha-fabric-dns

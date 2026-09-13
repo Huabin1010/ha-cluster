@@ -16,6 +16,9 @@ rsync -az --exclude '.env' --exclude '_bt_print_token.py' \
   "${LOCAL_DIR}/install-easytier-peer.sh" \
   "${LOCAL_DIR}/prep-host.sh" \
   "${LOCAL_DIR}/README.md" \
+  "${LOCAL_DIR}/rolling-up.sh" \
+  "${LOCAL_DIR}/rolling_check.py" \
+  "${LOCAL_DIR}/rolling_probe.py" \
   "${HOST}:${REMOTE_DIR}/"
 rsync -az "${LOCAL_DIR}/edge/" "${HOST}:${REMOTE_DIR}/edge/"
 
@@ -28,6 +31,5 @@ else
   exit 1
 fi
 
-ssh "${HOST}" "chmod 600 '${REMOTE_DIR}/.env'; cd '${REMOTE_DIR}' && docker compose pull && docker compose up -d"
-ssh "${HOST}" "sleep 5; curl -fsS http://127.0.0.1:18082/healthz || curl -fsS http://127.0.0.1:18082/api/healthz; echo"
+ssh "${HOST}" "chmod 600 '${REMOTE_DIR}/.env'; sed -i 's/\r$//' '${REMOTE_DIR}/rolling-up.sh' '${REMOTE_DIR}/rolling_check.py'; chmod +x '${REMOTE_DIR}/rolling-up.sh'; cd '${REMOTE_DIR}' && docker compose pull && bash ./rolling-up.sh"
 echo "==> deploy done"

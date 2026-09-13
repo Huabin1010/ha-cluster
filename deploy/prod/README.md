@@ -9,7 +9,7 @@
 | PVE `192.168.1.8` | Worker 算力 | `.205–.252` 或 `.10+` |
 
 部署目录：`/www/wwwroot/cl.qzsyzn.com/docker`  
-控制台：`https://cl.qzsyzn.com`（宝塔反代 → `127.0.0.1:18082`）  
+控制台：`https://cl.qzsyzn.com`（宝塔反代 → `127.0.0.1:18080` edge → 双活 `ha-api-a`/`ha-api-b`）  
 管理员：`admin` / `123456qq`
 
 ## 阶段 0 — 主机准备
@@ -29,7 +29,7 @@ ssh root@42.193.236.123 'bash /tmp/prep-host.sh'
 bash deploy/prod/deploy-remote.sh
 ```
 
-3. 验收：`curl -fsS http://127.0.0.1:18082/healthz`（在 42 上）
+3. 验收：`curl -fsS http://127.0.0.1:18080/healthz`；槽位 `18082` / `18084`。更新用 `rolling-up.sh`，不重启 Postgres。
 
 ## 阶段 2 — EasyTier peer
 
