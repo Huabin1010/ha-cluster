@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"os"
 	"path"
@@ -101,11 +100,7 @@ func clientIPMiddleware(next http.Handler) http.Handler {
 }
 
 func clientIP(r *http.Request) string {
-	addr := strings.TrimSpace(r.RemoteAddr)
-	if host, _, err := net.SplitHostPort(addr); err == nil {
-		return host
-	}
-	return addr
+	return requestmeta.FromRequest(r)
 }
 
 func registerAPIRoutes(r chi.Router, s *Server) {

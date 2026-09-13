@@ -160,6 +160,65 @@ func TestAuditActorUsernameAndIP(t *testing.T) {
 	}
 }
 
+func TestAuditClientIPFromForwardedFor(t *testing.T) {
+	h := testServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(
+		`{"username":"xffuser","email":"xff@x.com","password":"password1"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "172.28.90.1:40000"
+	req.Header.Set("X-Real-IP", "172.28.90.1")
+	req.Header.Set("X-Forwarded-For", "203.0.113.77, 172.28.90.1")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("register %d %s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(
+		`{"username":"xffuser","password":"password1"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "172.28.90.1:40001"
+	req.Header.Set("X-Real-IP", "172.28.90.1")
+	req.Header.Set("X-Forwarded-For", "203.0.113.77, 172.28.90.1")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("login %d %s", rr.Code, rr.Body.String())
+	}
+	var tok struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &tok); err != nil || tok.Token == "" {
+		t.Fatal(rr.Body.String())
+	}
+
+	rr = doJSON(t, h, http.MethodGet, "/audit-logs", tok.Token, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatal(rr.Body.String())
+	}
+	var out struct {
+		Data []models.AuditLog `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	var login *models.AuditLog
+	for i := range out.Data {
+		if out.Data[i].Action == "user.login" {
+			login = &out.Data[i]
+			break
+		}
+	}
+	if login == nil {
+		t.Fatal("no user.login")
+	}
+	if login.IP != "203.0.113.77" {
+		t.Fatalf("ip=%q want 203.0.113.77", login.IP)
+	}
+}
+
 func TestWorkspaceAuditHTTP(t *testing.T) {
 	h := testServer(t)
 	tok := registerLogin(t, h, "wsaudit", "wsaudit@x.com")

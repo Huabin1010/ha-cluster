@@ -259,17 +259,17 @@ func (s *Server) internalSSHTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, n, err := s.App.SSHTarget(r.Context(), *u, id)
 	if err != nil {
-	_ = s.App.Store.AddAudit(r.Context(), models.AuditLog{
-		ActorUserID: u.ID, Action: "ssh.deny", ResourceType: "workspace",
-		ResourceID: id.String(), IP: r.RemoteAddr,
-		Meta: map[string]any{"reason": err.Error(), "via": "bastion", "username": u.Username, "display_name": u.DisplayName},
-	})
+		_ = s.App.Store.AddAudit(r.Context(), models.AuditLog{
+			ActorUserID: u.ID, Action: "ssh.deny", ResourceType: "workspace",
+			ResourceID: id.String(),
+			Meta: map[string]any{"reason": err.Error(), "via": "bastion", "username": u.Username, "display_name": u.DisplayName},
+		})
 		writeErr(w, http.StatusForbidden, err)
 		return
 	}
 	_ = s.App.Store.AddAudit(r.Context(), models.AuditLog{
 		ActorUserID: u.ID, Action: "ssh.allow", ResourceType: "workspace",
-		ResourceID: ws.ID.String(), IP: r.RemoteAddr,
+		ResourceID: ws.ID.String(),
 		Meta: map[string]any{"node": n.Name, "via": "bastion", "username": u.Username, "workspace_name": ws.Name},
 	})
 	var mem *models.Membership

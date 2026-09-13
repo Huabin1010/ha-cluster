@@ -1,11 +1,12 @@
 package api
 
 import (
-	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"ha-cluster/internal/requestmeta"
 )
 
 type loginLimiter struct {
@@ -81,18 +82,5 @@ func (l *loginLimiter) RecordSuccess(ip, username string) {
 }
 
 func clientIPFromRequest(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return requestmeta.FromRequest(r)
 }

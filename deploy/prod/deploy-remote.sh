@@ -17,6 +17,7 @@ rsync -az --exclude '.env' --exclude '_bt_print_token.py' \
   "${LOCAL_DIR}/prep-host.sh" \
   "${LOCAL_DIR}/README.md" \
   "${HOST}:${REMOTE_DIR}/"
+rsync -az "${LOCAL_DIR}/edge/" "${HOST}:${REMOTE_DIR}/edge/"
 
 if [[ -f "${LOCAL_DIR}/.env" ]]; then
   scp "${LOCAL_DIR}/.env" "${HOST}:${REMOTE_DIR}/.env"
