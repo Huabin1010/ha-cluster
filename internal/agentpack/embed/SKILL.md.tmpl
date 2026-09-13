@@ -68,18 +68,21 @@ curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me
 
 按用户目标选一条，细节见 [workflows.md](workflows.md)，字段见 [api-reference.md](api-reference.md)。
 
+**默认开 Docker + SSH 机器，用 Compose 部署。** 创建时不写 `runtime` 或写 `runtime=container`。用户没提 Kubernetes / k3s / kubectl / Namespace 时，不要改开 k8s。
+
 1. **建项目** → 转让 owner → 拉成员 → 授 SSH
-2. **申请机器**（developer）→ owner/admin 审批 → 等到 `running`
-3. **进机器（Docker + SSH）**：只用 `POST /workspaces/{id}/exec`（HTTPS + Bearer）。不要本机 `ssh` / ssh-config / 8099。控制台网页终端走 JWT+WS。
-4. **Kubernetes 工作区**：创建时 `runtime=k8s` → 等 `running` → `POST /workspaces/{id}/k8s/apply` `{yaml}`；下载 `GET /workspaces/{id}/kubeconfig`；看资源 `GET /workspaces/{id}/k8s/resources`。k8s 工作区的 exec 会 400，不要再试 SSH。
+2. **申请机器**（developer）→ owner/admin 审批 → 等到 `running`（默认 `container`）
+3. **进机器部署（默认）**：`POST /workspaces/{id}/exec` 在机子里 `docker compose up`（HTTPS + Bearer）。不要本机 `ssh` / ssh-config / 8099。控制台网页终端走 JWT+WS。
+4. **仅当用户要 k8s**：创建时才加 `runtime=k8s` → 等 `running` → `POST /workspaces/{id}/k8s/apply` `{yaml}`；下载 `GET /workspaces/{id}/kubeconfig`；看资源 `GET /workspaces/{id}/k8s/resources`。k8s 工作区的 exec 会 400，不要再试 SSH。
 5. **暴露 HTTP**：工作区内自己起服务 → `POST /workspaces/{id}/ingress/shared`（公共域已带平台通配符 HTTPS）
-6. **推镜像 / 部署**：优先推到 **CNB** `docker.cnb.cool/<组织>/<仓库>:<标签>`，不要默认 Docker Hub。`GET /registries/preferred` 可核对推荐仓库。
+6. **推镜像 / 部署**：优先推到 **CNB** `docker.cnb.cool/<组织>/<仓库>:<标签>`，不要默认 Docker Hub。`GET /registries/preferred` 可核对推荐仓库。默认在 **Compose 机器**里 `docker compose`；用户点名 k8s 再 apply。
 7. **邀请同事**：`POST /projects/{id}/invitations`（按邮箱；accept 必须邮箱匹配）
 8. **HTTPS 证书**（仅 `platform_admin`）：`GET /admin/tls-certs` 看状态；`POST /admin/tls-certs/{id}/issue` 立即签发/续期。到期前 30 天会自动续。
 
 ## 硬约束
 
 - 不要编造项目/机器 ID，先 list 再操作。
+- **默认 `runtime=container`（Docker Compose）**；只有用户明确要 k8s 才设 `runtime=k8s`。
 - 不要对非 `running` 的机器 claim 域名或假设 HTTP 执行可用。
 - 第二端口必须 `confirm_second_port: true`，否则 409。
 - 磁盘不能缩。`arch` 只接受 `amd64` / `arm64` / `any`（`x86_64` 会归一成 `amd64`）。

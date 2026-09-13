@@ -184,7 +184,7 @@
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
 - 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行
 - 机器详情：网页终端、HTTP 执行 curl、Ingress（含推荐 CNB 镜像仓库）、审计历史
-- **Kubernetes**：开通时选运行环境；详情页粘贴 YAML apply、下载 kubeconfig、看资源列表（viewer 只读）
+- **运行环境**：开通默认 **Docker + SSH（Compose 部署）**；用户需要时才选 Kubernetes。详情页粘贴 YAML apply、下载 kubeconfig、看资源列表（viewer 只读）
 
 ### 快捷键
 

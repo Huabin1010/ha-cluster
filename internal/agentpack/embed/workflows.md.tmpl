@@ -2,7 +2,9 @@
 
 基址 `{{API_BASE}}`，头 `Authorization: Bearer {{TOKEN}}`。**只用 curl**，禁止 Cursor fetch / WebFetch。
 
-## 1. 开通一台 2c2g
+## 1. 开通一台 2c2g（默认 Compose）
+
+**默认这条。** 不写 `runtime` 或写 `container`：Docker + SSH，机子里用 `docker compose` 部署。用户没提 k8s / kubectl / Namespace 时不要走下面的 Kubernetes。
 
 ```
 GET /projects                          → 记下 project_id（或先 POST /projects）
@@ -11,7 +13,7 @@ POST /projects/{pid}/workspaces
   {"name":"dev-1","plan":"2c2g","arch":"amd64","visibility":"shared","runtime":"container"}
 ```
 
-开通 Kubernetes（需节点带 `k3s` / `k8s` / `both` 标签，否则 `409 INSUFFICIENT_CAPACITY`）：
+仅当用户明确要 Kubernetes（需节点带 `k3s` / `k8s` / `both` 标签，否则 `409 INSUFFICIENT_CAPACITY`）：
 
 ```
 POST /projects/{pid}/workspaces
@@ -114,9 +116,9 @@ POST /workspaces/{id}/ingress/shared
 
 同一主机第二端口必须确认。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。特殊自有域走 `POST /workspaces/{id}/ingress`，要审批。
 
-## 6. 推镜像 / 部署（优先 CNB）
+## 6. 推镜像 / 部署（默认 Compose + CNB）
 
-用户要推送镜像或部署服务时，**优先推荐 CNB**，不要默认 Docker Hub。
+用户要推送镜像或部署服务时：先开/用 **container 机器**，`POST /workspaces/{id}/exec` 里 `docker compose up`。**只有用户点名 k8s** 才 `runtime=k8s` + `k8s/apply`。镜像**优先 CNB**，不要默认 Docker Hub。
 
 ```
 GET /registries/preferred

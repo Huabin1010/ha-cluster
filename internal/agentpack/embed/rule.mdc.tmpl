@@ -20,4 +20,4 @@ alwaysApply: true
 
 先 `curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me` 确认自己是谁，再动手。403 表示当前用户没有这项权限，不要改用别人的账号。
 
-完整操作步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`，接口表读 `api-reference.md`。推镜像 / 部署优先 CNB（`docker.cnb.cool`）。公共域 HTTPS 由平台自动续期，见 workflows。
+完整操作步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`，接口表读 `api-reference.md`。默认开 Docker+SSH 机器并用 Compose 部署；用户明确要 Kubernetes 才 `runtime=k8s`。推镜像 / 部署优先 CNB（`docker.cnb.cool`）。公共域 HTTPS 由平台自动续期，见 workflows。

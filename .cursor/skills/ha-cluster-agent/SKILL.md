@@ -1,6 +1,6 @@
 ---
 name: ha-cluster-agent
-pack_version: "4"
+pack_version: "5"
 description: >-
   Operates the ha-cluster control plane as a signed-in user via REST. Use when
   creating projects, provisioning workspaces (machines), managing members or
@@ -15,7 +15,7 @@ description: >-
 
 ## 先检查 skill 版本（每次开干前）
 
-本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **4**。
+本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **5**。
 
 ```bash
 curl -fsS "${HA_API_BASE:-https://cl.qzsyzn.com/api}/agent-pack/version"
@@ -41,7 +41,7 @@ curl -fsS -H "Authorization: Bearer $HA_AGENT_TOKEN" "${HA_API_BASE:-https://cl.
 
 列表 `{data,total}`。错误 `{error}`：400 / 401 / 403 / 404 / 409。
 
-进 Docker+SSH 机器只用 `POST /workspaces/{id}/exec`（HTTPS）。不要本机 SSH / ssh-config / 8099。Kubernetes 工作区用 `POST /workspaces/{id}/k8s/apply`、`GET …/kubeconfig`、`GET …/k8s/resources`；对该类机器 exec 会 400。
+默认开 **Docker + SSH** 机器，用 **Compose** 部署（`POST /workspaces/{id}/exec` 里 `docker compose up`）。用户没提 Kubernetes / k3s / kubectl 时不要开 `runtime=k8s`。只有用户明确要 k8s 才 apply YAML / 下载 kubeconfig；对该类机器 exec 会 400。
 
 推送镜像或部署时优先用 **CNB** `docker.cnb.cool/<组织>/<仓库>:<标签>`（`GET /registries/preferred`），不要默认 Docker Hub。
 

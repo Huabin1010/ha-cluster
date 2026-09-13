@@ -46,7 +46,10 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 		t.Fatal("workflows should recommend CNB")
 	}
 	if !strings.Contains(p.Files[WorkflowsPath], "/k8s/apply") || !strings.Contains(p.Files[APIRefPath], "runtime") {
-		t.Fatal("pack v4 should document k8s apply")
+		t.Fatal("pack should document k8s apply")
+	}
+	if !strings.Contains(p.Files[SkillPath], "默认开 Docker + SSH") && !strings.Contains(p.Files[SkillPath], "runtime=container") {
+		t.Fatal("skill should default to compose/container")
 	}
 	md := Markdown(p)
 	if !strings.Contains(md, SkillPath) || !strings.Contains(md, "HA_CLUSTER_AGENT_PACK v"+Version) {
