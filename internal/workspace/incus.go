@@ -328,6 +328,7 @@ func workspaceDebsDir() string {
 
 func (r *IncusRuntime) installWorkspaceDocker(ctx context.Context, name string) error {
 	if _, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "--version").CombinedOutput(); err == nil {
+		_ = r.ensureFuseOverlayfs(ctx, name)
 		_ = r.ensureNestedDockerStorage(ctx, name)
 		return nil
 	}
@@ -376,14 +377,71 @@ func (r *IncusRuntime) installWorkspaceDocker(ctx context.Context, name string) 
 	if out, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "--version").CombinedOutput(); err != nil {
 		return fmt.Errorf("docker not available after offline install: %w: %s", err, out)
 	}
+	_ = r.ensureFuseOverlayfs(ctx, name)
 	_ = r.ensureNestedDockerStorage(ctx, name)
 	return nil
 }
 
-// ensureNestedDockerStorage switches the in-container engine off overlayfs.
-// Incus already uses overlay; Docker-in-container overlay+userxattr fails extract
-// ("invalid argument") so pulls appear to download then die. vfs (or fuse-overlayfs)
-// is the reliable nested driver.
+func fuseDebNames(debsDir string) []string {
+	entries, err := os.ReadDir(debsDir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".deb") {
+			continue
+		}
+		n := strings.ToLower(e.Name())
+		if strings.HasPrefix(n, "fuse-overlayfs") ||
+			strings.HasPrefix(n, "libfuse") ||
+			strings.HasPrefix(n, "fuse3") ||
+			strings.HasPrefix(n, "fuse_") {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
+
+// ensureFuseOverlayfs installs fuse-overlayfs from workspace-debs when the
+// baked image only has docker.io. Nested overlay2 cannot use an Incus idmapped
+// root ("idmapped layers are currently not supported"); fuse-overlayfs can.
+func (r *IncusRuntime) ensureFuseOverlayfs(ctx context.Context, name string) error {
+	if _, err := r.cmd(ctx, "exec", name, "--", "bash", "-lc",
+		"command -v fuse-overlayfs >/dev/null 2>&1 || test -x /usr/bin/fuse-overlayfs").CombinedOutput(); err == nil {
+		return nil
+	}
+	debsDir := workspaceDebsDir()
+	debs := fuseDebNames(debsDir)
+	if len(debs) == 0 {
+		return fmt.Errorf("fuse-overlayfs missing in workspace and no fuse debs under %s", debsDir)
+	}
+	tarPath, err := packWorkspaceDebsTar(debsDir, debs)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tarPath)
+	if out, err := r.cmd(ctx, "exec", name, "--", "mkdir", "-p", "/tmp/ha-fuse-debs").CombinedOutput(); err != nil {
+		return fmt.Errorf("mkdir fuse debs: %w: %s", err, out)
+	}
+	if out, err := r.cmd(ctx, "file", "push", tarPath, name+"/tmp/ha-fuse-debs.tar").CombinedOutput(); err != nil {
+		return fmt.Errorf("push fuse debs: %w: %s", err, out)
+	}
+	script := "export DEBIAN_FRONTEND=noninteractive; " +
+		"tar -xf /tmp/ha-fuse-debs.tar -C /tmp/ha-fuse-debs; " +
+		"dpkg -i /tmp/ha-fuse-debs/*.deb 2>/dev/null || true; " +
+		"apt-get -f install -y -qq -o Dir::Cache::archives=/tmp/ha-fuse-debs >/dev/null 2>&1 || true; " +
+		"rm -rf /tmp/ha-fuse-debs /tmp/ha-fuse-debs.tar; " +
+		"command -v fuse-overlayfs"
+	if out, err := r.cmd(ctx, "exec", name, "--env", "DEBIAN_FRONTEND=noninteractive", "--", "bash", "-lc", script).CombinedOutput(); err != nil {
+		return fmt.Errorf("install fuse-overlayfs: %w: %s", err, out)
+	}
+	return nil
+}
+
+// ensureNestedDockerStorage prefers fuse-overlayfs so image layers are shared.
+// Kernel overlay2 fails on Incus idmapped roots (dmesg: "idmapped layers are
+// currently not supported"). vfs is the last-resort driver and copies every layer.
 func (r *IncusRuntime) ensureNestedDockerStorage(ctx context.Context, name string) error {
 	script := `set -e
 mkdir -p /etc/docker

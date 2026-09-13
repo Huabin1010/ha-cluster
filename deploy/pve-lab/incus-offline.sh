@@ -313,7 +313,7 @@ ha_incus_install_workspace_debs_host() {
   fi
 }
 
-# 把 workspace-debs 里的 docker.io 一次性打进 ha-ubuntu-24.04（不走外网）。
+# 把 workspace-debs 里的 docker.io + fuse-overlayfs 一次性打进 ha-ubuntu-24.04（不走外网）。
 # docker.service 保持 disabled，避免容器开机时 docker0 抢在 DHCP 前起来。
 ha_incus_ensure_image_alias() {
   local alias="${HA_INCUS_IMAGE:-ha-ubuntu-24.04}"
@@ -355,7 +355,7 @@ ha_incus_bake_docker_image() {
     return 0
   fi
 
-  echo "==> bake docker.io into ${alias} from ${dest} (S3/offline debs, no apt)"
+  echo "==> bake docker.io + fuse-overlayfs into ${alias} from ${dest} (S3/offline debs, no apt)"
   local tmp="ha-bake-docker"
   local n
   n="$(find "${dest}" -maxdepth 1 -name '*.deb' | wc -l)"
@@ -393,7 +393,8 @@ systemctl restart systemd-networkd 2>/dev/null || true'
     'dpkg -i /root/ha-docker-debs/*.deb >/root/ha-dpkg.log 2>&1 || true
      rm -rf /root/ha-docker-debs
      systemctl disable --now docker docker.socket >/dev/null 2>&1 || true
-     /usr/bin/docker --version'
+     /usr/bin/docker --version
+     command -v fuse-overlayfs'
   incus exec "${tmp}" -- touch /etc/ha-cluster-docker-baked
   incus stop "${tmp}"
   if ! incus publish "${tmp}" --alias "${alias}"; then
@@ -467,9 +468,10 @@ Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF
      rm -f /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
      apt-get update -qq
-     apt-get install -y -qq docker.io
+     apt-get install -y -qq docker.io fuse-overlayfs fuse3
      systemctl disable --now docker docker.socket >/dev/null 2>&1 || true
-     docker --version"
+     docker --version
+     command -v fuse-overlayfs"
   incus exec "${tmp}" -- touch /etc/ha-cluster-docker-baked
   incus stop "${tmp}"
   if ! incus publish "${tmp}" --alias "${alias}"; then

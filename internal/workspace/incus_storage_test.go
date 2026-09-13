@@ -1,6 +1,10 @@
 package workspace
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestDiskSizeArg(t *testing.T) {
 	const gi = 1024 * 1024 * 1024
@@ -28,6 +32,25 @@ func TestParseStorageListCSV(t *testing.T) {
 	got := parseStorageListCSV(raw)
 	if got["default"] != "dir" || got["ha-disk"] != "lvm" {
 		t.Fatalf("got %#v", got)
+	}
+}
+
+func TestFuseDebNames(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"docker.io_27_amd64.deb",
+		"fuse-overlayfs_1.13-1_amd64.deb",
+		"libfuse3-3_3.14.0-5build1_amd64.deb",
+		"fuse3_3.14.0-5build1_amd64.deb",
+		"containerd_1.7_amd64.deb",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := fuseDebNames(dir)
+	if len(got) != 3 {
+		t.Fatalf("fuseDebNames=%v", got)
 	}
 }
 

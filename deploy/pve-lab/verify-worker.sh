@@ -42,6 +42,7 @@ if [[ "${SKIP_INCUS}" != "1" ]]; then
   check "incus daemon" sh -c "incus info >/dev/null 2>&1"
   check "incus image ${HA_INCUS_IMAGE}" sh -c "incus image list -c l --format csv | grep -Fx '${HA_INCUS_IMAGE}'"
   check "workspace image baked docker.io" test -f /var/lib/ha-cluster/workspace-image-docker
+  check "fuse-overlayfs workspace debs" sh -c 'ls /var/lib/ha-cluster/workspace-debs/fuse-overlayfs_*.deb >/dev/null 2>&1'
   check "docker compose plugin" test -s /var/lib/ha-cluster/docker-compose
   check "incus network fixup unit" systemctl is-enabled --quiet ha-incus-network.service
 
