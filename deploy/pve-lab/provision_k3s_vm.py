@@ -55,7 +55,25 @@ def grow_root() -> None:
     )
 
 
-def provision(recreate: bool) -> None:
+def provision(
+    recreate: bool,
+    vmid: int | None = None,
+    name: str | None = None,
+    fabric_ip: str | None = None,
+    cores: int | None = None,
+    memory: int | None = None,
+) -> None:
+    global VMID, NAME, FABRIC_IP, CORES, MEMORY
+    if vmid is not None:
+        VMID = vmid
+    if name is not None:
+        NAME = name
+    if fabric_ip is not None:
+        FABRIC_IP = fabric_ip
+    if cores is not None:
+        CORES = cores
+    if memory is not None:
+        MEMORY = memory
     if vm_exists():
         if not recreate:
             print(f"==> reuse VM {VMID} ({NAME})")
@@ -92,8 +110,21 @@ def provision(recreate: bool) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--recreate", action="store_true")
+    ap.add_argument("--vmid", type=int)
+    ap.add_argument("--name")
+    ap.add_argument("--fabric-ip")
+    ap.add_argument("--cores", type=int)
+    ap.add_argument("--memory", type=int)
     args = ap.parse_args()
-    provision(args.recreate)
+    global VMID, NAME, FABRIC_IP, CORES, MEMORY
+    provision(
+        args.recreate,
+        vmid=args.vmid,
+        name=args.name,
+        fabric_ip=args.fabric_ip,
+        cores=args.cores,
+        memory=args.memory,
+    )
     print(json.dumps({"vmid": VMID, "name": NAME, "fabric_ip": FABRIC_IP}, ensure_ascii=False))
     return 0
 
