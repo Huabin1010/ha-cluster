@@ -62,6 +62,9 @@ var agentTokensSQL string
 //go:embed sql/015_tls_certs.sql
 var tlsCertsSQL string
 
+//go:embed sql/016_workspace_runtime.sql
+var workspaceRuntimeSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -133,6 +136,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, tlsCertsSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, workspaceRuntimeSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -449,7 +456,8 @@ func (s *Store) UpsertNode(ctx context.Context, n *models.Node) error {
 			health_status=EXCLUDED.health_status, cpu_usage_pct=EXCLUDED.cpu_usage_pct,
 			mem_available_bytes=EXCLUDED.mem_available_bytes, disk_free_bytes=EXCLUDED.disk_free_bytes,
 			mem_total_bytes=EXCLUDED.mem_total_bytes, disk_total_bytes=EXCLUDED.disk_total_bytes,
-			ready=EXCLUDED.ready, last_heartbeat=EXCLUDED.last_heartbeat`,
+			ready=EXCLUDED.ready, last_heartbeat=EXCLUDED.last_heartbeat,
+			tags=EXCLUDED.tags`,
 		n.ID, n.Name, n.Arch, n.Class, n.Power, n.Role, n.FabricIP, n.LanIP, n.BreakglassSSH,
 		n.AllocatableCPU, n.AllocatableMem, n.AllocatableDisk, n.UsedCPU, n.UsedMem, n.UsedDisk,
 		n.FabricPath, n.FabricRTTMS, n.HealthStatus, n.CPUUsagePct, n.MemAvailableBytes, n.DiskFreeBytes,
@@ -729,13 +737,16 @@ func (s *Store) ExpandAllocation(ctx context.Context, id uuid.UUID, dCPU, dMem, 
 	return tx.Commit()
 }
 
-const wsCols = `id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at,cpu_milli,mem_bytes,disk_bytes,pending_cpu_milli,pending_mem_bytes,pending_disk_bytes,resize_status,resize_kind,last_activity_at,idle_suspend_hours`
+const wsCols = `id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at,cpu_milli,mem_bytes,disk_bytes,pending_cpu_milli,pending_mem_bytes,pending_disk_bytes,resize_status,resize_kind,last_activity_at,idle_suspend_hours,runtime,runtime_ref`
 
 func (s *Store) CreateWorkspace(ctx context.Context, w *models.Workspace) error {
+	if w.Runtime == "" {
+		w.Runtime = models.RuntimeContainer
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO workspaces (`+wsCols+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
 		w.ID, w.ProjectID, w.Name, w.Plan, w.Arch, w.Visibility, w.OwnerUserID, w.NodeID, w.AllocationID, w.Status, w.SSHPort, w.HostKeyFP, w.CreatedAt, w.UpdatedAt,
-		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, w.ResizeKind, nullTime(w.LastActivityAt), w.IdleSuspendHours)
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, w.ResizeKind, nullTime(w.LastActivityAt), w.IdleSuspendHours, w.Runtime, w.RuntimeRef)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -749,12 +760,15 @@ func scanWS(row interface{ Scan(dest ...any) error }) (*models.Workspace, error)
 	w := &models.Workspace{}
 	var lastAct sql.NullTime
 	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Plan, &w.Arch, &w.Visibility, &w.OwnerUserID, &w.NodeID, &w.AllocationID, &w.Status, &w.SSHPort, &w.HostKeyFP, &w.CreatedAt, &w.UpdatedAt,
-		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus, &w.ResizeKind, &lastAct, &w.IdleSuspendHours)
+		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus, &w.ResizeKind, &lastAct, &w.IdleSuspendHours, &w.Runtime, &w.RuntimeRef)
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	if lastAct.Valid {
 		w.LastActivityAt = lastAct.Time
+	}
+	if w.Runtime == "" {
+		w.Runtime = models.RuntimeContainer
 	}
 	return w, nil
 }
@@ -788,12 +802,15 @@ func (s *Store) ListWorkspaces(ctx context.Context, projectID *uuid.UUID) ([]mod
 }
 
 const wsUpdateSET = `name=$2,plan=$3,arch=$4,visibility=$5,status=$6,ssh_port=$7,host_key_fp=$8,updated_at=$9,node_id=$10,allocation_id=$11,
-		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18,resize_kind=$19,last_activity_at=$20,idle_suspend_hours=$21`
+		cpu_milli=$12,mem_bytes=$13,disk_bytes=$14,pending_cpu_milli=$15,pending_mem_bytes=$16,pending_disk_bytes=$17,resize_status=$18,resize_kind=$19,last_activity_at=$20,idle_suspend_hours=$21,runtime=$22,runtime_ref=$23`
 
 func workspaceUpdateArgs(w *models.Workspace) []any {
+	if w.Runtime == "" {
+		w.Runtime = models.RuntimeContainer
+	}
 	return []any{
 		w.ID, w.Name, w.Plan, w.Arch, w.Visibility, w.Status, w.SSHPort, w.HostKeyFP, w.UpdatedAt, w.NodeID, w.AllocationID,
-		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, w.ResizeKind, nullTime(w.LastActivityAt), w.IdleSuspendHours,
+		w.CPUMilli, w.MemBytes, w.DiskBytes, w.PendingCPUMilli, w.PendingMemBytes, w.PendingDiskBytes, w.ResizeStatus, w.ResizeKind, nullTime(w.LastActivityAt), w.IdleSuspendHours, w.Runtime, w.RuntimeRef,
 	}
 }
 
@@ -810,7 +827,7 @@ func (s *Store) UpdateWorkspace(ctx context.Context, w *models.Workspace) error 
 
 func (s *Store) UpdateWorkspaceIfStatus(ctx context.Context, w *models.Workspace, fromStatus string) error {
 	args := append(workspaceUpdateArgs(w), fromStatus)
-	res, err := s.db.ExecContext(ctx, `UPDATE workspaces SET `+wsUpdateSET+` WHERE id=$1 AND status=$22`, args...)
+	res, err := s.db.ExecContext(ctx, `UPDATE workspaces SET `+wsUpdateSET+` WHERE id=$1 AND status=$24`, args...)
 	if err != nil {
 		return err
 	}

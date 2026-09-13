@@ -190,7 +190,7 @@ export const api = {
   async createWorkspace(
     token: string,
     projectId: string,
-    ws: { name?: string; plan: string; arch?: string; visibility?: string },
+    ws: { name?: string; plan: string; arch?: string; visibility?: string; runtime?: string },
   ) {
     const res = await request<{ id: string; name: string; plan: string; arch: string; status: string }>(
       "/projects/" + projectId + "/workspaces",
@@ -293,6 +293,7 @@ export const api = {
     fabric_path?: string;
     fabric_rtt_ms?: number;
     ready?: boolean;
+    tags?: string[];
   }) {
     const res = await request<{ id: string; name: string; ready: boolean }>("/nodes/heartbeat", {
       method: "POST",

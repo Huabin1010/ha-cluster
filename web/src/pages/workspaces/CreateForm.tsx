@@ -49,6 +49,7 @@ export function CreateForm({
   const [plan, setPlan] = useState<string>("nano");
   const [arch, setArch] = useState<string>("amd64");
   const [visibility, setVisibility] = useState<"shared" | "private">("shared");
+  const [runtime, setRuntime] = useState<"container" | "k8s">("container");
   const [name, setName] = useState("");
   const [usageHint, setUsageHint] = useState("");
   const [busy, setBusy] = useState(false);
@@ -121,6 +122,7 @@ export function CreateForm({
           plan,
           arch,
           visibility,
+          runtime,
         }),
       });
       setName("");
@@ -214,6 +216,17 @@ export function CreateForm({
                 options={[
                   { value: "shared", label: "shared（项目成员可 SSH）" },
                   { value: "private", label: "private（仅 owner）" },
+                ]}
+              />
+            </Field>
+            <Field label="运行环境">
+              <SelectBox
+                testId="ws-create-runtime"
+                value={runtime}
+                onValueChange={(v) => setRuntime(v as "container" | "k8s")}
+                options={[
+                  { value: "container", label: "Docker + SSH" },
+                  { value: "k8s", label: "Kubernetes" },
                 ]}
               />
             </Field>

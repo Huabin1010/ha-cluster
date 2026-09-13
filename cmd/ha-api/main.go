@@ -43,6 +43,7 @@ func main() {
 	log.Printf("runtime=%T (fallback=%T) store=%T", rt, localRt, st)
 	app := service.New(st, rt, secret)
 	ensureBootstrapAdmin(app)
+	ensureSeedNodes(app)
 	app.EnsureIngressDomainZones(ctx)
 	app.EnsureTLSForZones(ctx)
 
@@ -177,4 +178,42 @@ func ensureBootstrapAdmin(app *service.App) {
 		return
 	}
 	log.Printf("bootstrapped admin user (id=%s)", adminUserID)
+}
+
+// ensureSeedNodes 在 memory runtime 下补齐 Playwright / 本地开发用的容量节点。
+// 真机心跳不会被覆盖：已存在同名节点只补 k3s 标签（若还没有）。
+func ensureSeedNodes(app *service.App) {
+	if os.Getenv("HA_RUNTIME") != "memory" {
+		return
+	}
+	ctx := context.Background()
+	const Gi = 1024 * 1024 * 1024
+	const Mi = 1024 * 1024
+	seeds := []models.Node{
+		{
+			Name: "dev-pc", Arch: models.ArchAMD64, Class: "desktop", Power: "mains", Role: "worker",
+			FabricIP: "10.88.0.30", AllocatableCPU: 8000, AllocatableMem: 8 * Gi, AllocatableDisk: 200 * Gi,
+			Ready: true, HealthStatus: models.NodeHealthy, Tags: []string{"k3s", "both"},
+		},
+		{
+			Name: "phone1", Arch: models.ArchARM64, Class: "phone", Power: "battery", Role: "worker",
+			FabricIP: "10.88.0.10", AllocatableCPU: 2000, AllocatableMem: 1800 * Mi, AllocatableDisk: 40 * Gi,
+			Ready: true, HealthStatus: models.NodeHealthy,
+		},
+	}
+	for i := range seeds {
+		n := seeds[i]
+		if existing, err := app.Store.GetNodeByName(ctx, n.Name); err == nil && existing != nil {
+			if models.NodeSupportsK8s(n.Tags) && !models.NodeSupportsK8s(existing.Tags) {
+				tags := append(append([]string{}, existing.Tags...), n.Tags...)
+				_ = app.Store.UpdateNodeMeta(ctx, existing.ID, existing.MachineType, existing.Remark, models.NormalizeNodeTags(tags))
+			}
+			continue
+		}
+		n.ID = uuid.New()
+		n.LastHeartbeat = time.Now()
+		if err := app.Store.UpsertNode(ctx, &n); err != nil {
+			log.Printf("seed node %s: %v", n.Name, err)
+		}
+	}
 }

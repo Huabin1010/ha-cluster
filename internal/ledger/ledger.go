@@ -18,9 +18,10 @@ type Service struct {
 }
 
 type ReserveRequest struct {
-	ProjectID uuid.UUID
-	Plan      models.Plan
-	Arch      string
+	ProjectID  uuid.UUID
+	Plan       models.Plan
+	Arch       string
+	RequireK8s bool
 }
 
 type ReserveResult struct {
@@ -34,6 +35,10 @@ type scoredNode struct {
 }
 
 func (s *Service) PickCandidateNodes(ctx context.Context, arch string, cpu, mem, disk int64) ([]models.Node, error) {
+	return s.pickCandidates(ctx, arch, cpu, mem, disk, false)
+}
+
+func (s *Service) pickCandidates(ctx context.Context, arch string, cpu, mem, disk int64, requireK8s bool) ([]models.Node, error) {
 	nodes, err := s.Store.ListNodes(ctx)
 	if err != nil {
 		return nil, err
@@ -42,6 +47,9 @@ func (s *Service) PickCandidateNodes(ctx context.Context, arch string, cpu, mem,
 	for i := range nodes {
 		n := nodes[i]
 		if !n.Ready || n.Role == "control-plane" {
+			continue
+		}
+		if requireK8s && !models.NodeSupportsK8s(n.Tags) {
 			continue
 		}
 		if arch != models.ArchAny && n.Arch != arch {
@@ -76,7 +84,7 @@ func (s *Service) PickCandidateNodes(ctx context.Context, arch string, cpu, mem,
 }
 
 func (s *Service) PickNode(ctx context.Context, arch string, cpu, mem, disk int64) (*models.Node, error) {
-	candidates, err := s.PickCandidateNodes(ctx, arch, cpu, mem, disk)
+	candidates, err := s.pickCandidates(ctx, arch, cpu, mem, disk, false)
 	if err != nil {
 		return nil, err
 	}
@@ -98,20 +106,22 @@ func (s *Service) Reserve(ctx context.Context, req ReserveRequest) (*ReserveResu
 		State:     models.AllocReserved,
 		CreatedAt: time.Now(),
 	}
-	if err := s.Store.ReserveBestNode(ctx, arch, req.Plan.CPUMilli, req.Plan.MemBytes, req.Plan.DiskBytes, &a); err == nil {
-		n2, err := s.Store.GetNode(ctx, a.NodeID)
-		if err != nil {
+	if !req.RequireK8s {
+		if err := s.Store.ReserveBestNode(ctx, arch, req.Plan.CPUMilli, req.Plan.MemBytes, req.Plan.DiskBytes, &a); err == nil {
+			n2, err := s.Store.GetNode(ctx, a.NodeID)
+			if err != nil {
+				return nil, err
+			}
+			if a.Arch == models.ArchAny || a.Arch == "" {
+				a.Arch = n2.Arch
+			}
+			return &ReserveResult{Allocation: a, Node: *n2}, nil
+		} else if !errors.Is(err, store.ErrNoCapacity) {
 			return nil, err
 		}
-		if a.Arch == models.ArchAny || a.Arch == "" {
-			a.Arch = n2.Arch
-		}
-		return &ReserveResult{Allocation: a, Node: *n2}, nil
-	} else if !errors.Is(err, store.ErrNoCapacity) {
-		return nil, err
 	}
 
-	candidates, err := s.PickCandidateNodes(ctx, arch, req.Plan.CPUMilli, req.Plan.MemBytes, req.Plan.DiskBytes)
+	candidates, err := s.pickCandidates(ctx, arch, req.Plan.CPUMilli, req.Plan.MemBytes, req.Plan.DiskBytes, req.RequireK8s)
 	if err != nil {
 		return nil, err
 	}

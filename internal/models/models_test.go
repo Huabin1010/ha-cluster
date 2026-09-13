@@ -47,6 +47,24 @@ func TestProvisioningLiveAndWorkspaceClosed(t *testing.T) {
 	}
 }
 
+func TestNormalizeRuntimeAndNodeSupportsK8s(t *testing.T) {
+	if NormalizeRuntime("") != RuntimeContainer || NormalizeRuntime("incus") != RuntimeContainer {
+		t.Fatal("container aliases")
+	}
+	if NormalizeRuntime("kubernetes") != RuntimeK8s || !IsK8sRuntime("k3s") {
+		t.Fatal("k8s aliases")
+	}
+	if NormalizeRuntime("qemu") != "" {
+		t.Fatal("unknown runtime")
+	}
+	if RuntimeLabel("k8s") != "Kubernetes" || RuntimeLabel("") != "Docker + SSH" {
+		t.Fatal("labels")
+	}
+	if !NodeSupportsK8s([]string{"runtime=k3s"}) || NodeSupportsK8s([]string{"gpu"}) {
+		t.Fatal("node tags")
+	}
+}
+
 func TestResolveSpecCustomAndCatalog(t *testing.T) {
 	p, err := ResolveSpec("nano", 0, 0, 0)
 	if err != nil || p.Name != "nano" {

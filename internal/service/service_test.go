@@ -29,11 +29,46 @@ func setupApp(t *testing.T) (*App, *models.User) {
 	n := models.Node{
 		ID: uuid.New(), Name: "pc1", Arch: models.ArchAMD64, Power: "mains", Role: "worker",
 		AllocatableCPU: 8000, AllocatableMem: 2 * Gi, AllocatableDisk: 100 * Gi, Ready: true, FabricIP: "10.88.0.10",
+		Tags: []string{"k3s"},
 	}
 	if err := st.UpsertNode(context.Background(), &n); err != nil {
 		t.Fatal(err)
 	}
 	return app, u
+}
+
+func TestHeartbeatMergesK3sTags(t *testing.T) {
+	st := memory.New()
+	app := New(st, workspace.NewMemoryRuntime(), []byte("unit-test-secret-key-32b!!"))
+	ctx := context.Background()
+	n := models.Node{
+		Name: "bare-worker", Arch: models.ArchAMD64, Power: "mains", Role: "worker",
+		AllocatableCPU: 4000, AllocatableMem: 4 << 30, AllocatableDisk: 32 << 30,
+		Tags: []string{"gpu"},
+	}
+	if _, err := app.Heartbeat(ctx, n); err != nil {
+		t.Fatal(err)
+	}
+	got, err := app.Heartbeat(ctx, models.Node{
+		Name: "bare-worker", Arch: models.ArchAMD64, Power: "mains", Role: "worker",
+		AllocatableCPU: 4000, AllocatableMem: 4 << 30, AllocatableDisk: 32 << 30,
+		Tags: []string{"k3s", "both"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !models.NodeSupportsK8s(got.Tags) {
+		t.Fatalf("want k3s tag merged, got %v", got.Tags)
+	}
+	hasGPU := false
+	for _, tag := range got.Tags {
+		if tag == "gpu" {
+			hasGPU = true
+		}
+	}
+	if !hasGPU {
+		t.Fatalf("lost existing tag: %v", got.Tags)
+	}
 }
 
 func TestRegisterLoginAndDuplicate(t *testing.T) {

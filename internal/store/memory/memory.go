@@ -31,18 +31,18 @@ type snapshotUser struct {
 }
 
 type Snapshot struct {
-	Users       map[uuid.UUID]*snapshotUser        `json:"users,omitempty"`
-	SSHKeys     map[uuid.UUID]*models.SSHKey       `json:"ssh_keys,omitempty"`
-	Projects    map[uuid.UUID]*models.Project      `json:"projects,omitempty"`
-	Memberships map[string]models.Membership       `json:"memberships,omitempty"`
-	Nodes       map[uuid.UUID]*models.Node         `json:"nodes,omitempty"`
-	Allocs      map[uuid.UUID]*models.Allocation   `json:"allocs,omitempty"`
-	Workspaces  map[uuid.UUID]*models.Workspace    `json:"workspaces,omitempty"`
-	Audit       []models.AuditLog                  `json:"audit,omitempty"`
-	AuditSeq    int64                              `json:"audit_seq,omitempty"`
-	Invites     map[string]*models.Invitation      `json:"invites,omitempty"`
-	Refresh     map[string]models.RefreshSession   `json:"refresh,omitempty"`
-	Ingress     map[uuid.UUID]*models.IngressRoute      `json:"ingress,omitempty"`
+	Users        map[uuid.UUID]*snapshotUser             `json:"users,omitempty"`
+	SSHKeys      map[uuid.UUID]*models.SSHKey            `json:"ssh_keys,omitempty"`
+	Projects     map[uuid.UUID]*models.Project           `json:"projects,omitempty"`
+	Memberships  map[string]models.Membership            `json:"memberships,omitempty"`
+	Nodes        map[uuid.UUID]*models.Node              `json:"nodes,omitempty"`
+	Allocs       map[uuid.UUID]*models.Allocation        `json:"allocs,omitempty"`
+	Workspaces   map[uuid.UUID]*models.Workspace         `json:"workspaces,omitempty"`
+	Audit        []models.AuditLog                       `json:"audit,omitempty"`
+	AuditSeq     int64                                   `json:"audit_seq,omitempty"`
+	Invites      map[string]*models.Invitation           `json:"invites,omitempty"`
+	Refresh      map[string]models.RefreshSession        `json:"refresh,omitempty"`
+	Ingress      map[uuid.UUID]*models.IngressRoute      `json:"ingress,omitempty"`
 	IngressZones map[uuid.UUID]*models.IngressDomainZone `json:"ingress_zones,omitempty"`
 }
 
@@ -432,7 +432,11 @@ func (s *Store) UpsertNode(_ context.Context, n *models.Node) error {
 		n.UsedDisk = old.UsedDisk
 		n.MachineType = old.MachineType
 		n.Remark = old.Remark
-		n.Tags = append([]string(nil), old.Tags...)
+		if len(n.Tags) == 0 {
+			n.Tags = append([]string(nil), old.Tags...)
+		} else {
+			n.Tags = models.NormalizeNodeTags(append(append([]string(nil), old.Tags...), n.Tags...))
+		}
 	} else if n.MachineType == "" {
 		n.MachineType = models.MachineTypeSelf
 	}
@@ -1046,17 +1050,17 @@ func (s *Store) saveSnapshotFile(filePath string) error {
 		users[id] = userToSnapshot(u)
 	}
 	snap := Snapshot{
-		Users:       users,
-		SSHKeys:     s.sshKeys,
-		Projects:    s.projects,
-		Memberships: s.memberships,
-		Nodes:       s.nodes,
-		Allocs:      s.allocs,
-		Workspaces:  s.workspaces,
-		Audit:       s.audit,
-		AuditSeq:    s.auditSeq,
-		Invites:     s.invites,
-		Refresh:     s.refresh,
+		Users:        users,
+		SSHKeys:      s.sshKeys,
+		Projects:     s.projects,
+		Memberships:  s.memberships,
+		Nodes:        s.nodes,
+		Allocs:       s.allocs,
+		Workspaces:   s.workspaces,
+		Audit:        s.audit,
+		AuditSeq:     s.auditSeq,
+		Invites:      s.invites,
+		Refresh:      s.refresh,
 		Ingress:      s.ingress,
 		IngressZones: s.ingressZones,
 	}

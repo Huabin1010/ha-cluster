@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Box,
   Globe,
   LayoutDashboard,
   ScrollText,
@@ -22,7 +23,7 @@ import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
 import { spring } from "@/lib/springs";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/ui/format";
-import { workspaceDetailQueryPollInterval, type Workspace } from "./types";
+import { isK8sRuntime, workspaceDetailQueryPollInterval, type Workspace } from "./types";
 
 interface WorkspaceSubSidebarProps {
   workspaceId: string;
@@ -82,6 +83,7 @@ export function WorkspaceSubSidebar({ workspaceId, onNavigate }: WorkspaceSubSid
   const base = `/workspaces/${workspaceId}`;
   const isOverview = pathname === base || pathname === `${base}/` || pathname === `${base}/overview`;
   const isConnect = pathname.startsWith(`${base}/connect`);
+  const isK8s = pathname.startsWith(`${base}/k8s`);
   const isIngress = pathname.startsWith(`${base}/ingress`);
   const isHistory = pathname.startsWith(`${base}/history`);
 
@@ -92,6 +94,9 @@ export function WorkspaceSubSidebar({ workspaceId, onNavigate }: WorkspaceSubSid
   const subItems = [
     { to: base, label: "概览", icon: LayoutDashboard, isActive: isOverview, testId: "ws-nav-overview" },
     { to: `${base}/connect`, label: "连接", icon: Terminal, isActive: isConnect, testId: "ws-nav-connect" },
+    ...(isK8sRuntime(ws?.runtime)
+      ? [{ to: `${base}/k8s`, label: "Kubernetes", icon: Box, isActive: isK8s, testId: "ws-nav-k8s" }]
+      : []),
     { to: `${base}/ingress`, label: "域名接入", icon: Globe, isActive: isIngress, testId: "ws-nav-ingress" },
     { to: `${base}/history`, label: "操作历史", icon: ScrollText, isActive: isHistory, testId: "ws-nav-history" },
   ];

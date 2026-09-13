@@ -35,7 +35,7 @@ func testServer(t *testing.T) http.Handler {
 	_ = st.UpsertNode(t.Context(), &models.Node{
 		ID: uuid.New(), Name: "pc1", Arch: models.ArchAMD64, Role: "worker", Power: "mains",
 		AllocatableCPU: 8000, AllocatableMem: 2 * Gi, AllocatableDisk: 200 * Gi,
-		Ready: true, FabricIP: "10.88.0.10", LanIP: "192.168.1.82",
+		Ready: true, FabricIP: "10.88.0.10", LanIP: "192.168.1.82", Tags: []string{"k3s"},
 	})
 	return New(app)
 }
@@ -1559,6 +1559,82 @@ func TestAgentPackIssueFetchAndAuth(t *testing.T) {
 	rr = doJSON(t, h, http.MethodGet, "/agent-pack/"+token, "", nil)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("old pack should 404, got %d", rr.Code)
+	}
+}
+
+func TestK8sWorkspaceApplyKubeconfigAndViewer(t *testing.T) {
+	h := testServer(t)
+	ownerTok := registerLogin(t, h, "k8s-owner", "k8s-owner@x.com")
+	viewerTok := registerLogin(t, h, "k8s-view", "k8s-view@x.com")
+	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "k8s", "slug": "k8sproj"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	if err := json.Unmarshal(rr.Body.Bytes(), &p); err != nil {
+		t.Fatal(err)
+	}
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", ownerTok, map[string]string{
+		"username": "k8s-view", "role": "viewer",
+	})
+	if rr.Code != http.StatusCreated && rr.Code != http.StatusOK {
+		t.Fatal(rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", ownerTok, map[string]any{
+		"name": "k8s-box", "plan": "nano", "arch": "amd64", "runtime": "k8s",
+	})
+	if rr.Code != http.StatusCreated && rr.Code != http.StatusOK {
+		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
+	}
+	var ws models.Workspace
+	if err := json.Unmarshal(rr.Body.Bytes(), &ws); err != nil || ws.ID == uuid.Nil {
+		t.Fatal(err, rr.Body.String())
+	}
+	if ws.Runtime != models.RuntimeK8s || ws.RuntimeRef == "" || ws.Status != models.WSRunning {
+		t.Fatalf("%+v", ws)
+	}
+
+	yaml := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n  namespace: evil\nspec:\n  replicas: 1\n"
+	rr = doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/k8s/apply", ownerTok, map[string]string{"yaml": yaml})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("apply %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"name":"web"`) {
+		t.Fatal(rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/k8s/resources", ownerTok, nil)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Deployment") {
+		t.Fatalf("list %d %s", rr.Code, rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/kubeconfig", ownerTok, nil)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), ws.RuntimeRef) {
+		t.Fatalf("kubeconfig %d %s", rr.Code, rr.Body.String())
+	}
+
+	deny := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/k8s/apply", viewerTok, map[string]string{"yaml": yaml})
+	if deny.Code != http.StatusForbidden {
+		t.Fatalf("viewer apply %d %s", deny.Code, deny.Body.String())
+	}
+	viewList := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/k8s/resources", viewerTok, nil)
+	if viewList.Code != http.StatusOK {
+		t.Fatalf("viewer list %d %s", viewList.Code, viewList.Body.String())
+	}
+
+	exec := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/exec", ownerTok, map[string]string{"command": "uname"})
+	if exec.Code != http.StatusBadRequest || !strings.Contains(exec.Body.String(), "Kubernetes") {
+		t.Fatalf("exec %d %s", exec.Code, exec.Body.String())
+	}
+
+	bad := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/k8s/apply", ownerTok, map[string]string{
+		"yaml": "apiVersion: v1\nkind: Node\nmetadata:\n  name: steal\n",
+	})
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("node apply %d %s", bad.Code, bad.Body.String())
+	}
+
+	del := doJSON(t, h, http.MethodDelete, "/workspaces/"+ws.ID.String()+"/k8s/resources?kind=Deployment&name=web", ownerTok, nil)
+	if del.Code != http.StatusNoContent {
+		t.Fatalf("delete %d %s", del.Code, del.Body.String())
 	}
 }
 

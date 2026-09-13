@@ -20,6 +20,8 @@ export type Workspace = {
   pending_disk_bytes?: number;
   resize_status?: string;
   resize_kind?: string;
+  runtime?: string;
+  runtime_ref?: string;
 };
 
 export type ProjectOption = {
@@ -193,6 +195,15 @@ export const STATUS_LABEL: Record<string, string> = {
 
 export function statusLabel(status: string): string {
   return STATUS_LABEL[status] || status;
+}
+
+export function isK8sRuntime(runtime?: string): boolean {
+  const v = (runtime || "").toLowerCase();
+  return v === "k8s" || v === "kubernetes" || v === "k3s";
+}
+
+export function runtimeLabel(runtime?: string): string {
+  return isK8sRuntime(runtime) ? "Kubernetes" : "Docker + SSH";
 }
 
 export type WorkspaceBadgeVariant = "ok" | "warn" | "danger" | "outline";

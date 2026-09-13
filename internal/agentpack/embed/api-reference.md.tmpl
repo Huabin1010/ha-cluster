@@ -55,7 +55,7 @@
 |---|---|---|
 | GET | `/workspaces` | `?project_id=` |
 | GET | `/workspaces/{id}` | |
-| POST | `/projects/{id}/workspaces` | `{name,plan,arch,visibility,cpu_milli?,mem_bytes?,disk_bytes?}` |
+| POST | `/projects/{id}/workspaces` | `{name,plan,arch,visibility,runtime?,cpu_milli?,mem_bytes?,disk_bytes?}`；`runtime`=`container`（默认）或 `k8s` |
 | POST | `/workspaces/{id}/approve` | admin；`requested`→开通 |
 | POST | `/workspaces/{id}/reject` | `{reason?}` |
 | POST | `/workspaces/{id}/stop` `/start` | |
@@ -69,6 +69,10 @@
 | GET | `/workspaces/{id}/ssh-target` | |
 | GET | `/workspaces/{id}/terminal` | WebSocket；可 `?access_token=` |
 | GET | `/workspaces/{id}/audit` | |
+| GET | `/workspaces/{id}/kubeconfig` | 下载 ns 范围 kubeconfig（developer+） |
+| POST | `/workspaces/{id}/k8s/apply` | `{yaml}`；强制改写 namespace，拒绝集群级对象 |
+| GET | `/workspaces/{id}/k8s/resources` | Deployment/Pod/Service 摘要；viewer 只读 |
+| DELETE | `/workspaces/{id}/k8s/resources` | `?kind=&name=` |
 
 `plan` 常用：`nano` `small` `2c2g` `medium` `large` `xlarge`。`arch`：`amd64` `arm64` `any`（`x86_64`/`aarch64` 会归一）。`visibility`：`shared` `private`。
 

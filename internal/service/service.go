@@ -16,6 +16,7 @@ import (
 	"ha-cluster/internal/approval"
 	"ha-cluster/internal/auth"
 	"ha-cluster/internal/authz"
+	hak8s "ha-cluster/internal/k8s"
 	"ha-cluster/internal/ledger"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
@@ -46,6 +47,7 @@ type App struct {
 	Store     store.Store
 	Ledger    *ledger.Service
 	Runtime   workspace.Runtime
+	K8s       hak8s.Cluster
 	JWT       []byte
 	AccessTTL time.Duration
 
@@ -63,6 +65,7 @@ func New(st store.Store, rt workspace.Runtime, jwtSecret []byte) *App {
 		Store:     st,
 		Ledger:    &ledger.Service{Store: st},
 		Runtime:   rt,
+		K8s:       hak8s.NewFromEnv(),
 		JWT:       jwtSecret,
 		AccessTTL: 15 * time.Minute,
 	}
@@ -158,6 +161,7 @@ type CreateWorkspaceInput struct {
 	Plan       string
 	Arch       string
 	Visibility string
+	Runtime    string
 	CPUMilli   int64
 	MemBytes   int64
 	DiskBytes  int64
@@ -185,10 +189,15 @@ func (a *App) CreateWorkspace(ctx context.Context, in CreateWorkspaceInput) (*mo
 	if name == "" {
 		name = "ws-" + spec.Name
 	}
+	rt := models.NormalizeRuntime(in.Runtime)
+	if rt == "" {
+		return nil, store.ErrInvalidInput
+	}
 	in.Arch = arch
 	in.Visibility = vis
 	in.Name = name
 	in.Plan = spec.Name
+	in.Runtime = rt
 	in.CPUMilli = spec.CPUMilli
 	in.MemBytes = spec.MemBytes
 	in.DiskBytes = spec.DiskBytes
@@ -206,7 +215,7 @@ func (a *App) requestWorkspace(ctx context.Context, in CreateWorkspaceInput, spe
 	w := &models.Workspace{
 		ID: uuid.New(), ProjectID: in.ProjectID, Name: in.Name, Plan: spec.Name,
 		Arch: in.Arch, Visibility: in.Visibility, OwnerUserID: in.Actor.ID,
-		Status: models.WSRequested, CreatedAt: now, UpdatedAt: now,
+		Runtime: in.Runtime, Status: models.WSRequested, CreatedAt: now, UpdatedAt: now,
 	}
 	*w = w.ApplySpec(spec)
 	if err := a.Store.CreateWorkspace(ctx, w); err != nil {
@@ -227,14 +236,16 @@ func (a *App) provisionNewWorkspace(ctx context.Context, in CreateWorkspaceInput
 	if err := a.checkProjectBudget(ctx, in.ProjectID, spec); err != nil {
 		return nil, err
 	}
-	res, err := a.Ledger.Reserve(ctx, ledger.ReserveRequest{ProjectID: in.ProjectID, Plan: spec, Arch: in.Arch})
+	res, err := a.Ledger.Reserve(ctx, ledger.ReserveRequest{
+		ProjectID: in.ProjectID, Plan: spec, Arch: in.Arch, RequireK8s: models.IsK8sRuntime(in.Runtime),
+	})
 	if err != nil {
 		return nil, err
 	}
 	w := &models.Workspace{
 		ID: uuid.New(), ProjectID: in.ProjectID, Name: in.Name, Plan: spec.Name,
 		Arch: res.Node.Arch, Visibility: in.Visibility, OwnerUserID: in.Actor.ID,
-		NodeID: res.Node.ID, AllocationID: res.Allocation.ID,
+		Runtime: in.Runtime, NodeID: res.Node.ID, AllocationID: res.Allocation.ID,
 		Status: models.WSProvisioning, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	*w = w.ApplySpec(spec)
@@ -296,15 +307,31 @@ func (a *App) commitProvisioningStatus(latest *models.Workspace) error {
 }
 
 func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node models.Node, allocID, actorID uuid.UUID, action string) (*models.Workspace, error) {
-	pubs := a.collectWorkspacePubkeys(ctx, *w)
-	regs, err := a.CollectAutoInjectRegistryCreds(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("docker registries: %w", err)
+	var inst workspace.Instance
+	var launchErr error
+	if models.IsK8sRuntime(w.Runtime) {
+		slug := "ws"
+		if p, perr := a.Store.GetProject(ctx, w.ProjectID); perr == nil && p != nil {
+			slug = p.Slug
+		}
+		ns, _, err := a.K8s.Provision(ctx, *w, slug)
+		if err != nil {
+			launchErr = err
+		} else {
+			w.RuntimeRef = ns
+			inst = workspace.Instance{ID: w.ID, NodeID: node.ID, Running: true}
+		}
+	} else {
+		pubs := a.collectWorkspacePubkeys(ctx, *w)
+		regs, err := a.CollectAutoInjectRegistryCreds(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("docker registries: %w", err)
+		}
+		launchCtx := workspace.WithLaunchContext(ctx, workspace.LaunchContext{
+			SSHKeys: pubs, DockerRegistries: regs,
+		})
+		inst, launchErr = a.Runtime.Launch(launchCtx, *w, node, pubs)
 	}
-	launchCtx := workspace.WithLaunchContext(ctx, workspace.LaunchContext{
-		SSHKeys: pubs, DockerRegistries: regs,
-	})
-	inst, launchErr := a.Runtime.Launch(launchCtx, *w, node, pubs)
 
 	// Re-read after Launch: force-destroy during provisioning must not be
 	// overwritten by a late running/failed write (the machine "comes back").
@@ -334,6 +361,12 @@ func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node mod
 	latest.Status = models.WSRunning
 	latest.SSHPort = inst.SSHPort
 	latest.HostKeyFP = inst.HostKeyFP
+	if w.RuntimeRef != "" {
+		latest.RuntimeRef = w.RuntimeRef
+	}
+	if w.Runtime != "" {
+		latest.Runtime = w.Runtime
+	}
 	latest.UpdatedAt = time.Now()
 	if err := a.commitProvisioningStatus(latest); err != nil {
 		return latest, err
@@ -364,7 +397,9 @@ func (a *App) ApproveWorkspace(ctx context.Context, actor models.User, id uuid.U
 	if err := a.checkProjectBudget(ctx, w.ProjectID, spec); err != nil {
 		return nil, err
 	}
-	res, err := a.Ledger.Reserve(ctx, ledger.ReserveRequest{ProjectID: w.ProjectID, Plan: spec, Arch: w.Arch})
+	res, err := a.Ledger.Reserve(ctx, ledger.ReserveRequest{
+		ProjectID: w.ProjectID, Plan: spec, Arch: w.Arch, RequireK8s: models.IsK8sRuntime(w.Runtime),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -676,6 +711,9 @@ func (a *App) executeDestroy(ctx context.Context, actor models.User, w *models.W
 	w.UpdatedAt = time.Now()
 	_ = a.Store.UpdateWorkspace(ctx, w)
 	a.dropWorkspaceIngress(ctx, w.ID)
+	if models.IsK8sRuntime(w.Runtime) && w.RuntimeRef != "" {
+		_ = a.K8s.DestroyNS(ctx, w.RuntimeRef)
+	}
 	_ = a.Runtime.Destroy(ctx, w.ID)
 	if w.AllocationID != uuid.Nil {
 		if err := a.Ledger.Release(ctx, w.AllocationID); err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -811,6 +849,7 @@ func (a *App) Heartbeat(ctx context.Context, n models.Node) (*models.Node, error
 		if n.LanIP == "" {
 			n.LanIP = existing.LanIP
 		}
+		n.Tags = models.NormalizeNodeTags(append(append([]string(nil), existing.Tags...), n.Tags...))
 	} else {
 		n.ID = uuid.New()
 	}

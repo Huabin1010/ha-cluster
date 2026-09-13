@@ -190,6 +190,10 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/workspaces/{id}/ssh-config", s.sshConfig)
 		r.Get("/workspaces/{id}/connection", s.sshConnection)
 		r.Post("/workspaces/{id}/exec", s.execWorkspace)
+		r.Get("/workspaces/{id}/kubeconfig", s.workspaceKubeconfig)
+		r.Post("/workspaces/{id}/k8s/apply", s.applyK8s)
+		r.Get("/workspaces/{id}/k8s/resources", s.listK8sResources)
+		r.Delete("/workspaces/{id}/k8s/resources", s.deleteK8sResource)
 		r.Get("/workspaces/{id}/terminal", s.workspaceTerminal)
 		r.Get("/workspaces/{id}/ingress", s.listIngress)
 		r.Post("/workspaces/{id}/ingress", s.createIngress)
@@ -681,6 +685,7 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		Plan       string `json:"plan"`
 		Arch       string `json:"arch"`
 		Visibility string `json:"visibility"`
+		Runtime    string `json:"runtime"`
 		CPUMilli   int64  `json:"cpu_milli"`
 		MemBytes   int64  `json:"mem_bytes"`
 		DiskBytes  int64  `json:"disk_bytes"`
@@ -691,7 +696,7 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := s.App.CreateWorkspace(r.Context(), service.CreateWorkspaceInput{
 		ProjectID: pid, Name: body.Name, Plan: body.Plan, Arch: body.Arch,
-		Visibility: body.Visibility, CPUMilli: body.CPUMilli, MemBytes: body.MemBytes, DiskBytes: body.DiskBytes,
+		Visibility: body.Visibility, Runtime: body.Runtime, CPUMilli: body.CPUMilli, MemBytes: body.MemBytes, DiskBytes: body.DiskBytes,
 		Actor: *userFrom(r),
 	})
 	if err != nil {

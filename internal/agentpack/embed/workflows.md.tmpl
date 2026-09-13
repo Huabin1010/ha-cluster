@@ -8,7 +8,14 @@
 GET /projects                          → 记下 project_id（或先 POST /projects）
 GET /projects/{pid}/members            → 看自己的 role / ssh_access
 POST /projects/{pid}/workspaces
-  {"name":"dev-1","plan":"2c2g","arch":"amd64","visibility":"shared"}
+  {"name":"dev-1","plan":"2c2g","arch":"amd64","visibility":"shared","runtime":"container"}
+```
+
+开通 Kubernetes（需节点带 `k3s` / `k8s` / `both` 标签，否则 `409 INSUFFICIENT_CAPACITY`）：
+
+```
+POST /projects/{pid}/workspaces
+  {"name":"k8s-1","plan":"nano","arch":"amd64","visibility":"shared","runtime":"k8s"}
 ```
 
 - 自己是 owner/admin：可能直接进入开通，轮询 `GET /workspaces/{id}` 直到 `running`（通常 <90s）。
@@ -45,7 +52,19 @@ POST /workspaces/{id}/exec
   {"command":"base64 -d > /tmp/note.txt && cat /tmp/note.txt","stdin_b64":"<BASE64>"}
 ```
 
-`timeout_sec` 默认 60，最大 300。只读 SSH（`ssh_mode=read_only`）会 403。
+`timeout_sec` 默认 60，最大 300。只读 SSH（`ssh_mode=read_only`）会 403。**Kubernetes 工作区 exec 返回 400**，改走下一节 apply。
+
+## 3b. Kubernetes：apply / kubeconfig / 资源
+
+```
+POST /workspaces/{id}/k8s/apply
+  {"yaml":"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 1\n"}
+GET  /workspaces/{id}/k8s/resources
+GET  /workspaces/{id}/kubeconfig          → {kubeconfig}
+DELETE /workspaces/{id}/k8s/resources?kind=Deployment&name=web
+```
+
+清单会被强制改写到工作区 Namespace；`ClusterRole` / `Node` 等集群级对象会被拒。viewer 只能 GET resources。需要域名再走现有 Ingress API。
 
 `GET /workspaces/{id}/connection` 含 `exec_example`。`ssh_access` 不是 `granted`（且不是 owner/admin）时 exec 为 403。让用户：
 

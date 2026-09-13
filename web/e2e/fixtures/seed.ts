@@ -18,13 +18,14 @@ export async function seedProjectWithMembers(ownerToken: string, prefix = "proj-
 export async function seedWorkspace(
   token: string,
   projectId: string,
-  options: { name?: string; plan?: string; arch?: string; visibility?: string } = {},
+  options: { name?: string; plan?: string; arch?: string; visibility?: string; runtime?: string } = {},
 ) {
   const plan = options.plan ?? "nano";
   const arch = options.arch ?? "amd64";
   const name = options.name ?? uniq("ws");
   const visibility = options.visibility ?? "shared";
-  return api.createWorkspace(token, projectId, { name, plan, arch, visibility });
+  const runtime = options.runtime;
+  return api.createWorkspace(token, projectId, { name, plan, arch, visibility, runtime });
 }
 
 export async function destroyWorkspaces(token: string, wsIds: string[]) {

@@ -57,6 +57,10 @@ describe("audit labels", () => {
     expect(actionLabel("ssh.session.close")).toBe("关闭网页终端");
     expect(actionLabel("ssh.exec")).toBe("SSH 执行命令");
     expect(actionLabel("ssh.exec.deny")).toBe("SSH 执行失败");
+    expect(actionLabel("k8s.apply")).toBe("应用 K8s 清单");
+    expect(actionLabel("k8s.apply.deny")).toBe("K8s 清单被拒绝");
+    expect(actionLabel("k8s.delete")).toBe("删除 K8s 资源");
+    expect(actionLabel("kubeconfig.download")).toBe("下载 kubeconfig");
     expect(actionLabel("agent_token.issue")).toBe("签发 Agent 令牌");
     expect(actionLabel("tls.issue")).toBe("签发 TLS 证书");
     expect(actionLabel("ingress_domain_zone.create")).toBe("添加域名分区");

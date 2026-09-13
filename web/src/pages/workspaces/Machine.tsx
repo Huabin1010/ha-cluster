@@ -10,6 +10,7 @@ import {
   Database,
   Globe,
   HardDrive,
+  Box,
   Layers,
   LayoutDashboard,
   ScrollText,
@@ -37,7 +38,10 @@ import {
   workspaceStatusDotClass,
   workspaceStatusVariant,
   workspaceDetailQueryPollInterval,
+  isK8sRuntime,
+  runtimeLabel,
 } from "./types";
+import { K8sPanel } from "./K8sPanel";
 import { WorkspaceTerminalDialog } from "./WorkspaceTerminalDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,7 +82,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-type Section = "overview" | "connect" | "ingress" | "history";
+type Section = "overview" | "connect" | "ingress" | "history" | "k8s";
 
 const commandBoxClass =
   "mono min-w-0 flex-1 break-all rounded-lg border border-border/60 bg-(--token-box-bg) px-3 py-2.5 text-xs text-foreground select-all";
@@ -177,6 +181,7 @@ function parseSection(pathname: string, id: string): Section {
   if (pathname.startsWith(`${base}/ingress`)) return "ingress";
   if (pathname.startsWith(`${base}/history`)) return "history";
   if (pathname.startsWith(`${base}/connect`)) return "connect";
+  if (pathname.startsWith(`${base}/k8s`)) return "k8s";
   return "overview";
 }
 
@@ -543,14 +548,18 @@ export function MachinePage() {
     ? `/workspaces?project_id=${encodeURIComponent(ws.project_id)}`
     : "/workspaces";
 
+  const k8sWs = isK8sRuntime(ws?.runtime);
   const navTabs = useMemo(
     () => [
       { key: "overview" as const, label: "概览", icon: LayoutDashboard, route: `/workspaces/${id}`, testId: "ws-tab-overview" },
       { key: "connect" as const, label: "连接", icon: Terminal, route: `/workspaces/${id}/connect`, testId: "ws-tab-connect" },
+      ...(k8sWs
+        ? [{ key: "k8s" as const, label: "Kubernetes", icon: Box, route: `/workspaces/${id}/k8s`, testId: "ws-tab-k8s" }]
+        : []),
       { key: "ingress" as const, label: "域名接入", icon: Globe, route: `/workspaces/${id}/ingress`, testId: "ws-tab-ingress" },
       { key: "history" as const, label: "操作历史", icon: ScrollText, route: `/workspaces/${id}/history`, testId: "ws-tab-history" },
     ],
-    [id],
+    [id, k8sWs],
   );
 
   if (isLoading) {
@@ -573,7 +582,7 @@ export function MachinePage() {
   const pending = pendingSpec(ws);
   const wsRunning = ws.status === "running" || ws.status === "fabric_degraded";
   const sshGranted = canSSH(projectCtx?.my_role, projectCtx?.my_ssh_access, me?.platform_role);
-  const canConnect = wsRunning && sshGranted;
+  const canConnect = wsRunning && sshGranted && !isK8sRuntime(ws.runtime);
   const showSSHRequest = wsRunning && !sshGranted && projectCtx?.my_role === "developer";
   const recentLogs = logs.slice(0, 5);
   const activeRoutes = routes.filter((rt) => rt.status === "active");
@@ -613,6 +622,12 @@ export function MachinePage() {
                     {ws.plan}
                   </Hint>
                 </span>
+                <Hint label={ws.runtime || "container"} className="font-mono">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                    <Box className="size-3 shrink-0 opacity-60" />
+                    {runtimeLabel(ws.runtime)}
+                  </span>
+                </Hint>
                 <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
                   <HardDrive className="size-3 shrink-0 opacity-60" />
                   <span className="truncate max-w-40">{ws.node_name || "未分配节点"}</span>
@@ -923,17 +938,30 @@ export function MachinePage() {
           </div>
         )}
 
+        {section === "k8s" && (
+          <K8sPanel ws={ws} myRole={projectCtx?.my_role} platformRole={me?.platform_role} />
+        )}
+
         {section === "connect" && (
           <Elevated offset={1} shadowLevel={1} className="overflow-hidden rounded-xl border border-border/80 bg-surface-1">
           <Card>
             <CardHeader>
               <CardTitle>SSH 连接</CardTitle>
               <CardDescription>
-                有权限时可直接在网页打开终端；也可以导入本机公钥后用本地 SSH / scp。
+                {isK8sRuntime(ws.runtime)
+                  ? "Kubernetes 工作区不提供 SSH / 网页终端，请到 Kubernetes 页 apply 清单或下载 kubeconfig。"
+                  : "有权限时可直接在网页打开终端；也可以导入本机公钥后用本地 SSH / scp。"}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
-              {!wsRunning && <p className="m-0 text-sm text-muted-foreground">机器尚未运行，开通后才会给出连接信息。</p>}
+              {isK8sRuntime(ws.runtime) && (
+                <Alert variant="info">
+                  <AlertDescription>
+                    请使用「Kubernetes」页应用 YAML，或下载受限 kubeconfig。进容器请改用 apply / resources，不要走 exec。
+                  </AlertDescription>
+                </Alert>
+              )}
+              {!wsRunning && !isK8sRuntime(ws.runtime) && <p className="m-0 text-sm text-muted-foreground">机器尚未运行，开通后才会给出连接信息。</p>}
               {wsRunning && !sshGranted && (
                 <Alert variant="info">
                   <AlertDescription>

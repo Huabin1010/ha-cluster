@@ -174,7 +174,7 @@
 
 - 全局列表：侧栏 `nav-workspaces` → `/workspaces`（可用 `?project_id=`）
 - 项目内：项目详情 `project-tab-workspaces` → `/projects/:id/workspaces`
-- 机器详情：行内「管理」`ws-manage` → `/workspaces/:id`（Tab：概览 / 连接 / 域名接入 / 操作历史）
+- 机器详情：行内「管理」`ws-manage` → `/workspaces/:id`（Tab：概览 / 连接 / Kubernetes（仅 k8s 运行时） / 域名接入 / 操作历史）
 
 ### 子功能
 
@@ -184,6 +184,7 @@
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
 - 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行
 - 机器详情：网页终端、HTTP 执行 curl、Ingress（含推荐 CNB 镜像仓库）、审计历史
+- **Kubernetes**：开通时选运行环境；详情页粘贴 YAML apply、下载 kubeconfig、看资源列表（viewer 只读）
 
 ### 快捷键
 
@@ -196,7 +197,7 @@
 | 用户看到的 | testid |
 |---|---|
 | 开通 / 申请服务器 | `ws-create` |
-| 项目 / 名称 / 套餐 / 架构 / 可见性 | `ws-project-select` / `ws-name-input` / `ws-plan-select` / `ws-arch-select` / `ws-visibility-select` |
+| 项目 / 名称 / 套餐 / 架构 / 可见性 / 运行环境 | `ws-project-select` / `ws-name-input` / `ws-plan-select` / `ws-arch-select` / `ws-visibility-select` / `ws-create-runtime` |
 | 提交开通 | `ws-submit` |
 | 项目筛选 | `ws-filter-project` |
 | 含异常 | `ws-show-abnormal` |
@@ -225,8 +226,9 @@
 |---|---|
 | 二级侧栏 | `ws-subnav` |
 | 返回全部服务器 | `ws-back-list` |
-| 概览 / 连接 / 域名 / 历史（桌面） | `ws-nav-overview` / `ws-nav-connect` / `ws-nav-ingress` / `ws-nav-history` |
-| 同上（窄屏） | `ws-tab-overview` / `ws-tab-connect` / `ws-tab-ingress` / `ws-tab-history` |
+| 概览 / 连接 / Kubernetes / 域名 / 历史（桌面） | `ws-nav-overview` / `ws-nav-connect` / `ws-nav-k8s` / `ws-nav-ingress` / `ws-nav-history` |
+| 同上（窄屏） | `ws-tab-overview` / `ws-tab-connect` / `ws-tab-k8s` / `ws-tab-ingress` / `ws-tab-history` |
+| 应用 YAML / 文本框 / 下载 kubeconfig / 资源表 | `ws-k8s-apply` / `ws-k8s-yaml` / `ws-k8s-kubeconfig` / `ws-k8s-resources` |
 | 窄屏 Tab 条 | `ws-mobile-tabs` |
 | 概览指标 | `ws-overview-stats` |
 | 概览打开终端 | `ws-overview-terminal` |

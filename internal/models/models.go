@@ -53,6 +53,9 @@ const (
 	SSHModeReadWrite = "read_write"
 	SSHModeReadOnly  = "read_only"
 
+	RuntimeContainer = "container"
+	RuntimeK8s       = "k8s"
+
 	NodeHealthy  = "healthy"
 	NodeDegraded = "degraded"
 	NodeOffline  = "offline"
@@ -182,6 +185,8 @@ type Workspace struct {
 	ResizeKind       string    `json:"resize_kind,omitempty"`
 	LastActivityAt   time.Time `json:"last_activity_at,omitempty"`
 	IdleSuspendHours int       `json:"idle_suspend_hours,omitempty"`
+	Runtime          string    `json:"runtime,omitempty"`
+	RuntimeRef       string    `json:"runtime_ref,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -415,6 +420,39 @@ func NormalizeMembershipSSH(m *Membership) {
 
 func CanMutateWorkspace(role string) bool {
 	return RoleRank(role) >= RoleRank(RoleDeveloper)
+}
+
+func NormalizeRuntime(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", RuntimeContainer, "incus", "docker", "docker+ssh":
+		return RuntimeContainer
+	case RuntimeK8s, "kubernetes", "k3s":
+		return RuntimeK8s
+	default:
+		return ""
+	}
+}
+
+func IsK8sRuntime(runtime string) bool {
+	return NormalizeRuntime(runtime) == RuntimeK8s
+}
+
+func RuntimeLabel(runtime string) string {
+	if IsK8sRuntime(runtime) {
+		return "Kubernetes"
+	}
+	return "Docker + SSH"
+}
+
+func NodeSupportsK8s(tags []string) bool {
+	for _, raw := range tags {
+		t := strings.ToLower(strings.TrimSpace(raw))
+		switch t {
+		case "k3s", "k8s", "kubernetes", "both", "runtime=k3s", "runtime=k8s", "runtime=both":
+			return true
+		}
+	}
+	return false
 }
 
 func CanManageMembers(role string) bool {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock } from "lucide-react";
+import { Check, Copy, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock, Box } from "lucide-react";
 import { api, friendlyError } from "@/providers";
 import { formatTime, copyText } from "@/ui/format";
 import { canSSH } from "@/lib/permissions";
@@ -17,6 +17,8 @@ import {
   workspaceStatusInFlight,
   Workspace,
   workspaceSpec,
+  isK8sRuntime,
+  runtimeLabel,
 } from "./types";
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -93,8 +95,9 @@ export function WorkspaceRow({
     ws.status !== "requested";
   const wsRunning = ws.status === "running" || ws.status === "fabric_degraded" || ws.status === "suspended";
   const sshGranted = canSSH(myRole, mySshAccess, platformRole);
-  const showSSH = wsRunning && sshGranted && displayStatus !== "destroying";
-  const showSSHRequest = wsRunning && !sshGranted && myRole === "developer" && displayStatus !== "destroying";
+  const k8s = isK8sRuntime(ws.runtime);
+  const showSSH = wsRunning && sshGranted && displayStatus !== "destroying" && !k8s;
+  const showSSHRequest = wsRunning && !sshGranted && myRole === "developer" && displayStatus !== "destroying" && !k8s;
   const spec = workspaceSpec(ws);
   const pendingResize = pendingSpec(ws);
   const resizePending = hasPendingResize(ws);
@@ -201,6 +204,12 @@ export function WorkspaceRow({
             </span>
           )}
           <span className="mono font-mono text-muted-foreground">{ws.arch}</span>
+          <Hint label={ws.runtime || "container"} className="font-mono">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+              <Box className="size-3 shrink-0 opacity-70" />
+              {runtimeLabel(ws.runtime)}
+            </span>
+          </Hint>
         </div>
       </TableCell>
       <TableCell className="py-2.5 whitespace-nowrap text-xs">
@@ -516,6 +525,14 @@ export function WorkspaceRow({
             >
               <Trash2 className="size-3.5 shrink-0" />
               平台终审
+            </Button>
+          )}
+          {k8s && (
+            <Button variant="outline" size="compact" asChild className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs">
+              <Link data-testid="ws-manage" to={`/workspaces/${ws.id}/k8s`}>
+                <Box className="size-3.5 shrink-0" />
+                Kubernetes
+              </Link>
             </Button>
           )}
           {showSSHRequest && projectId && (

@@ -79,6 +79,10 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if cur, gerr := s.App.Store.GetWorkspace(r.Context(), id); gerr == nil && models.IsK8sRuntime(cur.Runtime) {
+		writeErr(w, http.StatusBadRequest, errors.New("Kubernetes 工作区请用 apply / kubeconfig，不支持 SSH 执行"))
+		return
+	}
 	ws, node, err := s.App.SSHTarget(r.Context(), *actor, id)
 	if err != nil {
 		status := http.StatusForbidden

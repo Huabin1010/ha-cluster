@@ -7,6 +7,8 @@ import {
   matchCatalogPlan,
   PLAN_CATALOG,
   statusLabel,
+  runtimeLabel,
+  isK8sRuntime,
   canApproveRole,
   workspaceStatusVariant,
   workspaceStatusDotClass,
@@ -32,6 +34,14 @@ describe("formatPlanSpec", () => {
     expect(
       formatPlanSpec({ name: "custom", cpu_milli: 8000, mem_bytes: 16 * Gi, disk_bytes: 1024 * Gi }),
     ).toBe("8核 / 16GiB / 1TiB");
+  });
+});
+
+describe("runtimeLabel", () => {
+  it("maps k8s to Kubernetes", () => {
+    expect(isK8sRuntime("k8s")).toBe(true);
+    expect(runtimeLabel("k8s")).toBe("Kubernetes");
+    expect(runtimeLabel("container")).toBe("Docker + SSH");
   });
 });
 

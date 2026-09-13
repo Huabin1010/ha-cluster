@@ -66,6 +66,27 @@ func TestReserveArchIsolation(t *testing.T) {
 	}
 }
 
+func TestReserveK8sRequiresNodeTag(t *testing.T) {
+	st := memory.New()
+	const Gi = 1024 * 1024 * 1024
+	plain := seedNode(t, st, models.ArchAMD64, 8000, 4*Gi, 40*Gi)
+	svc := Service{Store: st}
+	plan := models.Plans()["nano"]
+	ctx := context.Background()
+	_, err := svc.Reserve(ctx, ReserveRequest{
+		ProjectID: uuid.New(), Plan: plan, Arch: models.ArchAMD64, RequireK8s: true,
+	})
+	if !errors.Is(err, store.ErrNoCapacity) {
+		t.Fatalf("untagged node must not take k8s: %v", err)
+	}
+	_ = st.UpdateNodeMeta(ctx, plain.ID, "", "", []string{"k3s"})
+	if _, err := svc.Reserve(ctx, ReserveRequest{
+		ProjectID: uuid.New(), Plan: plan, Arch: models.ArchAMD64, RequireK8s: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestReleaseReturnsCapacity(t *testing.T) {
 	st := memory.New()
 	const Gi = 1024 * 1024 * 1024
