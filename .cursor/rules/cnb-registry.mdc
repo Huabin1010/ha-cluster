@@ -1,0 +1,29 @@
+---
+description: 镜像只走 CNB；本机编完立刻 push，禁止 Docker Hub / scp tar
+alwaysApply: true
+---
+
+# 镜像发布只走 CNB
+
+用户说「部署 / 上线 / 推镜像」时，**本机编完立刻** `docker tag` + `docker push` 到 CNB。**不要等用户再说「上传到 CNB」。**
+
+默认路径：`docker.cnb.cool/qzsyzn/docker/<镜像名>:<标签>`（例：`…/docker/ha-cluster-api:latest`、`…/docker:snacks`）。
+
+```powershell
+docker tag ha-cluster-api:local docker.cnb.cool/qzsyzn/docker/ha-cluster-api:latest
+docker push docker.cnb.cool/qzsyzn/docker/ha-cluster-api:latest
+```
+
+## 禁止
+
+- ❌ 把 Docker Hub / GHCR / `docker.io` 当发布目标
+- ❌ `docker save` + `scp` 把 tar 传到 PVE、42、或申请的机器
+- ❌ 在申请的机器 / `POST /exec` / 网页终端里 `docker build`
+- ❌ 把 CNB 账号密码写进 Git / 规则 / 聊天
+
+## 对
+
+- ✅ 构建只在开发机
+- ✅ 机器里只 `docker pull` + `compose up`（或 k8s apply）
+- ✅ 42 控制面：本机 push CNB 后，42 `docker pull` 再 `rolling-up.sh`
+- ✅ 登录用本机已有 `docker login docker.cnb.cool`，或 `docs/credentials.local.md`（勿打印）

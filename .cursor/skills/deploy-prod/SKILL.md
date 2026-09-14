@@ -19,7 +19,8 @@ description: >-
 - ❌ `docker compose stop ha-api` / 整栈 `up -d` 一把重建（会断控制台）
 - ❌ 重启或 recreate `ha-postgres`
 - ❌ 在 PVE 宿主机 `192.168.1.8` 或 Hub `110.40.229.62` 上跑 ha-api
-- ❌ `docker compose pull` 拉 GHCR（生产用已 load 的 `ha-cluster-api:local`）
+- ❌ `docker compose pull` 拉 GHCR；发布目标是 **CNB** `docker.cnb.cool/qzsyzn/docker/ha-cluster-api`
+- ❌ `docker save` + `scp` 传 tar（用户要求走 CNB pull）
 - ❌ 打印 `.env` / JWT / 宝塔密钥全文；一次性脚本只写 `tmp/`
 
 ## 流程
@@ -39,29 +40,29 @@ ssh -o BatchMode=yes root@42.193.236.123 "docker ps --format '{{.Names}} {{.Stat
 
 ```powershell
 docker build -f docker/Dockerfile -t ha-cluster-api:local .
+docker tag ha-cluster-api:local docker.cnb.cool/qzsyzn/docker/ha-cluster-api:latest
+docker push docker.cnb.cool/qzsyzn/docker/ha-cluster-api:latest
 ```
 
-镜像含 `ha-api` + `web/dist`。改了 Go / 前端 / agent pack 都要走这一步。
+镜像含 `ha-api` + `web/dist`。改了 Go / 前端 / agent pack 都要走这一步。本机须已 `docker login docker.cnb.cool`。
 
-### 3. 传上去
+### 3. 42 从 CNB 拉
 
-```powershell
-docker save ha-cluster-api:local -o tmp/ha-cluster-api-local.tar
-scp -o BatchMode=yes tmp/ha-cluster-api-local.tar root@42.193.236.123:/tmp/ha-cluster-api-local.tar
+```bash
+ssh -o BatchMode=yes root@42.193.236.123 'docker pull docker.cnb.cool/qzsyzn/docker/ha-cluster-api:latest
+docker tag docker.cnb.cool/qzsyzn/docker/ha-cluster-api:latest ha-cluster-api:local'
 ```
 
 若改了 `deploy/prod/docker-compose.yaml`、`edge/nginx.conf`、`rolling-up.sh`，一并 scp 到远程目录，远程 `sed -i 's/\r$//'`。
 
 ### 4. 滚动双槽
 
-在 42 上 **load 后只跑** [`deploy/prod/rolling-up.sh`](../../../deploy/prod/rolling-up.sh)（一侧 unhealthy 就停，不拆另一侧）：
+在 42 上 **pull 后只跑** [`deploy/prod/rolling-up.sh`](../../../deploy/prod/rolling-up.sh)（一侧 unhealthy 就停，不拆另一侧）：
 
 ```bash
 ssh -o BatchMode=yes root@42.193.236.123 'set -e
 DIR=/www/wwwroot/cl.qzsyzn.com/docker
 cd "$DIR"
-docker load -i /tmp/ha-cluster-api-local.tar
-rm -f /tmp/ha-cluster-api-local.tar
 grep -q "^HA_API_IMAGE=" .env && sed -i "s|^HA_API_IMAGE=.*|HA_API_IMAGE=ha-cluster-api:local|" .env || echo HA_API_IMAGE=ha-cluster-api:local >> .env
 sed -i "s/\r$//" rolling-up.sh
 chmod +x rolling-up.sh
@@ -96,5 +97,5 @@ pack `version` 须等于仓库 `internal/agentpack/pack.go` 的 `Version`。告�
 | 控制台 | `https://cl.qzsyzn.com` |
 | 公网入口 | 宝塔 443 → `127.0.0.1:18080`（edge）→ `ha-api-a`/`ha-api-b` |
 | 槽位 | `127.0.0.1:18082`、`127.0.0.1:18084` |
-| 镜像 | `HA_API_IMAGE=ha-cluster-api:local` |
+| 镜像 | `HA_API_IMAGE=ha-cluster-api:local`（由 CNB `…/qzsyzn/docker/ha-cluster-api:latest` tag 而来） |
 | Compose 网段 | `172.28.90.0/24` |

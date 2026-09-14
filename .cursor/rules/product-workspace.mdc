@@ -29,6 +29,6 @@ alwaysApply: true
 ## 一行命令
 
 - **纳管 Node（设备）**：仅 `platform_admin`；一行 `curl install.sh | join`（见 `node-install-depot.mdc`、`platform-governance.mdc`）。
-- **工作区**：用户不手工装环境；审批后平台自动 Launch → 控制台提供 **一行 `ssh …@bastion -t <workspace-id>`**。**构建只能在本机运行，不允许在我们申请的机器中运行。**
+- **工作区**：用户不手工装环境；审批后平台自动 Launch → 控制台提供 **一行 `ssh …@bastion -t <workspace-id>`**。**构建只能在本机运行，不允许在我们申请的机器中运行。** 编完立刻 `docker push` 到 CNB（`docker.cnb.cool/qzsyzn/docker/…`），机器里只 pull。
 - **运行环境**：`container`（Docker+SSH，Incus，默认）或 `k8s`（Namespace+Quota）。创建时 **自动注入**（Docker/SSH 公钥；k8s 则 ns+kubeconfig）。详见 `27-project-monitoring-and-runtimes.md`。
 - **项目监控**：列表展示每台机器 CPU/内存/磁盘快照；详情页 **近期曲线**（agent 上报 workspace 指标，待实现）。
