@@ -313,6 +313,9 @@ func TestWorkspaceQuotaHTTP(t *testing.T) {
 	if errBody["hint"] == "" {
 		t.Fatalf("want hint, got %v", errBody)
 	}
+	if strings.Contains(errBody["hint"], "HTTP") || strings.Contains(errBody["hint"], "不要只看到") {
+		t.Fatalf("user-facing hint leaked agent coaching: %v", errBody)
+	}
 }
 
 func TestHeartbeatAndCapacity(t *testing.T) {

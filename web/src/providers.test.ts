@@ -378,8 +378,8 @@ describe("friendlyError (U3)", () => {
     const { friendlyError } = await import("./providers");
     const forbidden = Object.assign(new Error("forbidden"), { status: 403 });
     const missing = Object.assign(new Error("not found"), { status: 404 });
-    expect(friendlyError(forbidden)).toBe("没有权限做这件事");
-    expect(friendlyError(missing)).toBe("找不到该用户或资源");
+    expect(friendlyError(forbidden)).toBe("没有权限执行此操作");
+    expect(friendlyError(missing)).toBe("未找到该资源");
     expect(friendlyError(new Error("conflict"))).toMatch(/冲突/);
     expect(friendlyError(new Error("conflict: Deployment web 没有 resources.requests"))).toMatch(
       /resources\.requests/,
@@ -399,8 +399,22 @@ describe("U4 capacity + apiText", () => {
     expect(isInsufficientCapacity("INSUFFICIENT_CAPACITY")).toBe(true);
     expect(isInsufficientCapacity("资源不足，请换套餐或节点（INSUFFICIENT_CAPACITY）")).toBe(true);
     const err = Object.assign(new Error("INSUFFICIENT_CAPACITY: 没有带 k3s 标签的节点"), { status: 409 });
-    expect(friendlyError(err)).toMatch(/资源不足/);
-    expect(friendlyError(err)).toMatch(/k3s/);
+    expect(friendlyError(err)).toMatch(/Kubernetes 节点/);
+    expect(friendlyError(err)).not.toMatch(/INSUFFICIENT_CAPACITY/);
+    expect(friendlyError(err)).not.toMatch(/k3s/);
+  });
+
+  it("friendlyError hides agent coaching on capacity errors", async () => {
+    const { friendlyError } = await import("./providers");
+    const err = Object.assign(
+      new Error("INSUFFICIENT_CAPACITY。先停/销毁闲置机器，或换更小套餐。不要只看到 HTTP 409。"),
+      { status: 409, hint: "先停/销毁闲置机器，或换更小套餐。不要只看到 HTTP 409。" },
+    );
+    const msg = friendlyError(err);
+    expect(msg).toMatch(/可用资源不足/);
+    expect(msg).not.toMatch(/HTTP 409/);
+    expect(msg).not.toMatch(/INSUFFICIENT_CAPACITY/);
+    expect(msg).not.toMatch(/不要只看到/);
   });
 
   it("apiText returns plain body", async () => {

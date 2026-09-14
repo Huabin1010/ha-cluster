@@ -64,15 +64,17 @@ function parseTarget(cpuCores: string, memGi: string, diskGi: string): PlanItem 
 function previewMessage(kind: ResizePreview["kind"], canApprove: boolean): string {
   switch (kind) {
     case "upgrade":
-      return canApprove ? "本次为升配。确认后立即生效，无需再走审批。" : "本次为升配。确认后将提交申请，由管理员审批。";
+      return canApprove
+        ? "此变更为升配，确认后将立即生效。"
+        : "此变更为升配。提交后将进入审批，通过后生效。";
     case "downgrade":
-      return "本次为降配。降低配置需提交申请，审批通过后才会生效。";
+      return "此变更为降配。降低配置需经审批通过后才会生效。";
     case "unchanged":
-      return "规格未变化，无需提交。";
+      return "规格未发生变化，无需提交。";
     case "mixed":
-      return "不能同时升配一项并降配另一项，请调整后再提交。";
+      return "无法同时提升一项资源并降低另一项。请调整目标规格后重试。";
     case "disk_shrink":
-      return "不支持缩小磁盘，磁盘不能小于当前值。";
+      return "磁盘容量不支持缩减，目标容量不得小于当前值。";
   }
 }
 
@@ -270,12 +272,12 @@ export function ResizeDialog({ ws, disabled, canApprove, onSubmitted, onError }:
       </DialogTrigger>
       <DialogContent size="lg" className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{step === "preview" ? "确认本次升降配" : canApprove ? "调整服务器规格" : "申请服务器扩容"}</DialogTitle>
+          <DialogTitle>{step === "preview" ? "确认规格变更" : canApprove ? "调整服务器规格" : "申请服务器扩容"}</DialogTitle>
           <DialogDescription>
             {step === "preview"
-              ? `当前规格 ${formatPlanSpec(spec)}。请核对下方变更后再${applyNow ? "执行" : "提交"}。`
-              : `当前规格：${formatPlanSpec(spec)}。默认选择套餐规格，也可自行填写。磁盘不能小于当前值；CPU / 内存可升可降，但不能一项升一项降。${
-                  canApprove ? "升配确认后立即生效；降配需审批后才会执行。" : "提交后需管理员审批。"
+              ? `当前配置为 ${formatPlanSpec(spec)}，请核对以下变更后确认。`
+              : `当前配置为 ${formatPlanSpec(spec)}。可选择套餐或自定义规格。磁盘不可小于当前容量；CPU 与内存可升可降，但不可一项升高、另一项降低。${
+                  canApprove ? "升配确认后立即生效；降配需审批通过后执行。" : "提交后将由项目管理员审批。"
                 }`}
           </DialogDescription>
         </DialogHeader>
@@ -334,7 +336,7 @@ export function ResizeDialog({ ws, disabled, canApprove, onSubmitted, onError }:
                 取消
               </Button>
               <Button data-testid="ws-resize-submit" type="submit" disabled={diskBelowMin}>
-                预览升降配
+                核对变更
               </Button>
             </DialogFooter>
           </form>

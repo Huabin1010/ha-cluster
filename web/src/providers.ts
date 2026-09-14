@@ -328,49 +328,121 @@ export const authProvider = {
   },
 };
 
+function errorMessage(e: unknown): string {
+  if (e == null) return "";
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  if (typeof e === "object" && "message" in e) return String((e as { message: unknown }).message);
+  return String(e);
+}
+
+function attachedHint(e: unknown): string {
+  return isApiError(e) && e.hint ? e.hint.trim() : "";
+}
+
+/** Drop concatenated API hint / agent coaching so the console never shows it raw. */
+function stripAttachedHint(msg: string, hint: string): string {
+  let out = msg.trim();
+  if (hint && out.endsWith(hint)) {
+    out = out.slice(0, out.length - hint.length).replace(/[。.\s]+$/u, "").trim();
+  }
+  return out;
+}
+
+function isInternalCopy(text: string): boolean {
+  return /HTTP\s*\d+|不要只看到|不要对着|error 字段|curl\s+-f|confirm_second_port|PATCH\s+\/projects|POST\s+\/workspaces|\$pid|k8s\.invalid/i.test(
+    text,
+  );
+}
+
+function capacityUserMessage(detail: string): string {
+  const d = detail.trim();
+  if (/超出项目\s*CPU/i.test(d)) {
+    return "本次操作将超出项目的 CPU 预算。请降低 CPU 规格，或联系项目管理员调整预算。";
+  }
+  if (/超出项目内存/.test(d)) {
+    return "本次操作将超出项目的内存预算。请降低内存规格，或联系项目管理员调整预算。";
+  }
+  if (/超出项目磁盘/.test(d)) {
+    return "本次操作将超出项目的磁盘预算。请降低磁盘规格，或联系项目管理员调整预算。";
+  }
+  if (/k3s|k8s|kubernetes/i.test(d)) {
+    return "当前没有可调度的 Kubernetes 节点能满足该规格。请改选其他运行环境，或降低规格后重试。";
+  }
+  if (/arch 匹配|架构匹配/.test(d)) {
+    return "当前没有架构匹配且资源充足的节点。请降低规格或更换架构后重试。";
+  }
+  return "当前节点可用资源不足，无法完成此次操作。请先停止或销毁闲置机器，或改选更低规格。";
+}
+
 export function isInsufficientCapacity(e: unknown): boolean {
   if (e == null) return false;
-  let msg = "";
-  if (typeof e === "string") msg = e;
-  else if (e instanceof Error) msg = e.message;
-  else if (typeof e === "object" && "message" in e) msg = String((e as { message: unknown }).message);
-  else msg = String(e);
-  return msg === "INSUFFICIENT_CAPACITY" || msg.toLowerCase().includes("insufficient");
+  const msg = errorMessage(e);
+  const lower = msg.toLowerCase();
+  return (
+    msg.includes("INSUFFICIENT_CAPACITY") ||
+    lower.includes("insufficient") ||
+    msg.includes("资源不足") ||
+    msg.includes("可用资源不足")
+  );
 }
 
 export function friendlyError(e: unknown): string {
-  if (isInsufficientCapacity(e)) {
-    const raw = e instanceof Error ? e.message : String(e);
+  const hint = attachedHint(e);
+  const raw = stripAttachedHint(errorMessage(e), hint);
+
+  if (isInsufficientCapacity(e) || /^INSUFFICIENT_CAPACITY\b/i.test(raw)) {
     const extra = raw.replace(/^INSUFFICIENT_CAPACITY:?\s*/i, "").trim();
-    if (extra && extra.toLowerCase() !== "insufficient_capacity" && extra !== raw) {
-      return `资源不足，请换套餐或节点（INSUFFICIENT_CAPACITY）。${extra}`;
-    }
-    return "资源不足，请换套餐或节点（INSUFFICIENT_CAPACITY）";
+    const detail = extra && extra.toLowerCase() !== "insufficient_capacity" && extra !== raw ? extra : "";
+    return capacityUserMessage(isInternalCopy(detail) ? "" : detail);
   }
   if (isApiError(e) && e.status === 401) {
     return "用户名或密码错误";
   }
   if (isApiError(e) && e.status === 403) {
-    return "没有权限做这件事";
+    return "没有权限执行此操作";
   }
   if (isApiError(e) && e.status === 404) {
-    return "找不到该用户或资源";
+    return "未找到该资源";
   }
   if (isApiError(e) && (e.status === 0 || e.message.includes("network"))) {
     return "网络异常，请稍后重试";
   }
-  const msg = e instanceof Error ? e.message : String(e);
-  if (msg === "SECOND_PORT_CONFIRM_REQUIRED" || msg.startsWith("SECOND_PORT_CONFIRM_REQUIRED:")) {
-    return "这台机器已有一个服务端口。多站点请在主机内用 nginx 做路径路由。";
+  if (raw === "SECOND_PORT_CONFIRM_REQUIRED" || raw.startsWith("SECOND_PORT_CONFIRM_REQUIRED:")) {
+    return "该主机已占用一个服务端口。如需托管多个站点，请在主机内配置反向代理。";
   }
-  if (msg === "PURPOSE_REQUIRED" || msg.startsWith("PURPOSE_REQUIRED:")) return "请先填写项目用途，才能继续操作";
-  if (msg === "DISK_SHRINK_NOT_SUPPORTED") return "不提供硬盘缩容，请只申请更大的磁盘";
-  if (msg === "ONLY_EXPANSION") return "只支持扩容：CPU / 内存 / 磁盘均不可下调";
-  if (msg === "unauthorized" || msg === "Unauthorized") return "用户名或密码错误";
-  if (msg === "forbidden") return "没有权限做这件事";
-  if (msg === "not found") return "找不到该用户或资源";
-  if (msg === "invalid input" || msg === "invalid_input") return "输入无效，请检查后重试";
-  if (msg === "conflict") return "与已有资源冲突（如 slug 重复或邀请已使用）";
-  return msg;
+  if (raw === "PURPOSE_REQUIRED" || raw.startsWith("PURPOSE_REQUIRED:")) {
+    return "请先在项目设置中填写用途后再继续。";
+  }
+  if (raw === "DISK_SHRINK_NOT_SUPPORTED" || raw.startsWith("DISK_SHRINK_NOT_SUPPORTED")) {
+    return "磁盘容量不支持缩减，请只申请更大的磁盘。";
+  }
+  if (raw === "ONLY_EXPANSION" || raw.startsWith("ONLY_EXPANSION")) {
+    return "仅支持扩容：CPU、内存与磁盘均不可下调。";
+  }
+  if (raw === "EXEC_UNAVAILABLE" || raw.startsWith("EXEC_UNAVAILABLE:")) {
+    return "目标机器暂时无法连接。请先启动后再试；若仍失败，请更换节点。";
+  }
+  if (raw === "K8S_UNAVAILABLE" || raw.startsWith("K8S_UNAVAILABLE:")) {
+    return "Kubernetes 控制面暂不可用，请稍后重试。";
+  }
+  if (raw === "unauthorized" || raw === "Unauthorized") return "用户名或密码错误";
+  if (raw === "forbidden") return "没有权限执行此操作";
+  if (raw === "not found") return "未找到该资源";
+  if (raw === "invalid input" || raw === "invalid_input" || raw.startsWith("invalid input:")) {
+    return "提交内容无效，请检查必填项与格式后重试。";
+  }
+  if (raw === "conflict") {
+    return "该操作与现有资源冲突，请检查名称是否重复或当前状态后重试。";
+  }
+  if (/^conflict:\s*/i.test(raw)) {
+    const detail = raw.replace(/^conflict:\s*/i, "").trim();
+    if (detail && !isInternalCopy(detail)) return detail;
+    return "该操作与现有资源冲突，请检查名称是否重复或当前状态后重试。";
+  }
+  if (hint && !isInternalCopy(hint) && !raw.includes(hint)) {
+    return `${raw}。${hint}`;
+  }
+  return raw;
 }
 
