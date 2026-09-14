@@ -29,7 +29,7 @@ ssh root@42.193.236.123 'bash /tmp/prep-host.sh'
 bash deploy/prod/deploy-remote.sh
 ```
 
-3. 验收：`curl -fsS http://127.0.0.1:18080/healthz`；槽位 `18082` / `18084`。更新用 `rolling-up.sh`，不重启 Postgres。
+3. 验收：`curl -fsS http://127.0.0.1:18080/healthz`（无 Host 也走探活）；槽位 `18082` / `18084`。更新用 `rolling-up.sh`，不重启 Postgres。
 
 ## 阶段 2 — EasyTier peer
 

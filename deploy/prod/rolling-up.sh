@@ -16,9 +16,13 @@ log() { echo "==> $*"; }
 
 wait_http() {
   local url="$1" name="$2" tries="${3:-36}"
-  local i
+  local i extra=()
+  # edge 默认站无 Host 会 404；带上控制台 Host 走 cl.qzsyzn.com server。
+  if [[ "${url}" == *":${HA_EDGE_PORT:-18080}/"* ]]; then
+    extra=(-H "Host: ${HA_EDGE_HEALTH_HOST:-cl.qzsyzn.com}")
+  fi
   for i in $(seq 1 "${tries}"); do
-    if curl -fsS -o /dev/null --connect-timeout 2 --max-time 3 "${url}"; then
+    if curl -fsS -o /dev/null --connect-timeout 2 --max-time 3 "${extra[@]}" "${url}"; then
       log "${name} healthy (${url})"
       return 0
     fi

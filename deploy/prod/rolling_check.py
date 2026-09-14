@@ -40,6 +40,8 @@ def check_nginx() -> None:
         fail("nginx still points at singleton ha-api")
     if "proxy_next_upstream" not in NGINX:
         fail("nginx must retry the other slot on 502/503")
+    if "location = /healthz" not in NGINX:
+        fail("nginx default_server must expose /healthz for local probes")
 
 
 def simulate_one_down() -> None:
