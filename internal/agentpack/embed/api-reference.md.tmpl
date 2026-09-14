@@ -65,7 +65,7 @@
 | POST | `/workspaces/{id}/destroy-request/approve` | 项目初审 |
 | DELETE | `/workspaces/{id}` | 普通用户=申请销毁 |
 | GET | `/workspaces/{id}/connection` | 含 `exec_example`（进机器用 exec，不要 ssh-config） |
-| POST | `/workspaces/{id}/exec` | `{command, stdin_b64?, timeout_sec?}` → `{exit_code,stdout,stderr,via}`；权限同 SSH |
+| POST | `/workspaces/{id}/exec` | `{command, stdin_b64?, timeout_sec?}` → `{exit_code,stdout,stderr,via}`；权限同 SSH。**禁止在机器里构建**（`docker build` / `npm run build` / `go build` 等只允许本机） |
 | GET | `/workspaces/{id}/ssh-target` | |
 | GET | `/workspaces/{id}/terminal` | WebSocket；可 `?access_token=` |
 | GET | `/workspaces/{id}/audit` | |

@@ -63,6 +63,9 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[SkillPath], "PURPOSE_REQUIRED") {
 		t.Fatal("pack should freeze projects missing purpose")
 	}
+	if !strings.Contains(p.Files[RulePath], "构建只能在本机运行") || !strings.Contains(p.Files[SkillPath], "不允许在我们申请的机器中运行") {
+		t.Fatal("pack should forbid builds on workspaces")
+	}
 	md := Markdown(p)
 	if !strings.Contains(md, SkillPath) || !strings.Contains(md, "HA_CLUSTER_AGENT_PACK v"+Version) {
 		t.Fatal(md[:200])

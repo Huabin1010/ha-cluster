@@ -8,7 +8,7 @@
 
 项目：`GET|POST /projects`（创建必须 `{name,slug,purpose}`，purpose 2–80 字说明用途）、`GET|PATCH|DELETE /projects/{id}`（旧项目 purpose 为空时 PATCH 必须带 purpose，否则 409 `PURPOSE_REQUIRED`）、`/usage`、`/members`、`/invitations`、`/transfer-ownership`、`/ssh-access-request`。
 
-机器：`GET /workspaces`、`POST /projects/{id}/workspaces`（默认 `container`/Compose；用户要 k8s 才 `runtime=k8s`；developer 含 k8s 一律待审，owner/admin 直建）、`approve|reject|stop|start|resize|destroy-request`、`/connection`、`POST /workspaces/{id}/exec`（Docker+SSH）、`GET /workspaces/{id}/kubeconfig`、`POST /workspaces/{id}/k8s/apply` `{yaml}`、`GET|DELETE /workspaces/{id}/k8s/resources`、`/ingress`、`/ingress/shared`。
+机器：`GET /workspaces`、`POST /projects/{id}/workspaces`（默认 `container`/Compose；用户要 k8s 才 `runtime=k8s`；developer 含 k8s 一律待审，owner/admin 直建）、`approve|reject|stop|start|resize|destroy-request`、`/connection`、`POST /workspaces/{id}/exec`（Docker+SSH；**禁止在机器里构建**，`docker build` / `npm run build` / `go build` 只允许本机）、`GET /workspaces/{id}/kubeconfig`、`POST /workspaces/{id}/k8s/apply` `{yaml}`、`GET|DELETE /workspaces/{id}/k8s/resources`、`/ingress`、`/ingress/shared`。
 
 入口：`GET /ingress/meta`（含 `preferred_registry`）、`POST|DELETE /ingress/{id}`。公共域已挂平台通配符 HTTPS。
 

@@ -50,6 +50,8 @@ POST /workspaces/{id}/exec
 
 返回 `{exit_code, stdout, stderr, via:"http-ssh"}`。命令失败时 HTTP 仍是 200，看 `exit_code`。
 
+**构建只能在本机运行，不允许在我们申请的机器中运行。** `exec` 只做运行与排障（`docker pull`、`docker compose up`、看日志）。禁止在机器里 `docker build` / `docker compose build` / `npm run build` / `go build`。
+
 写文件用 stdin（base64）：
 
 ```
@@ -125,7 +127,7 @@ POST /workspaces/{id}/ingress/shared
 
 ## 6. 推镜像 / 部署（默认 Compose + CNB）
 
-用户要推送镜像或部署服务时：先开/用 **container 机器**，`POST /workspaces/{id}/exec` 里 `docker compose up`。**只有用户点名 k8s** 才 `runtime=k8s` + `k8s/apply`。镜像**优先 CNB**，不要默认 Docker Hub。
+**构建只能在本机运行，不允许在我们申请的机器中运行。** 本机 `docker build` / 编译 → `docker push` 到 CNB。机器里只 `docker pull` + `docker compose up`（不要 `compose build`）。**只有用户点名 k8s** 才 `runtime=k8s` + `k8s/apply`。镜像**优先 CNB**，不要默认 Docker Hub。
 
 ```
 GET /registries/preferred
@@ -133,16 +135,22 @@ GET /registries/preferred
 #  image_example:"docker.cnb.cool/<组织>/<仓库>:<标签>"}
 ```
 
-在机器里（`POST /workspaces/{id}/exec`）：
+本机：
 
 ```
-docker tag myapp:latest docker.cnb.cool/<组织>/<仓库>:<标签>
+docker build -t docker.cnb.cool/<组织>/<仓库>:<标签> .
 docker push docker.cnb.cool/<组织>/<仓库>:<标签>
+```
+
+申请的机器里（`POST /workspaces/{id}/exec`）只允许：
+
+```
 docker pull docker.cnb.cool/<组织>/<仓库>:<标签>
+docker compose up -d
 ```
 
 - 控制台 https://cnb.cool 建仓库后，镜像路径就是 `docker.cnb.cool/…`。
-- 平台若已把 CNB 凭据自动注入工作区，容器内可直接 pull/push；否则先让用户在 CNB 建访问令牌，或请 `platform_admin` 在「镜像仓库」添加 `docker.cnb.cool` 并开启自动注入。
+- 平台若已把 CNB 凭据自动注入工作区，容器内可直接 **pull**；push 在本机做。否则先让用户在 CNB 建访问令牌，或请 `platform_admin` 在「镜像仓库」添加 `docker.cnb.cool` 并开启自动注入。
 - 部署跑起来后再按上一节领取 `*.apps` 域名。
 
 ## 7. 升配 / 销毁

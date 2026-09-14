@@ -9,4 +9,4 @@ alwaysApply: false
 
 在本仓库改 API / 工作流说明时，改 `internal/agentpack/embed/`，并同步 `.cursor/skills/ha-cluster-agent/`（含 `VERSION`）。
 
-口头词：「机器 / 服务器」= Workspace。开干前 `curl /agent-pack/version` 对照本地 VERSION；落后则重拉 pack。先 `curl /me` 再操作。403 是权限不足，不要换别人的号。细节见 skill `ha-cluster-agent`。**只用 curl，禁止 Cursor fetch / WebFetch。**
+口头词：「机器 / 服务器」= Workspace。开干前 `curl /agent-pack/version` 对照本地 VERSION；落后则重拉 pack。先 `curl /me` 再操作。403 是权限不足，不要换别人的号。细节见 skill `ha-cluster-agent`。**只用 curl，禁止 Cursor fetch / WebFetch。** **构建只能在本机运行，不允许在我们申请的机器中运行。**

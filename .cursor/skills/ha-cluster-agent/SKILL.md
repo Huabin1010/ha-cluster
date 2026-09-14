@@ -1,6 +1,6 @@
 ---
 name: ha-cluster-agent
-pack_version: "8"
+pack_version: "11"
 description: >-
   Operates the ha-cluster control plane as a signed-in user via REST. Use when
   creating projects, provisioning workspaces (machines), managing members or
@@ -15,7 +15,7 @@ description: >-
 
 ## 先检查 skill 版本（每次开干前）
 
-本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **8**。
+本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **11**。
 
 ```bash
 curl -fsS "${HA_API_BASE:-https://cl.qzsyzn.com/api}/agent-pack/version"
@@ -41,7 +41,7 @@ curl -fsS -H "Authorization: Bearer $HA_AGENT_TOKEN" "${HA_API_BASE:-https://cl.
 
 列表 `{data,total}`。错误 `{error}`：400 / 401 / 403 / 404 / 409。
 
-默认开 **Docker + SSH** 机器，用 **Compose** 部署（`POST /workspaces/{id}/exec` 里 `docker compose up`）。用户没提 Kubernetes / k3s / kubectl 时不要开 `runtime=k8s`。只有用户明确要 k8s 才 apply YAML / 下载 kubeconfig；对该类机器 exec 会 400。Kubernetes 与 Docker **同一审批**：developer 须等 owner/admin 批准；owner/admin 直建。
+默认开 **Docker + SSH** 机器，用 Compose **跑已经编好的镜像**（`POST /workspaces/{id}/exec` 里 `docker pull` + `docker compose up`）。**构建只能在本机运行，不允许在我们申请的机器中运行。** 用户没提 Kubernetes / k3s / kubectl 时不要开 `runtime=k8s`。只有用户明确要 k8s 才 apply YAML / 下载 kubeconfig；对该类机器 exec 会 400。Kubernetes 与 Docker **同一审批**：developer 须等 owner/admin 批准；owner/admin 直建。
 
 创建项目必须带简洁 `purpose`（2–80 字，一句话说清这个项目是干什么的），不要空、不要复述 name/slug。旧项目 `purpose` 为空时先 `PATCH /projects/{id}` `{purpose}`，否则开通 / 加人 / SSH / exec 会 `409 PURPOSE_REQUIRED`。
 
