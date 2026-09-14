@@ -54,7 +54,7 @@ bin/
 /packaging/cache/
 .local/
 
-# 临时文件
+# 本机临时文件（一次性脚本、探测、手记、二进制；见 .cursor/rules/tmp-local.mdc）
 tmp/
 temp/
 *.tmp

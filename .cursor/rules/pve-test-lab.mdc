@@ -5,7 +5,7 @@ alwaysApply: true
 
 # PVE 测试实验室（局域网）
 
-本地联调资产在 **`tmp/pve-server/`**（不进 Git）。详情以该目录下 `note.md`、`server-info/note.md` 为准；**密码只写** `docs/credentials.local.md` 或上述 note，禁止进规则/README/提交。
+本地联调资产在 **`tmp/`**（不进 Git，见 `tmp-local.mdc`）。PVE 实验室用 `tmp/pve-server/`（`note.md`）；生产机手记用 `tmp/server-info/`。**密码只写** `docs/credentials.local.md` 或上述 note，禁止进规则/README/提交。
 
 ## 拓扑
 

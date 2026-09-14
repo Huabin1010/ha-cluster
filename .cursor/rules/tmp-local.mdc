@@ -1,0 +1,31 @@
+---
+description: 一次性脚本、本机笔记、探测产物一律放 tmp/，禁止进 Git
+alwaysApply: true
+---
+
+# 本机临时文件只放 `tmp/`
+
+仓库根、`docker/`、`deploy/`、`scripts/`、`packaging/`、`docs/` **不是**草稿区。一次性脚本、探测、本机笔记、二进制、日志、含密钥的手记 **一律写到 `tmp/`**。该目录已在 `.gitignore`，**禁止** `git add`。
+
+## 放这里
+
+- 一次性 SSH / `qm guest exec` / 探测脚本（`_inspect_*.sh`、`_probe_*.py`）
+- 本机机器手记（IP、VMID、部署备注）；含密钥的笔记
+- 日志、dump、镜像 tar、编译出的 `ha-agent` / `ha-api.exe`
+- 对话里随手写的修复脚本，验证完不上升为产品代码的
+
+## 不要放这里
+
+- 产品脚本：`deploy/`、`docker/dev/`、`packaging/`、`scripts/`（可复用、要进 Git 的）
+- **密码与密钥**：优先 `docs/credentials.local.md`（已 ignore）；不要写进规则 / README / 要提交的文档
+- 把 `tmp/` 里的草稿改完就直接提交——先搬到正式路径再交
+
+## 目录习惯（均在 `tmp/` 下，可自建）
+
+| 用途 | 路径 |
+|------|------|
+| PVE 实验室笔记与联调脚本 | `tmp/pve-server/` |
+| 一次性 guest/节点探测 | `tmp/pve-lab-probes/` |
+| 生产机本机手记 | `tmp/server-info/` |
+
+新建文件前先问：这东西会进 Git 吗？不会 → 路径必须以 `tmp/` 开头。
