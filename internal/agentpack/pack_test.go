@@ -90,8 +90,8 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[APIRefPath], "history") || !strings.Contains(p.Files[WorkflowsPath], "history") {
 		t.Fatal("pack should tell agents stale FailedCreate lives in history")
 	}
-	if !strings.Contains(p.Files[WorkflowsPath], "project-quota") || !strings.Contains(p.Files[SkillPath], "k8s/status") {
-		t.Fatal("pack should warn about quota requests and status API")
+	if !strings.Contains(p.Files[SkillPath], "409 Conflict") || !strings.Contains(p.Files[APIRefPath], "不要用 curl -f") {
+		t.Fatal("pack should tell agents to read 409 JSON body, not curl -f")
 	}
 	if !strings.Contains(p.Files[WorkflowsPath], "跳板") && !strings.Contains(p.Files[SkillPath], "跳板") {
 		t.Fatal("pack should forbid using a docker workspace as k8s jump host")

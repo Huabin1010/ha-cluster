@@ -3,7 +3,7 @@ export const API_BASE = "/api";
 /** Login query when refresh/session died — Login page shows a clear message. */
 export const SESSION_EXPIRED_QUERY = "reason=expired";
 
-export type ApiError = Error & { status?: number; statusCode?: number };
+export type ApiError = Error & { status?: number; statusCode?: number; hint?: string };
 
 export type AuthUser = {
   id: string;
@@ -87,18 +87,24 @@ async function authorizedFetch(path: string, init: RequestInit = {}, retried = f
 
 function throwApiError(res: Response, text: string): never {
   let msg = res.statusText || "request failed";
+  let hint = "";
   if (text) {
     try {
-      const data = JSON.parse(text) as { error?: string };
+      const data = JSON.parse(text) as { error?: string; hint?: string };
       if (data?.error) msg = data.error;
+      if (data?.hint) hint = data.hint;
     } catch {
       msg = text;
     }
+  }
+  if (hint && !msg.includes(hint)) {
+    msg = `${msg}。${hint}`;
   }
   const err: ApiError = new Error(msg);
   // Refine HttpError uses statusCode; keep status for our helpers.
   err.status = res.status;
   err.statusCode = res.status;
+  if (hint) err.hint = hint;
   throw err;
 }
 
@@ -334,6 +340,11 @@ export function isInsufficientCapacity(e: unknown): boolean {
 
 export function friendlyError(e: unknown): string {
   if (isInsufficientCapacity(e)) {
+    const raw = e instanceof Error ? e.message : String(e);
+    const extra = raw.replace(/^INSUFFICIENT_CAPACITY:?\s*/i, "").trim();
+    if (extra && extra.toLowerCase() !== "insufficient_capacity" && extra !== raw) {
+      return `资源不足，请换套餐或节点（INSUFFICIENT_CAPACITY）。${extra}`;
+    }
     return "资源不足，请换套餐或节点（INSUFFICIENT_CAPACITY）";
   }
   if (isApiError(e) && e.status === 401) {
@@ -349,8 +360,10 @@ export function friendlyError(e: unknown): string {
     return "网络异常，请稍后重试";
   }
   const msg = e instanceof Error ? e.message : String(e);
-  if (msg === "SECOND_PORT_CONFIRM_REQUIRED") return "这台机器已有一个服务端口。多站点请在主机内用 nginx 做路径路由。";
-  if (msg === "PURPOSE_REQUIRED") return "请先填写项目用途，才能继续操作";
+  if (msg === "SECOND_PORT_CONFIRM_REQUIRED" || msg.startsWith("SECOND_PORT_CONFIRM_REQUIRED:")) {
+    return "这台机器已有一个服务端口。多站点请在主机内用 nginx 做路径路由。";
+  }
+  if (msg === "PURPOSE_REQUIRED" || msg.startsWith("PURPOSE_REQUIRED:")) return "请先填写项目用途，才能继续操作";
   if (msg === "DISK_SHRINK_NOT_SUPPORTED") return "不提供硬盘缩容，请只申请更大的磁盘";
   if (msg === "ONLY_EXPANSION") return "只支持扩容：CPU / 内存 / 磁盘均不可下调";
   if (msg === "unauthorized" || msg === "Unauthorized") return "用户名或密码错误";
@@ -358,7 +371,6 @@ export function friendlyError(e: unknown): string {
   if (msg === "not found") return "找不到该用户或资源";
   if (msg === "invalid input" || msg === "invalid_input") return "输入无效，请检查后重试";
   if (msg === "conflict") return "与已有资源冲突（如 slug 重复或邀请已使用）";
-  if (msg.toLowerCase().includes("conflict")) return "与已有资源冲突";
   return msg;
 }
 

@@ -324,14 +324,52 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+func sentinelDetail(err, sentinel error) string {
+	if err == nil {
+		return ""
+	}
+	full := strings.TrimSpace(err.Error())
+	if sentinel == nil {
+		return full
+	}
+	base := sentinel.Error()
+	if full == "" || full == base {
+		return ""
+	}
+	full = strings.TrimPrefix(full, base+": ")
+	full = strings.TrimPrefix(full, base+":")
+	return strings.TrimSpace(full)
+}
+
+func withDetail(code, detail string) string {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return code
+	}
+	if strings.Contains(detail, code) {
+		return detail
+	}
+	return code + ": " + detail
+}
+
 func writeErr(w http.ResponseWriter, code int, err error) {
 	msg := err.Error()
 	hint := ""
 	if errors.Is(err, store.ErrNoCapacity) {
 		code = http.StatusConflict
-		msg = "INSUFFICIENT_CAPACITY"
+		detail := sentinelDetail(err, store.ErrNoCapacity)
+		msg = withDetail("INSUFFICIENT_CAPACITY", detail)
+		hint = "先停/销毁闲置机器，或换更小套餐。不要只看到 HTTP 409。"
+	} else if errors.Is(err, hak8s.ErrQuotaBlocked) {
+		code = http.StatusConflict
+		detail := sentinelDetail(err, hak8s.ErrQuotaBlocked)
+		msg = withDetail("conflict", detail)
+		hint = "给每个容器写 resources.requests.cpu 与 resources.requests.memory 后再 apply，不要只看到 HTTP 409。"
 	} else if errors.Is(err, store.ErrConflict) {
 		code = http.StatusConflict
+		detail := sentinelDetail(err, store.ErrConflict)
+		msg = withDetail("conflict", detail)
+		hint = "读 error 字段里的原因，不要对着 409 Conflict 改无关字段空转。"
 	} else if errors.Is(err, store.ErrNotFound) {
 		code = http.StatusNotFound
 	} else if errors.Is(err, store.ErrForbidden) {
@@ -351,20 +389,28 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 		msg = err.Error()
 	} else if errors.Is(err, errExecUnavailable) {
 		code = http.StatusBadGateway
-		msg = "EXEC_UNAVAILABLE"
+		detail := sentinelDetail(err, errExecUnavailable)
+		msg = withDetail("EXEC_UNAVAILABLE", detail)
 		hint = "status=running 不等于 SSH 通。POST /workspaces/{id}/start 后用短命令探活；仍失败换一台。"
-		if detail := strings.TrimPrefix(err.Error(), "EXEC_UNAVAILABLE: "); detail != "" && detail != err.Error() {
+		if detail != "" {
 			hint += " 原因：" + detail
-		} else if err.Error() != "EXEC_UNAVAILABLE" {
-			hint += " 原因：" + err.Error()
 		}
 	} else if errors.Is(err, store.ErrInvalidInput) {
 		code = http.StatusBadRequest
+		detail := sentinelDetail(err, store.ErrInvalidInput)
+		msg = withDetail("invalid input", detail)
 		hint = "检查 JSON 字段、必填项（如 purpose）和 URL 里的 id（Windows 不要用 $pid 当变量）"
+		if detail != "" {
+			hint += " " + detail
+		}
 	} else if errors.Is(err, hak8s.ErrUnavailable) {
 		code = http.StatusServiceUnavailable
-		msg = "K8S_UNAVAILABLE"
+		detail := sentinelDetail(err, hak8s.ErrUnavailable)
+		msg = withDetail("K8S_UNAVAILABLE", detail)
 		hint = "控制面没有真实 k3s。不要换 YAML 字段重试。kubeconfig 若是 https://k8s.invalid 也是同一原因。"
+		if detail != "" {
+			hint += " " + detail
+		}
 	}
 	body := map[string]string{"error": msg}
 	if hint != "" {
@@ -654,7 +700,7 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 	models.NormalizeMembershipSSH(&m)
 	if err := s.App.Store.AddMembership(r.Context(), m); err != nil {
 		if errors.Is(err, store.ErrConflict) {
-			writeErr(w, http.StatusConflict, err)
+			writeErr(w, http.StatusConflict, store.Wrap(store.ErrConflict, "用户 "+body.Username+" 已是项目成员"))
 			return
 		}
 		writeErr(w, http.StatusBadRequest, err)

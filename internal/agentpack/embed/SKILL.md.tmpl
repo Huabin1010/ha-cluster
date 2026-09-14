@@ -42,7 +42,7 @@ Authorization: Bearer {{TOKEN}}
 Content-Type: application/json
 ```
 
-列表 `{ "data": [...], "total": N }`。错误 `{ "error": "...", "hint": "..." }`。HTTP：400 参数 / 401 令牌 / 403 权限 / 404 不存在 / 409 冲突（`INSUFFICIENT_CAPACITY`、`PURPOSE_REQUIRED`、`SECOND_PORT_CONFIRM_REQUIRED`）/ 502 `EXEC_UNAVAILABLE` / 503 `K8S_UNAVAILABLE`。优先看 `error` 码和 `hint`，不要只对着 `invalid input` 换字段重试。
+列表 `{ "data": [...], "total": N }`。错误 `{ "error": "...", "hint": "..." }`。`error` **会带上原因**（如 `conflict: slug demo 已被占用`、`INSUFFICIENT_CAPACITY: 没有带 k3s 标签的节点`），不要只报 HTTP `409 Conflict`。写操作**不要用 `curl -f`/`-fsS`**（失败时丢掉 JSON body）；用 `-sS` 并打印响应。探活 `/healthz` 才用 `-fsS`。HTTP：400 参数 / 401 令牌 / 403 权限 / 404 不存在 / 409 冲突（`INSUFFICIENT_CAPACITY`、`PURPOSE_REQUIRED`、`conflict: …`、k8s 配额拦住）/ 502 `EXEC_UNAVAILABLE` / 503 `K8S_UNAVAILABLE`。优先看 `error` 和 `hint`，不要对着光秃的 Conflict / invalid input 换字段空转。
 
 不要把 `{{TOKEN}}` 写进公开 git remote、截图或群聊。需要轮换时让用户在控制台点「轮换密钥」。
 
@@ -123,7 +123,7 @@ docker logs <name>
 1. **建项目**：`POST /projects` `{name,slug,purpose}`。**purpose 必填**，2–80 字；禁止空、禁止把 name/slug 原样当用途。然后转让 owner → 拉成员 → 授 SSH
 2. **申请机器**（developer）→ owner/admin 审批 → 等到 `running`（默认 `container`）
 3. **更新已有服务**：走上面的发版决策树，再 `POST /workspaces/{id}/ingress/shared`（若域名已在就不要重领）
-4. **仅当用户要 k8s**：创建时才加 `runtime=k8s`（审批与 Docker 相同）。控制面未接集群会 **503 `K8S_UNAVAILABLE`**，`kubeconfig` 的 `server` 不能是 `https://k8s.invalid`——这两种都不要换字段重试。k8s 工作区不要 exec。apply 之后用 `GET /workspaces/{id}/k8s/status` 看副本、Pod 阶段、release 标签、配额告警；容器必须写 `resources.requests.cpu/memory`。
+4. **仅当用户要 k8s**：创建时才加 `runtime=k8s`（审批与 Docker 相同）。控制面未接集群会 **503 `K8S_UNAVAILABLE`**，`kubeconfig` 的 `server` 不能是 `https://k8s.invalid`——这两种都不要换字段重试。k8s 工作区不要 exec。apply 缺 `resources.requests` 会 **409** `conflict: …project-quota`，读 JSON body；已 apply 的再用 `GET /workspaces/{id}/k8s/status`。
 5. **暴露 HTTP**：服务起来后再 `POST /workspaces/{id}/ingress/shared`。第二端口要 `confirm_second_port: true`。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。
 6. **邀请同事**：`POST /projects/{id}/invitations`
 7. **HTTPS 证书**（仅 `platform_admin`）：`GET /admin/tls-certs`；`POST /admin/tls-certs/{id}/issue`

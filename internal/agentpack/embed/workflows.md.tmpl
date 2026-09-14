@@ -112,7 +112,7 @@ DELETE /workspaces/{id}/k8s/resources?kind=Deployment&name=web
 - `history[]`：已缩到 0 的旧 ReplicaSet 事件，**不要当成现在还失败**
 - `resources[]`：与 `GET /k8s/resources` 相同的扁平对象
 
-apply 之后立刻打 status。若 `warnings` 含 `project-quota` / `exceeded quota` / `missing_requests`：补容器 `resources.requests.cpu` 与 `resources.requests.memory` 再 apply，不要换机器重试。示例：
+apply **缺 requests 会直接 409**（`error` 里是 `conflict: Deployment X 的容器没有 resources.requests…会被 ResourceQuota project-quota 拦住`）。读 JSON body，不要只报 Conflict。已 apply 过的旧清单才去看 status 的 `warnings` / `history`。补容器 `resources.requests.cpu` 与 `resources.requests.memory` 再 apply，不要换机器重试。示例：
 
 ```
 resources:

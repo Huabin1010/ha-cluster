@@ -25,7 +25,10 @@ import { cn } from "@/lib/utils";
 
 function slugConflictMessage(e: unknown): string | null {
   const raw = e instanceof Error ? e.message : String(e);
-  if (raw === "conflict" || raw.includes("conflict")) {
+  if (/\bslug\b/i.test(raw)) {
+    return raw.includes("已被占用") ? raw : `slug 已被占用，请换一个。${raw}`;
+  }
+  if (raw === "conflict") {
     return "slug 已被占用，请换一个";
   }
   return null;

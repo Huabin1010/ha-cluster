@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -80,6 +81,9 @@ func (a *App) PatchProject(ctx context.Context, actor models.User, id uuid.UUID,
 		p.BudgetDiskBytes = *in.BudgetDiskBytes
 	}
 	if err := a.Store.UpdateProject(ctx, p); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return nil, store.Wrap(store.ErrConflict, "slug "+p.Slug+" 已被占用")
+		}
 		return nil, err
 	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
@@ -132,13 +136,13 @@ func (a *App) checkProjectBudget(ctx context.Context, projectID uuid.UUID, plan 
 		return err
 	}
 	if p.BudgetCPUMilli > 0 && usedCPU+plan.CPUMilli > p.BudgetCPUMilli {
-		return store.ErrNoCapacity
+		return store.Wrap(store.ErrNoCapacity, "超出项目 CPU 预算")
 	}
 	if p.BudgetMemBytes > 0 && usedMem+plan.MemBytes > p.BudgetMemBytes {
-		return store.ErrNoCapacity
+		return store.Wrap(store.ErrNoCapacity, "超出项目内存预算")
 	}
 	if p.BudgetDiskBytes > 0 && usedDisk+plan.DiskBytes > p.BudgetDiskBytes {
-		return store.ErrNoCapacity
+		return store.Wrap(store.ErrNoCapacity, "超出项目磁盘预算")
 	}
 	return nil
 }
@@ -258,13 +262,13 @@ func (a *App) AcceptInvite(ctx context.Context, user models.User, token string) 
 		return uuid.Nil, err
 	}
 	if inv.AcceptedAt != nil || time.Now().After(inv.ExpiresAt) {
-		return uuid.Nil, store.ErrConflict
+		return uuid.Nil, store.Wrap(store.ErrConflict, "邀请已使用或已过期")
 	}
 	if !strings.EqualFold(strings.TrimSpace(user.Email), strings.TrimSpace(inv.Email)) {
 		return uuid.Nil, store.ErrForbidden
 	}
 	if _, err := a.Store.GetMembership(ctx, inv.ProjectID, user.ID); err == nil {
-		return uuid.Nil, store.ErrConflict
+		return uuid.Nil, store.Wrap(store.ErrConflict, "你已经是该项目成员")
 	}
 	if err := a.Store.AcceptInvitation(ctx, token); err != nil {
 		return uuid.Nil, err
@@ -355,6 +359,9 @@ func (a *App) AddSSHKey(ctx context.Context, userID uuid.UUID, name, publicKey s
 		CreatedAt:   time.Now(),
 	}
 	if err := a.Store.AddSSHKey(ctx, k); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return nil, store.Wrap(store.ErrConflict, "这把公钥已经添加过")
+		}
 		return nil, err
 	}
 	go func() { _ = a.SyncUserKeys(context.Background(), userID) }()

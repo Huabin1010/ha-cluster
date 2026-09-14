@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -22,6 +24,22 @@ var (
 	ErrSecondPort       = errors.New("SECOND_PORT_CONFIRM_REQUIRED")
 	ErrPurposeRequired  = errors.New("PURPOSE_REQUIRED")
 )
+
+// Wrap attaches a human/agent-readable reason to a sentinel so HTTP error
+// bodies are not a bare "conflict" / "insufficient capacity".
+func Wrap(sentinel error, reason string) error {
+	reason = strings.TrimSpace(reason)
+	if sentinel == nil {
+		if reason == "" {
+			return errors.New("error")
+		}
+		return errors.New(reason)
+	}
+	if reason == "" {
+		return sentinel
+	}
+	return fmt.Errorf("%w: %s", sentinel, reason)
+}
 
 type Store interface {
 	CreateUser(ctx context.Context, u *models.User) error

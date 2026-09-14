@@ -275,7 +275,7 @@ func (a *App) allocateRandomPrefix(ctx context.Context, suffix string) (string, 
 			return "", err
 		}
 	}
-	return "", store.ErrConflict
+	return "", store.Wrap(store.ErrConflict, "公共域前缀都被占用了，换一个前缀")
 }
 
 func (a *App) domainMatchesConfiguredZone(ctx context.Context, domain string) (bool, error) {

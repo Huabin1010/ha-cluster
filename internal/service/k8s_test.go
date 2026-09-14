@@ -268,8 +268,47 @@ spec:
       containers:
       - name: snacks
         image: docker.cnb.cool/qzsyzn/docker:snacks
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
 `)
 	if err != nil || len(applied) != 1 {
 		t.Fatal(err, applied)
+	}
+}
+
+func TestApplyK8sYAMLRejectsMissingRequests(t *testing.T) {
+	app, owner := setupApp(t)
+	ctx := t.Context()
+	p, err := app.CreateProject(ctx, owner.ID, "k8s-quota", "k8s-quota", "test purpose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "ns-quota", Plan: "nano", Arch: models.ArchAMD64,
+		Runtime: models.RuntimeK8s, Actor: *owner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = app.ApplyK8sYAML(ctx, *owner, ws.ID, `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snacks
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: snacks
+        image: docker.cnb.cool/qzsyzn/docker:snacks
+`)
+	if !errors.Is(err, hak8s.ErrQuotaBlocked) {
+		t.Fatalf("want quota blocked, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "resources.requests") || !strings.Contains(err.Error(), "project-quota") {
+		t.Fatal(err)
 	}
 }

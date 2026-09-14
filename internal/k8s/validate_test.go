@@ -1,6 +1,8 @@
 package k8s
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -77,6 +79,61 @@ func TestNamespaceName(t *testing.T) {
 	got := NamespaceName("Office", id)
 	if got != "proj-office-aaaaaaaa" {
 		t.Fatalf("%s", got)
+	}
+}
+
+func TestErrIfMissingRequests(t *testing.T) {
+	objs, err := SplitAndSanitize(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snacks
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: snacks
+        image: docker.cnb.cool/qzsyzn/docker:snacks
+`, "proj-demo-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ErrIfMissingRequests(objs)
+	if err == nil || !errors.Is(err, ErrQuotaBlocked) {
+		t.Fatalf("got %v", err)
+	}
+	if !strings.Contains(err.Error(), "resources.requests") || !strings.Contains(err.Error(), "snacks") {
+		t.Fatal(err)
+	}
+	ok, err := SplitAndSanitize(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snacks
+spec:
+  template:
+    spec:
+      containers:
+      - name: snacks
+        image: docker.cnb.cool/qzsyzn/docker:snacks
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+`, "ns")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ErrIfMissingRequests(ok); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWrapApplyErrorQuota(t *testing.T) {
+	err := WrapApplyError(fmt.Errorf("kubectl: exit status 1: Error from server (Forbidden): pods \"x\" is forbidden: exceeded quota: project-quota"))
+	if !errors.Is(err, ErrQuotaBlocked) {
+		t.Fatalf("%v", err)
 	}
 }
 

@@ -96,6 +96,9 @@ func (a *App) Register(ctx context.Context, username, email, password string) (*
 		Status: models.UserActive, TokenVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := a.Store.CreateUser(ctx, u); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return nil, store.Wrap(store.ErrConflict, "用户名或邮箱已被占用")
+		}
 		return nil, err
 	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
@@ -142,6 +145,9 @@ func (a *App) CreateProject(ctx context.Context, actor uuid.UUID, name, slug, pu
 	}
 	p := &models.Project{ID: uuid.New(), Name: name, Slug: slug, Purpose: purposeNorm, OwnerID: actor, Status: "active", CreatedAt: time.Now()}
 	if err := a.Store.CreateProject(ctx, p, models.RoleOwner); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return nil, store.Wrap(store.ErrConflict, "slug "+slug+" 已被占用")
+		}
 		return nil, err
 	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
@@ -499,7 +505,7 @@ func (a *App) RequestResize(ctx context.Context, actor models.User, id uuid.UUID
 		return nil, store.ErrInvalidInput
 	}
 	if w.HasPendingResize() {
-		return nil, store.ErrConflict
+		return nil, store.Wrap(store.ErrConflict, "该工作区已有待审扩容")
 	}
 	cur := w.Spec()
 	target, err := models.ResolveSpec("custom", cpu, mem, disk)
@@ -666,7 +672,7 @@ func (a *App) RequestDestroyWorkspace(ctx context.Context, actor models.User, id
 	}
 	switch w.Status {
 	case models.WSDestroyRequested, models.WSDestroyPendingPlatform, models.WSDestroying, models.WSDestroyed:
-		return store.ErrConflict
+		return store.Wrap(store.ErrConflict, "该工作区已在销毁流程中")
 	}
 	if authz.CanApproveDangerousOps(actor) {
 		return a.executeDestroy(ctx, actor, w)

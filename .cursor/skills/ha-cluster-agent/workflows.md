@@ -12,7 +12,7 @@
 
 **默认这条。** `GET /projects` → 若 `purpose` 为空先 `PATCH /projects/{id}` `{purpose}`（看到 `409 PURPOSE_REQUIRED` 就停）→ 若没有项目则 `POST /projects` `{name,slug,purpose}`（purpose 必填、简洁）→ `POST /projects/{id}/workspaces` `{"name","plan":"2c2g","arch":"amd64","runtime":"container"}` → 若 `requested` 则 owner/admin `POST /workspaces/{id}/approve` → 轮询至 `running`。本机构建并推 CNB 后，机子里只 `docker pull` + `docker compose up`。
 
-仅当用户明确要 Kubernetes：同样路径加 `"runtime":"k8s"`（节点须带 `k3s`/`k8s`/`both`，否则 409）。**审批与 Docker 相同**（developer 待审，owner/admin 直建）。等 running 后 `POST /workspaces/{id}/k8s/apply` `{yaml}`，再 `GET …/k8s/status` 看 Deployment 副本、ReplicaSet 代际、Pod 阶段、quota。`warnings` 只表示当前代有问题；已缩掉的 ReplicaSet 的 FailedCreate 在 `history`，不要当成还在失败。`GET …/k8s/resources` 是扁平列表。k8s 工作区不要走 exec，也不要借 Docker 机当跳板。容器须写 `resources.requests.cpu/memory`。kubeconfig 若是 `https://k8s.invalid` 或 503 `K8S_UNAVAILABLE`，不要换字段重试；本机到不了虚网 apiserver 时继续用 status 接口。
+仅当用户明确要 Kubernetes：同样路径加 `"runtime":"k8s"`（节点须带 `k3s`/`k8s`/`both`，否则 409，error 会写明没有带标签的节点）。**审批与 Docker 相同**（developer 待审，owner/admin 直建）。等 running 后 `POST /workspaces/{id}/k8s/apply` `{yaml}`。缺 `resources.requests` 会 409 `conflict: …project-quota`，读 JSON 不要只报 Conflict。再 `GET …/k8s/status` 看副本/Pod；`warnings` 只表示当前代，旧 FailedCreate 在 `history`。k8s 工作区不要走 exec，也不要借 Docker 机当跳板。kubeconfig 若是 `https://k8s.invalid` 或 503 `K8S_UNAVAILABLE`，不要换字段重试。
 
 viewer 不能申请。`409 INSUFFICIENT_CAPACITY` 先清闲置机器。
 

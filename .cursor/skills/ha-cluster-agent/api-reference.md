@@ -4,7 +4,7 @@
 
 公开：`GET /healthz`、`POST /auth/login`、`GET /agent-pack/version`（`{version,released_at,notes}`，本会话比一次）、`GET /agent-pack/{haagt_…}`（`?format=md`）。
 
-错误 `{error,hint?}`。常见码：`PURPOSE_REQUIRED`、`SECOND_PORT_CONFIRM_REQUIRED`、`INSUFFICIENT_CAPACITY`、`EXEC_UNAVAILABLE`、`K8S_UNAVAILABLE`。
+错误 `{error,hint?}`。`error` 带具体原因，不要只报 409 Conflict，也不要用 curl -f 丢掉 body。常见码：`PURPOSE_REQUIRED`、`SECOND_PORT_CONFIRM_REQUIRED`、`INSUFFICIENT_CAPACITY: …`、`conflict: …`、`EXEC_UNAVAILABLE`、`K8S_UNAVAILABLE`。
 
 我：`GET /me`、`/me/ssh-keys`、`GET|POST /me/agent-pack`（`{rotate}`）。
 

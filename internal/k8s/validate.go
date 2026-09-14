@@ -2,11 +2,16 @@ package k8s
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// ErrQuotaBlocked means ResourceQuota (or equivalent admission) would/did
+// refuse the workload. HTTP maps this to 409 with the reason in error.
+var ErrQuotaBlocked = errors.New("k8s quota blocked")
 
 const maxYAMLBytes = 512 << 10
 
@@ -53,6 +58,42 @@ func SplitAndSanitize(raw string, ns string) ([]Object, error) {
 		return nil, fmt.Errorf("没有可应用的资源")
 	}
 	return out, nil
+}
+
+func ErrIfMissingRequests(objs []Object) error {
+	var names []string
+	for _, o := range objs {
+		switch strings.ToLower(o.Kind) {
+		case "pod", "deployment", "statefulset", "daemonset", "job", "cronjob", "replicaset":
+		default:
+			continue
+		}
+		if resourceFromObject(o).MissingRequests {
+			names = append(names, o.Kind+"/"+o.Name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %s 的容器没有 resources.requests.cpu/memory，会被 ResourceQuota project-quota 拦住，Pod 起不来", ErrQuotaBlocked, strings.Join(names, ", "))
+}
+
+func WrapApplyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrQuotaBlocked) {
+		return err
+	}
+	s := strings.TrimSpace(err.Error())
+	if looksLikeQuota(s) {
+		return fmt.Errorf("%w: %s", ErrQuotaBlocked, s)
+	}
+	low := strings.ToLower(s)
+	if strings.Contains(s, "(Conflict)") || strings.Contains(low, "already exists") {
+		return fmt.Errorf("%w: %s", ErrQuotaBlocked, s)
+	}
+	return err
 }
 
 func sanitizeDoc(doc, ns string) (Object, error) {

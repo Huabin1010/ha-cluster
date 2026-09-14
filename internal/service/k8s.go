@@ -64,8 +64,21 @@ func (a *App) ApplyK8sYAML(ctx context.Context, actor models.User, id uuid.UUID,
 	if err := a.syncK8sPullSecrets(ctx, w.RuntimeRef); err != nil {
 		return nil, err
 	}
+	objs, err := hak8s.SplitAndSanitize(yamlText, w.RuntimeRef)
+	if err != nil {
+		return nil, err
+	}
+	if err := hak8s.ErrIfMissingRequests(objs); err != nil {
+		_ = a.Store.AddAudit(ctx, models.AuditLog{
+			ActorUserID: actor.ID, Action: "k8s.apply.deny",
+			ResourceType: "workspace", ResourceID: w.ID.String(),
+			Meta: map[string]any{"workspace_name": w.Name, "error": err.Error()},
+		})
+		return nil, err
+	}
 	res, err := a.K8s.Apply(ctx, w.RuntimeRef, yamlText)
 	if err != nil {
+		err = hak8s.WrapApplyError(err)
 		_ = a.Store.AddAudit(ctx, models.AuditLog{
 			ActorUserID: actor.ID, Action: "k8s.apply.deny",
 			ResourceType: "workspace", ResourceID: w.ID.String(),

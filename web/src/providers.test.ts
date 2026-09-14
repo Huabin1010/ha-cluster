@@ -328,7 +328,34 @@ describe("api session refresh", () => {
       if (isApiError(e)) {
         expect(e.status).toBe(409);
         expect(e.statusCode).toBe(409);
-        expect(e.message).toBe("conflict");
+		expect(e.message).toBe("conflict");
+      }
+    }
+  });
+
+  it("injects hint into the Error message for agents", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        statusText: "Conflict",
+        text: async () =>
+          JSON.stringify({
+            error: "conflict: Deployment web 的容器没有 resources.requests.cpu/memory",
+            hint: "给每个容器写 requests 后再 apply",
+          }),
+      })),
+    );
+    try {
+      await api("/workspaces/x/k8s/apply");
+      expect.unreachable();
+    } catch (e) {
+      expect(isApiError(e)).toBe(true);
+      if (isApiError(e)) {
+        expect(e.message).toMatch(/resources\.requests/);
+        expect(e.message).toMatch(/给每个容器写 requests/);
+        expect(e.hint).toMatch(/requests/);
       }
     }
   });
@@ -354,6 +381,9 @@ describe("friendlyError (U3)", () => {
     expect(friendlyError(forbidden)).toBe("没有权限做这件事");
     expect(friendlyError(missing)).toBe("找不到该用户或资源");
     expect(friendlyError(new Error("conflict"))).toMatch(/冲突/);
+    expect(friendlyError(new Error("conflict: Deployment web 没有 resources.requests"))).toMatch(
+      /resources\.requests/,
+    );
     expect(friendlyError(new Error("PURPOSE_REQUIRED"))).toMatch(/用途/);
   });
 });
@@ -368,9 +398,9 @@ describe("U4 capacity + apiText", () => {
     const { friendlyError, isInsufficientCapacity } = await import("./providers");
     expect(isInsufficientCapacity("INSUFFICIENT_CAPACITY")).toBe(true);
     expect(isInsufficientCapacity("资源不足，请换套餐或节点（INSUFFICIENT_CAPACITY）")).toBe(true);
-    const err = Object.assign(new Error("INSUFFICIENT_CAPACITY"), { status: 409 });
+    const err = Object.assign(new Error("INSUFFICIENT_CAPACITY: 没有带 k3s 标签的节点"), { status: 409 });
     expect(friendlyError(err)).toMatch(/资源不足/);
-    expect(friendlyError(err)).toMatch(/INSUFFICIENT/);
+    expect(friendlyError(err)).toMatch(/k3s/);
   });
 
   it("apiText returns plain body", async () => {

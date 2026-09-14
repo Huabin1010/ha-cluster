@@ -71,7 +71,10 @@ func (s *Service) pickCandidates(ctx context.Context, arch string, cpu, mem, dis
 		scored = append(scored, scoredNode{node: n, score: score})
 	}
 	if len(scored) == 0 {
-		return nil, store.ErrNoCapacity
+		if requireK8s {
+			return nil, store.Wrap(store.ErrNoCapacity, "没有带 k3s/k8s 标签且 CPU/内存/磁盘都够的 Ready worker")
+		}
+		return nil, store.Wrap(store.ErrNoCapacity, "没有 arch 匹配且容量足够的 Ready worker")
 	}
 	sort.Slice(scored, func(i, j int) bool {
 		return scored[i].score > scored[j].score

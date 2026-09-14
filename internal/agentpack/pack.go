@@ -30,9 +30,9 @@ const (
 	VersionPath   = ".cursor/skills/ha-cluster-agent/VERSION"
 
 	// Version is a monotonic integer. Bump when pack files change so Agents can self-update.
-	Version    = "15"
+	Version    = "16"
 	ReleasedAt = "2026-09-14"
-	Notes      = "k8s status 的 warnings 只含当前代，旧 FailedCreate 进 history"
+	Notes      = "409 的 error 带具体原因；缺 resources.requests 的 apply 直接 409"
 )
 
 type Vars struct {

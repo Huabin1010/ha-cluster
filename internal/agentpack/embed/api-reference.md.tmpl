@@ -2,7 +2,7 @@
 
 `{{API_BASE}}`。未标「公开」的都要 `Authorization: Bearer {{TOKEN}}`。
 
-错误体 `{ "error": "<码或短句>", "hint": "<怎么修>" }`。`hint` 可能缺省。常见码：`PURPOSE_REQUIRED`（先 PATCH 项目 purpose）、`SECOND_PORT_CONFIRM_REQUIRED`（第二端口加 `confirm_second_port:true`）、`INSUFFICIENT_CAPACITY`、`EXEC_UNAVAILABLE`（running 不等于 SSH 通，可 POST /start）、`K8S_UNAVAILABLE`。不要对着光秃的 `invalid input` 换字段空转。
+错误体 `{ "error": "<码或短句，含具体原因>", "hint": "<怎么修>" }`。`hint` 可能缺省。常见码：`PURPOSE_REQUIRED`（先 PATCH 项目 purpose）、`SECOND_PORT_CONFIRM_REQUIRED`（第二端口加 `confirm_second_port:true`）、`INSUFFICIENT_CAPACITY: …`、`conflict: …`（slug/成员/扩容待审/k8s 配额）、`EXEC_UNAVAILABLE`（running 不等于 SSH 通，可 POST /start）、`K8S_UNAVAILABLE`。**不要用 curl -f 丢掉 body 后只报 409 Conflict。** 不要对着光秃的 `invalid input` / `Conflict` 换字段空转。
 
 ## 公开
 
@@ -72,7 +72,7 @@
 | GET | `/workspaces/{id}/terminal` | WebSocket；可 `?access_token=` |
 | GET | `/workspaces/{id}/audit` | |
 | GET | `/workspaces/{id}/kubeconfig` | 下载 ns 范围 kubeconfig（developer+）；只在用户要本机 kubectl 且 apiserver 可达时用，不要拿去写进另一台 Docker 机器 |
-| POST | `/workspaces/{id}/k8s/apply` | `{yaml}`；强制改写 namespace，拒绝集群级对象。开通/apply 时把平台 auto_inject 仓库写成 Secret `ha-registry`。工作区非 running/fabric_degraded 时返回「未就绪」；集群未接返回 503 `K8S_UNAVAILABLE`。容器须写 `resources.requests.cpu/memory`，否则 Pod 会被 `project-quota` 拦住 |
+| POST | `/workspaces/{id}/k8s/apply` | `{yaml}`；强制改写 namespace，拒绝集群级对象。开通/apply 时把平台 auto_inject 仓库写成 Secret `ha-registry`。工作区非 running/fabric_degraded 时返回「未就绪」；集群未接返回 503 `K8S_UNAVAILABLE`。容器缺 `resources.requests.cpu/memory` 时 **409** `conflict: …会被 ResourceQuota project-quota 拦住`，不要只报 Conflict |
 | GET | `/workspaces/{id}/k8s/status` | **k8s 探活主接口**（viewer 可读）。顶层 `{namespace,summary,quota,deployments,replica_sets,pods,services,events,warnings,history,resources}`。`warnings` 只含当前代问题；已缩掉的 ReplicaSet 的 FailedCreate 在 `history`（`events[].stale=true`）。不要借 Docker 机 exec kubectl |
 | GET | `/workspaces/{id}/k8s/resources` | 扁平资源列表，字段含 `kind/name/namespace/labels/phase/ready/replicas/reason`；viewer 只读 |
 | DELETE | `/workspaces/{id}/k8s/resources` | `?kind=&name=` |

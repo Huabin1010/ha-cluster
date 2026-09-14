@@ -18,7 +18,7 @@ alwaysApply: true
 
 本会话核对一次 skill 版本：`curl -fsS {{API_BASE}}/agent-pack/version`，与 `.cursor/skills/ha-cluster-agent/VERSION`（当前 {{PACK_VERSION}}）比较。服务端更大则重新 `curl -fsSL '{{PACK_URL}}'` 覆盖 files。已确认过的 `/me` 不要每个任务再打。
 
-403 表示当前用户没有这项权限，不要改用别人的账号。
+403 表示当前用户没有这项权限，不要改用别人的账号。409 的 JSON `error` 会带原因，不要只报 Conflict，写操作不要用 curl -f 丢掉 body。
 
 完整步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`。默认开 Docker+SSH 并用 Compose 部署；用户明确要 Kubernetes 才 `runtime=k8s`。旧项目 `purpose` 为空须先 `PATCH`，否则 `409 PURPOSE_REQUIRED`。推镜像优先 CNB（`docker.cnb.cool`）。
 

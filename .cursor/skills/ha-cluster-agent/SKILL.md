@@ -1,6 +1,6 @@
 ---
 name: ha-cluster-agent
-pack_version: "15"
+pack_version: "16"
 description: >-
   Operates the ha-cluster control plane as a signed-in user via REST. Use when
   creating projects, provisioning workspaces (machines), managing members or
@@ -15,7 +15,7 @@ description: >-
 
 ## 本会话只需一次
 
-本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **15**。
+本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **16**。
 
 ```bash
 curl -fsS "${HA_API_BASE:-https://cl.qzsyzn.com/api}/agent-pack/version"
@@ -39,7 +39,7 @@ curl -fsS "${HA_API_BASE:-https://cl.qzsyzn.com/api}/agent-pack/version"
 curl -fsS -H "Authorization: Bearer $HA_AGENT_TOKEN" "${HA_API_BASE:-https://cl.qzsyzn.com/api}/me"
 ```
 
-列表 `{data,total}`。错误 `{error,hint?}`：400 / 401 / 403 / 404 / 409 / 502 `EXEC_UNAVAILABLE` / 503 `K8S_UNAVAILABLE`。
+列表 `{data,total}`。错误 `{error,hint?}`：`error` 会带具体原因（如 `conflict: …会被 project-quota 拦住`），不要只报 HTTP 409 Conflict。写操作用 `curl -sS` 并打印 body，不要用 `-f` 丢掉 JSON。400 / 401 / 403 / 404 / 409 / 502 `EXEC_UNAVAILABLE` / 503 `K8S_UNAVAILABLE`。
 
 ## 发版决策树（硬规则）
 
@@ -54,7 +54,7 @@ curl -fsS -H "Authorization: Bearer $HA_AGENT_TOKEN" "${HA_API_BASE:-https://cl.
 
 选机器：`GET /workspaces` **默认不含 destroyed**；同名取 `exec_ready=true` 且 `running` 的 **id**（不要只看 `updated_at`）。`exec_ready=false` 先 `POST /start` 或换一台；字段缺省才短命令探一次。`running` ≠ exec 通。
 
-k8s 工作区 `POST /exec` 会 400。apply 之后用 `GET /workspaces/{id}/k8s/status` 看副本、Pod 阶段、release 标签、配额告警。容器必须写 `resources.requests.cpu/memory`，否则会被 `project-quota` 拦住。**禁止**把 kubeconfig 写进另一台 Docker 机器再 exec kubectl / python 探活。
+k8s 工作区 `POST /exec` 会 400。apply 缺 `resources.requests` 会 **409**，`error` 里写明会被 `project-quota` 拦住；读 JSON 不要只报 Conflict。已 apply 的再用 `GET …/k8s/status` 看副本/Pod。**禁止**把 kubeconfig 写进另一台 Docker 机器再 exec kubectl / python 探活。
 
 公共域 `*.apps` 出厂带平台通配符 HTTPS。`platform_admin` 看 `GET /admin/tls-certs`，立即签发 `POST /admin/tls-certs/{id}/issue`。
 

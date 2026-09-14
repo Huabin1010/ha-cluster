@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/agentpack"
+	hak8s "ha-cluster/internal/k8s"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/service"
 	"ha-cluster/internal/store"
@@ -306,8 +307,11 @@ func TestWorkspaceQuotaHTTP(t *testing.T) {
 	}
 	var errBody map[string]string
 	_ = json.Unmarshal(rr.Body.Bytes(), &errBody)
-	if errBody["error"] != "INSUFFICIENT_CAPACITY" {
+	if errBody["error"] != "INSUFFICIENT_CAPACITY" && !strings.HasPrefix(errBody["error"], "INSUFFICIENT_CAPACITY:") {
 		t.Fatalf("%v", errBody)
+	}
+	if errBody["hint"] == "" {
+		t.Fatalf("want hint, got %v", errBody)
 	}
 }
 
@@ -1612,7 +1616,7 @@ func TestK8sWorkspaceApplyKubeconfigAndViewer(t *testing.T) {
 		t.Fatalf("%+v", ws)
 	}
 
-	yaml := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n  namespace: evil\nspec:\n  replicas: 1\n"
+	yaml := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n  namespace: evil\nspec:\n  replicas: 1\n  template:\n    spec:\n      containers:\n      - name: web\n        image: nginx\n        resources:\n          requests:\n            cpu: 50m\n            memory: 64Mi\n"
 	rr = doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/k8s/apply", ownerTok, map[string]string{"yaml": yaml})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("apply %d %s", rr.Code, rr.Body.String())
@@ -1657,6 +1661,16 @@ func TestK8sWorkspaceApplyKubeconfigAndViewer(t *testing.T) {
 	del := doJSON(t, h, http.MethodDelete, "/workspaces/"+ws.ID.String()+"/k8s/resources?kind=Deployment&name=web", ownerTok, nil)
 	if del.Code != http.StatusNoContent {
 		t.Fatalf("delete %d %s", del.Code, del.Body.String())
+	}
+
+	missing := doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/k8s/apply", ownerTok, map[string]string{
+		"yaml": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: bare\nspec:\n  replicas: 1\n  template:\n    spec:\n      containers:\n      - name: app\n        image: nginx\n",
+	})
+	if missing.Code != http.StatusConflict {
+		t.Fatalf("missing requests %d %s", missing.Code, missing.Body.String())
+	}
+	if !strings.Contains(missing.Body.String(), "resources.requests") || !strings.Contains(missing.Body.String(), "project-quota") {
+		t.Fatalf("missing requests body %s", missing.Body.String())
 	}
 }
 
@@ -1717,8 +1731,29 @@ func TestWriteErrHints(t *testing.T) {
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("exec code %d", rr.Code)
 	}
-	if !strings.Contains(rr.Body.String(), `"error":"EXEC_UNAVAILABLE"`) || !strings.Contains(rr.Body.String(), "handshake") {
+	if !strings.Contains(rr.Body.String(), `"error":"EXEC_UNAVAILABLE`) || !strings.Contains(rr.Body.String(), "handshake") {
 		t.Fatalf("exec body %s", rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	writeErr(rr, http.StatusConflict, store.Wrap(store.ErrConflict, "slug demo 已被占用"))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("conflict code %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "slug demo") || !strings.Contains(rr.Body.String(), `"error":"conflict:`) {
+		t.Fatalf("conflict body %s", rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	writeErr(rr, http.StatusBadRequest, hak8s.ErrIfMissingRequests([]hak8s.Object{{
+		Kind: "Deployment", Name: "web",
+		Raw: []byte("kind: Deployment\nmetadata: {name: web}\nspec:\n  template:\n    spec:\n      containers:\n      - name: web\n        image: nginx\n"),
+	}}))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("quota code %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "resources.requests") || !strings.Contains(rr.Body.String(), "project-quota") {
+		t.Fatalf("quota body %s", rr.Body.String())
 	}
 }
 

@@ -405,7 +405,7 @@ func (k *Kubectl) Apply(ctx context.Context, ns, yamlText string) ([]Resource, e
 		buf.Write(o.Raw)
 	}
 	if err := k.run(ctx, buf.Bytes(), "apply", "-n", ns, "-f", "-"); err != nil {
-		return nil, err
+		return nil, WrapApplyError(err)
 	}
 	return k.memory.Apply(ctx, ns, yamlText)
 }

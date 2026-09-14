@@ -58,7 +58,7 @@ func (a *App) CreateDockerRegistry(ctx context.Context, actor models.User, in mo
 		return nil, store.ErrInvalidInput
 	}
 	if _, err := a.Store.GetDockerRegistryByServer(ctx, in.Server); err == nil {
-		return nil, store.ErrConflict
+		return nil, store.Wrap(store.ErrConflict, "仓库地址 "+in.Server+" 已存在")
 	} else if err != store.ErrNotFound {
 		return nil, err
 	}
