@@ -238,7 +238,7 @@
 | 概览 / 连接 / Kubernetes / 域名 / 历史（桌面） | `ws-nav-overview` / `ws-nav-connect` / `ws-nav-k8s` / `ws-nav-ingress` / `ws-nav-history` |
 | 同上（窄屏） | `ws-tab-overview` / `ws-tab-connect` / `ws-tab-k8s` / `ws-tab-ingress` / `ws-tab-history` |
 | 应用 YAML / 文本框 / 下载 kubeconfig / 刷新状态 / 资源表 | `ws-k8s-apply` / `ws-k8s-yaml` / `ws-k8s-kubeconfig` / `ws-k8s-refresh` / `ws-k8s-resources` |
-| 集群状态 / 配额 / 告警 / Deployment / Pod | `ws-k8s-status` / `ws-k8s-quota` / `ws-k8s-warnings` / `ws-k8s-deployments` / `ws-k8s-pods` |
+| 集群状态 / 配额 / 告警 / 历史 / Deployment / Pod | `ws-k8s-status` / `ws-k8s-quota` / `ws-k8s-warnings` / `ws-k8s-history` / `ws-k8s-deployments` / `ws-k8s-pods` |
 | 窄屏 Tab 条 | `ws-mobile-tabs` |
 | 概览指标 | `ws-overview-stats` |
 | 概览打开终端 | `ws-overview-terminal` |

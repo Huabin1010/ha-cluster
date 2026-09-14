@@ -257,3 +257,37 @@ spec:
 		}
 	}
 }
+
+func TestStaleReplicaSetEventsGoToHistory(t *testing.T) {
+	st := NamespaceStatus{
+		Namespace: "ns",
+		Deployments: []DeploymentStatus{{
+			Name: "goals", Replicas: 2, ReadyReplicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2,
+		}},
+		ReplicaSets: []ReplicaSetStatus{
+			{Name: "goals-new", Desired: 2, Current: 2, Ready: 2, Generation: 4, Labels: map[string]string{"release": "v4"}},
+			{Name: "goals-old", Desired: 0, Current: 0, Ready: 0, Generation: 1, Labels: map[string]string{"release": "v1"}},
+		},
+		Pods: []PodStatus{{Name: "goals-new-abc", Phase: "Running", Ready: true}},
+		Events: []EventStatus{{
+			Type: "Warning", Reason: "FailedCreate", ObjectKind: "ReplicaSet", ObjectName: "goals-old",
+			Message: "pods is forbidden: failed quota: project-quota: must specify requests.cpu for: goals",
+		}},
+	}
+	finalizeStatus(&st)
+	if len(st.Warnings) != 0 {
+		t.Fatalf("current warnings should be empty, got %v", st.Warnings)
+	}
+	if st.Summary.Warnings != 0 || st.Summary.ReadyDeployments != 1 {
+		t.Fatalf("summary %+v", st.Summary)
+	}
+	if !st.ReplicaSets[0].Active || st.ReplicaSets[1].Active {
+		t.Fatalf("active flags %+v", st.ReplicaSets)
+	}
+	if len(st.History) == 0 || !strings.Contains(st.History[0], "goals-old") {
+		t.Fatalf("history %v", st.History)
+	}
+	if !st.Events[0].Stale {
+		t.Fatal("event should be marked stale")
+	}
+}

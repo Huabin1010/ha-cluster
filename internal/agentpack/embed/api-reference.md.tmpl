@@ -73,7 +73,7 @@
 | GET | `/workspaces/{id}/audit` | |
 | GET | `/workspaces/{id}/kubeconfig` | 下载 ns 范围 kubeconfig（developer+）；只在用户要本机 kubectl 且 apiserver 可达时用，不要拿去写进另一台 Docker 机器 |
 | POST | `/workspaces/{id}/k8s/apply` | `{yaml}`；强制改写 namespace，拒绝集群级对象。开通/apply 时把平台 auto_inject 仓库写成 Secret `ha-registry`。工作区非 running/fabric_degraded 时返回「未就绪」；集群未接返回 503 `K8S_UNAVAILABLE`。容器须写 `resources.requests.cpu/memory`，否则 Pod 会被 `project-quota` 拦住 |
-| GET | `/workspaces/{id}/k8s/status` | **k8s 探活主接口**（viewer 可读）。顶层 `{namespace,summary,quota,deployments,replica_sets,pods,services,events,warnings,resources}`。看副本、滚动策略、Pod 阶段、release 标签、配额 used/hard、FailedCreate。不要借 Docker 机 exec kubectl |
+| GET | `/workspaces/{id}/k8s/status` | **k8s 探活主接口**（viewer 可读）。顶层 `{namespace,summary,quota,deployments,replica_sets,pods,services,events,warnings,history,resources}`。`warnings` 只含当前代问题；已缩掉的 ReplicaSet 的 FailedCreate 在 `history`（`events[].stale=true`）。不要借 Docker 机 exec kubectl |
 | GET | `/workspaces/{id}/k8s/resources` | 扁平资源列表，字段含 `kind/name/namespace/labels/phase/ready/replicas/reason`；viewer 只读 |
 | DELETE | `/workspaces/{id}/k8s/resources` | `?kind=&name=` |
 

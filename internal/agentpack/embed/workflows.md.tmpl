@@ -108,7 +108,8 @@ DELETE /workspaces/{id}/k8s/resources?kind=Deployment&name=web
 - `deployments[]`：`replicas` `ready_replicas` `updated_replicas` `rolling` `strategy` `max_unavailable` `max_surge` `labels`（含 `release`）`missing_requests`
 - `replica_sets[]`：两代同时 desired>0 就是正在 RollingUpdate
 - `pods[]`：`phase` `ready` `restarts` `labels` `reason` `message`
-- `events[]` / `warnings[]`：FailedCreate、配额拦截会写在这里
+- `events[]` / `warnings[]`：当前代 FailedCreate、配额拦截
+- `history[]`：已缩到 0 的旧 ReplicaSet 事件，**不要当成现在还失败**
 - `resources[]`：与 `GET /k8s/resources` 相同的扁平对象
 
 apply 之后立刻打 status。若 `warnings` 含 `project-quota` / `exceeded quota` / `missing_requests`：补容器 `resources.requests.cpu` 与 `resources.requests.memory` 再 apply，不要换机器重试。示例：

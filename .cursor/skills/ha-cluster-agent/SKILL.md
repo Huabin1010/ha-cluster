@@ -1,6 +1,6 @@
 ---
 name: ha-cluster-agent
-pack_version: "14"
+pack_version: "15"
 description: >-
   Operates the ha-cluster control plane as a signed-in user via REST. Use when
   creating projects, provisioning workspaces (machines), managing members or
@@ -15,7 +15,7 @@ description: >-
 
 ## 本会话只需一次
 
-本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **14**。
+本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **15**。
 
 ```bash
 curl -fsS "${HA_API_BASE:-https://cl.qzsyzn.com/api}/agent-pack/version"

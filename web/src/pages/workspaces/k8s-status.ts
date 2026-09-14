@@ -63,6 +63,7 @@ export type K8sReplicaSet = {
   ready: number;
   generation?: number;
   images?: string[];
+  active?: boolean;
 };
 
 export type K8sPod = {
@@ -99,6 +100,7 @@ export type K8sEvent = {
   object_name?: string;
   count?: number;
   last_seen?: string;
+  stale?: boolean;
 };
 
 export type K8sNamespaceStatus = {
@@ -120,6 +122,7 @@ export type K8sNamespaceStatus = {
   services: K8sService[];
   events: K8sEvent[];
   warnings: string[];
+  history: string[];
   resources: K8sResource[];
 };
 
@@ -160,16 +163,59 @@ export function replicaText(ready: number, desired: number): string {
 
 export function releaseLabel(labels?: Record<string, string>): string {
   if (!labels) return "";
-  return labels.release || labels.version || labels.app || "";
+  return labels.release || labels.version || "";
+}
+
+export function replicaSetActive(rs: K8sReplicaSet): boolean {
+  if (typeof rs.active === "boolean") return rs.active;
+  return rs.desired > 0 || rs.current > 0 || rs.ready > 0;
+}
+
+export function currentRelease(sets: K8sReplicaSet[]): string {
+  const active = sets.find(replicaSetActive);
+  return releaseLabel(active?.labels) || releaseLabel(sets[0]?.labels);
+}
+
+export function strategyLabel(d: {
+  strategy?: string;
+  max_unavailable?: string;
+  max_surge?: string;
+}): string {
+  const raw = d.strategy || "RollingUpdate";
+  const name = raw === "RollingUpdate" ? "滚动更新" : raw;
+  const bits = [name];
+  if (d.max_unavailable != null && d.max_unavailable !== "") bits.push(`不可用 ${d.max_unavailable}`);
+  if (d.max_surge != null && d.max_surge !== "") bits.push(`额外 ${d.max_surge}`);
+  return bits.join(" · ");
+}
+
+export function eventIsStale(ev: K8sEvent, sets: K8sReplicaSet[]): boolean {
+  if (ev.stale) return true;
+  if (ev.type && ev.type !== "Warning") return true;
+  if ((ev.object_kind || "").toLowerCase() !== "replicaset") return !!ev.stale;
+  const rs = sets.find((item) => item.name === ev.object_name);
+  return !rs || !replicaSetActive(rs);
+}
+
+function fmtQuotaMem(v?: string): string {
+  if (!v) return "0";
+  if (/^\d+$/.test(v)) {
+    const n = Number(v);
+    if (n >= 1 << 30) return `${n / (1 << 30)}Gi`;
+    if (n >= 1 << 20) return `${Math.round(n / (1 << 20))}Mi`;
+  }
+  return v;
 }
 
 export function quotaLine(hard?: Record<string, string>, used?: Record<string, string>): string {
   if (!hard) return "";
-  const keys = ["requests.cpu", "requests.memory", "pods"];
-  return keys
-    .filter((k) => hard[k])
-    .map((k) => `${k} ${used?.[k] || "0"}/${hard[k]}`)
-    .join(" · ");
+  const parts: string[] = [];
+  if (hard["requests.cpu"]) parts.push(`CPU ${used?.["requests.cpu"] || "0"} / ${hard["requests.cpu"]}`);
+  if (hard["requests.memory"]) {
+    parts.push(`内存 ${fmtQuotaMem(used?.["requests.memory"])} / ${fmtQuotaMem(hard["requests.memory"])}`);
+  }
+  if (hard.pods) parts.push(`Pod ${used?.pods || "0"} / ${hard.pods}`);
+  return parts.join(" · ");
 }
 
 export function emptyK8sStatus(namespace = ""): K8sNamespaceStatus {
@@ -191,6 +237,7 @@ export function emptyK8sStatus(namespace = ""): K8sNamespaceStatus {
     services: [],
     events: [],
     warnings: [],
+    history: [],
     resources: [],
   };
 }

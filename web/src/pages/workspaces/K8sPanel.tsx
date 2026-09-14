@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Box, Cpu, Download, Play, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, Box, CheckCircle2, Cpu, Download, Play, RefreshCw, Trash2 } from "lucide-react";
 import { api, friendlyError, type AuthUser } from "@/providers";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,12 +13,16 @@ import { useToast } from "@/ui";
 import { Hint } from "@/components/ui/tooltip";
 import { canApproveRole, type Workspace } from "./types";
 import {
+  currentRelease,
   emptyK8sStatus,
+  eventIsStale,
   podPhaseLabel,
   podPhaseVariant,
   quotaLine,
   releaseLabel,
+  replicaSetActive,
   replicaText,
+  strategyLabel,
   type K8sNamespaceStatus,
   type K8sResource,
 } from "./k8s-status";
@@ -56,14 +60,6 @@ spec:
               memory: 128Mi
 `;
 
-function labelsText(labels?: Record<string, string>): string {
-  if (!labels) return "";
-  return Object.entries(labels)
-    .slice(0, 4)
-    .map(([k, v]) => `${k}=${v}`)
-    .join(" ");
-}
-
 export function K8sPanel({
   ws,
   myRole,
@@ -96,6 +92,7 @@ export function K8sPanel({
         services: json.services ?? [],
         events: json.events ?? [],
         warnings: json.warnings ?? [],
+        history: json.history ?? [],
         resources: json.resources ?? [],
       });
     } catch (e) {
@@ -157,7 +154,15 @@ export function K8sPanel({
   }
 
   const quotaText = quotaLine(status.quota?.hard, status.quota?.used);
-  const warningEvents = status.events.filter((ev) => ev.type === "Warning");
+  const warningEvents = status.events.filter((ev) => ev.type === "Warning" && !eventIsStale(ev, status.replica_sets));
+  const historyEvents = status.events.filter((ev) => ev.type === "Warning" && eventIsStale(ev, status.replica_sets));
+  const historyNotes = status.history.length > 0 ? status.history : historyEvents.map((ev) => ev.message);
+  const healthy =
+    status.summary.deployments > 0 &&
+    status.summary.ready_deployments === status.summary.deployments &&
+    status.summary.failed_pods === 0 &&
+    status.warnings.length === 0 &&
+    warningEvents.length === 0;
 
   return (
     <Elevated offset={1} shadowLevel={1} className="overflow-hidden rounded-xl border border-border/80 bg-surface-1">
@@ -248,8 +253,22 @@ export function K8sPanel({
                 </AlertDescription>
               </Alert>
             )}
+            {healthy && historyNotes.length > 0 && (
+              <Alert variant="info" data-testid="ws-k8s-history">
+                <CheckCircle2 className="size-4 shrink-0" />
+                <AlertDescription className="min-w-0 break-words text-foreground">
+                  当前代已就绪。下面的 FailedCreate 来自已缩掉的旧 ReplicaSet，不影响现在的服务。
+                </AlertDescription>
+              </Alert>
+            )}
 
             <div className="flex flex-wrap items-center gap-2">
+              {healthy ? (
+                <Badge variant="ok" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                  <CheckCircle2 className="size-3 shrink-0" />
+                  运行正常
+                </Badge>
+              ) : null}
               <Badge variant="secondary" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
                 Deployment {status.summary.ready_deployments}/{status.summary.deployments}
               </Badge>
@@ -275,8 +294,8 @@ export function K8sPanel({
               >
                 <Cpu className="size-3.5 shrink-0 text-muted-foreground opacity-70" />
                 <span className="whitespace-nowrap shrink-0">配额 {status.quota?.name || "project-quota"}</span>
-                <Hint label={quotaText} className="font-mono">
-                  <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{quotaText}</span>
+                <Hint label={quotaText}>
+                  <span className="min-w-0 truncate text-sm text-foreground">{quotaText}</span>
                 </Hint>
               </div>
             ) : null}
@@ -288,8 +307,8 @@ export function K8sPanel({
                     <TableRow>
                       <TableHead className="min-w-0">Deployment</TableHead>
                       <TableHead className="w-[110px] whitespace-nowrap">就绪</TableHead>
-                      <TableHead className="w-[160px] whitespace-nowrap">滚动策略</TableHead>
-                      <TableHead className="w-[140px] whitespace-nowrap">标签</TableHead>
+                      <TableHead className="w-[200px] whitespace-nowrap">滚动策略</TableHead>
+                      <TableHead className="w-[140px] whitespace-nowrap">版本</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -306,13 +325,11 @@ export function K8sPanel({
                             </Badge>
                           </Hint>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap font-mono text-xs">
-                          {d.strategy || "RollingUpdate"}
-                          {d.max_unavailable != null && d.max_unavailable !== "" ? ` u=${d.max_unavailable}` : ""}
-                          {d.max_surge != null && d.max_surge !== "" ? ` s=${d.max_surge}` : ""}
-                        </TableCell>
-                        <TableCell className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-                          {releaseLabel(d.labels) || labelsText(d.labels) || "—"}
+                        <TableCell className="whitespace-nowrap text-sm text-foreground">{strategyLabel(d)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 shrink-0">
+                            {releaseLabel(d.labels) || currentRelease(status.replica_sets) || "—"}
+                          </span>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -329,22 +346,37 @@ export function K8sPanel({
                       <TableHead className="min-w-0">ReplicaSet</TableHead>
                       <TableHead className="w-[90px] whitespace-nowrap">代</TableHead>
                       <TableHead className="w-[110px] whitespace-nowrap">副本</TableHead>
-                      <TableHead className="w-[140px] whitespace-nowrap">标签</TableHead>
+                      <TableHead className="w-[160px] whitespace-nowrap">状态</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {status.replica_sets.map((rs) => (
-                      <TableRow key={rs.name}>
-                        <TableCell className="min-w-0 truncate font-mono text-xs">{rs.name}</TableCell>
-                        <TableCell className="whitespace-nowrap font-mono text-xs">{rs.generation || "—"}</TableCell>
-                        <TableCell className="whitespace-nowrap font-mono text-xs">
-                          {replicaText(rs.ready, rs.desired)}
-                        </TableCell>
-                        <TableCell className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-                          {releaseLabel(rs.labels) || labelsText(rs.labels) || "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {status.replica_sets.map((rs) => {
+                      const active = replicaSetActive(rs);
+                      return (
+                        <TableRow key={rs.name}>
+                          <TableCell className="min-w-0 truncate font-mono text-xs">{rs.name}</TableCell>
+                          <TableCell className="whitespace-nowrap font-mono text-xs">{rs.generation || "—"}</TableCell>
+                          <TableCell className="whitespace-nowrap font-mono text-xs">
+                            {replicaText(rs.ready, rs.desired)}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1.5 shrink-0">
+                              <Badge
+                                variant={active ? "ok" : "outline"}
+                                className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                              >
+                                {active ? "当前" : "历史"}
+                              </Badge>
+                              {releaseLabel(rs.labels) ? (
+                                <Hint label={releaseLabel(rs.labels)} className="font-mono">
+                                  <span className="font-mono text-xs text-foreground">{releaseLabel(rs.labels)}</span>
+                                </Hint>
+                              ) : null}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -357,14 +389,14 @@ export function K8sPanel({
                     <TableHead className="min-w-0">Pod</TableHead>
                     <TableHead className="w-[120px] whitespace-nowrap">阶段</TableHead>
                     <TableHead className="w-[90px] whitespace-nowrap">重启</TableHead>
-                    <TableHead className="w-[140px] whitespace-nowrap">标签</TableHead>
+                    <TableHead className="w-[140px] whitespace-nowrap">版本</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {status.pods.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-sm text-muted-foreground">
-                        还没有 Pod。apply 之后点「刷新状态」查看轮替；不要到别的 Docker 机器上 exec kubectl。
+                        还没有 Pod。apply 之后点「刷新状态」查看轮替。
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -382,8 +414,8 @@ export function K8sPanel({
                           </Hint>
                         </TableCell>
                         <TableCell className="whitespace-nowrap font-mono text-xs">{p.restarts}</TableCell>
-                        <TableCell className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-                          {releaseLabel(p.labels) || labelsText(p.labels) || "—"}
+                        <TableCell className="whitespace-nowrap font-mono text-xs text-foreground">
+                          {releaseLabel(p.labels) || "—"}
                         </TableCell>
                       </TableRow>
                     ))
@@ -397,7 +429,7 @@ export function K8sPanel({
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
                     <TableRow>
-                      <TableHead className="w-[140px] whitespace-nowrap">事件</TableHead>
+                      <TableHead className="w-[140px] whitespace-nowrap">当前事件</TableHead>
                       <TableHead className="min-w-0">说明</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -410,6 +442,33 @@ export function K8sPanel({
                           </Badge>
                         </TableCell>
                         <TableCell className="min-w-0 break-words text-sm text-foreground">
+                          {[ev.object_kind, ev.object_name].filter(Boolean).join("/")} {ev.message}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {historyEvents.length > 0 && (
+              <div className="w-full overflow-x-auto rounded-xl border border-border/80" data-testid="ws-k8s-history-events">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
+                    <TableRow>
+                      <TableHead className="w-[140px] whitespace-nowrap">历史事件</TableHead>
+                      <TableHead className="min-w-0">说明</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {historyEvents.slice(0, 6).map((ev, i) => (
+                      <TableRow key={`hist-${ev.reason}-${ev.object_name}-${i}`}>
+                        <TableCell className="whitespace-nowrap">
+                          <Badge variant="outline" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                            {ev.reason || "Warning"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="min-w-0 break-words text-sm text-muted-foreground">
                           {[ev.object_kind, ev.object_name].filter(Boolean).join("/")} {ev.message}
                         </TableCell>
                       </TableRow>

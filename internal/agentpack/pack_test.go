@@ -87,6 +87,9 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[APIRefPath], "/k8s/status") || !strings.Contains(p.Files[WorkflowsPath], "/k8s/status") {
 		t.Fatal("pack should tell agents to poll k8s status instead of exec")
 	}
+	if !strings.Contains(p.Files[APIRefPath], "history") || !strings.Contains(p.Files[WorkflowsPath], "history") {
+		t.Fatal("pack should tell agents stale FailedCreate lives in history")
+	}
 	if !strings.Contains(p.Files[WorkflowsPath], "project-quota") || !strings.Contains(p.Files[SkillPath], "k8s/status") {
 		t.Fatal("pack should warn about quota requests and status API")
 	}

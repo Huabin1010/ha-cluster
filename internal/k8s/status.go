@@ -64,6 +64,7 @@ type ReplicaSetStatus struct {
 	Ready      int               `json:"ready"`
 	Generation int64             `json:"generation,omitempty"`
 	Images     []string          `json:"images,omitempty"`
+	Active     bool              `json:"active"`
 }
 
 type PodStatus struct {
@@ -100,6 +101,7 @@ type EventStatus struct {
 	ObjectName string `json:"object_name,omitempty"`
 	Count      int    `json:"count,omitempty"`
 	LastSeen   string `json:"last_seen,omitempty"`
+	Stale      bool   `json:"stale,omitempty"`
 }
 
 type StatusSummary struct {
@@ -125,6 +127,7 @@ type NamespaceStatus struct {
 	Services    []ServiceStatus    `json:"services"`
 	Events      []EventStatus      `json:"events"`
 	Warnings    []string           `json:"warnings"`
+	History     []string           `json:"history"`
 	Resources   []Resource         `json:"resources"`
 }
 
@@ -428,6 +431,9 @@ func finalizeStatus(st *NamespaceStatus) {
 	if st.Warnings == nil {
 		st.Warnings = []string{}
 	}
+	if st.History == nil {
+		st.History = []string{}
+	}
 	if st.Resources == nil {
 		st.Resources = []Resource{}
 	}
@@ -439,6 +445,9 @@ func finalizeStatus(st *NamespaceStatus) {
 		}
 		return st.ReplicaSets[i].Name < st.ReplicaSets[j].Name
 	})
+	for i := range st.ReplicaSets {
+		st.ReplicaSets[i].Active = replicaSetActive(st.ReplicaSets[i])
+	}
 	sort.Slice(st.Pods, func(i, j int) bool { return st.Pods[i].Name < st.Pods[j].Name })
 	sort.Slice(st.Services, func(i, j int) bool { return st.Services[i].Name < st.Services[j].Name })
 
@@ -449,7 +458,7 @@ func finalizeStatus(st *NamespaceStatus) {
 		Pods:        len(st.Pods),
 	}
 	seenWarn := map[string]struct{}{}
-	addWarn := func(msg string) {
+	addLine := func(dst *[]string, msg string) {
 		msg = strings.TrimSpace(msg)
 		if msg == "" {
 			return
@@ -458,8 +467,10 @@ func finalizeStatus(st *NamespaceStatus) {
 			return
 		}
 		seenWarn[msg] = struct{}{}
-		st.Warnings = append(st.Warnings, msg)
+		*dst = append(*dst, msg)
 	}
+	addWarn := func(msg string) { addLine(&st.Warnings, msg) }
+	addHistory := func(msg string) { addLine(&st.History, msg) }
 
 	for _, d := range st.Deployments {
 		if d.Replicas > 0 && d.ReadyReplicas >= d.Replicas && !d.Rolling {
@@ -495,21 +506,81 @@ func finalizeStatus(st *NamespaceStatus) {
 			}
 		}
 	}
-	for _, ev := range st.Events {
+	for i, ev := range st.Events {
 		if !strings.EqualFold(ev.Type, "Warning") {
 			continue
 		}
+		line := formatWarningEvent(ev)
+		if eventIsStale(st, ev) {
+			st.Events[i].Stale = true
+			addHistory(line)
+			continue
+		}
 		sum.Warnings++
-		line := strings.TrimSpace(ev.Reason + ": " + ev.Message)
-		if ev.ObjectKind != "" && ev.ObjectName != "" {
-			line = ev.ObjectKind + "/" + ev.ObjectName + " " + line
-		}
-		if looksLikeQuota(ev.Message) {
-			line += "（容器必须声明 resources.requests.cpu 与 resources.requests.memory）"
-		}
 		addWarn(line)
 	}
 	st.Summary = sum
+}
+
+func replicaSetActive(rs ReplicaSetStatus) bool {
+	return rs.Desired > 0 || rs.Current > 0 || rs.Ready > 0
+}
+
+func formatWarningEvent(ev EventStatus) string {
+	line := strings.TrimSpace(ev.Reason + ": " + ev.Message)
+	if ev.ObjectKind != "" && ev.ObjectName != "" {
+		line = ev.ObjectKind + "/" + ev.ObjectName + " " + line
+	}
+	if looksLikeQuota(ev.Message) {
+		line += "（容器必须声明 resources.requests.cpu 与 resources.requests.memory）"
+	}
+	return line
+}
+
+func eventIsStale(st *NamespaceStatus, ev EventStatus) bool {
+	kind := strings.ToLower(strings.TrimSpace(ev.ObjectKind))
+	name := strings.TrimSpace(ev.ObjectName)
+	switch kind {
+	case "replicaset":
+		for _, rs := range st.ReplicaSets {
+			if rs.Name == name {
+				return !replicaSetActive(rs)
+			}
+		}
+		return true
+	case "pod":
+		for _, p := range st.Pods {
+			if p.Name != name {
+				continue
+			}
+			if p.Phase == "Running" && p.Ready {
+				return true
+			}
+			return false
+		}
+		return true
+	case "deployment":
+		for _, d := range st.Deployments {
+			if d.Name != name {
+				continue
+			}
+			healthy := d.Replicas > 0 && d.ReadyReplicas >= d.Replicas && !d.Rolling && !d.MissingRequests
+			return healthy
+		}
+		return true
+	default:
+		for _, d := range st.Deployments {
+			if d.MissingRequests || d.Rolling || (d.Replicas > 0 && d.ReadyReplicas < d.Replicas) {
+				return false
+			}
+		}
+		for _, p := range st.Pods {
+			if p.Phase == "Pending" || p.Phase == "Failed" || p.Phase == "Unknown" || (p.Phase == "Running" && !p.Ready) {
+				return false
+			}
+		}
+		return true
+	}
 }
 
 func hasWarningEvents(events []EventStatus) bool {
