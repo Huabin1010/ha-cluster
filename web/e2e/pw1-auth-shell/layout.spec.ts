@@ -6,7 +6,6 @@ test.describe("PW-1 Layout 与壳子体验", () => {
 
     const links = [
       { id: "nav-projects", url: "/projects", title: "项目" },
-      { id: "nav-members", url: "/members", title: "成员" },
       { id: "nav-workspaces", url: "/workspaces", title: "服务器" },
       { id: "nav-nodes", url: "/nodes", title: "节点" },
       { id: "nav-capacity", url: "/capacity", title: "容量" },
@@ -19,6 +18,8 @@ test.describe("PW-1 Layout 与壳子体验", () => {
       await expect(ownerPage).toHaveURL(new RegExp(item.url));
       await expect(ownerPage.locator("main h2")).toContainText(item.title);
     }
+
+    await expect(ownerPage.getByTestId("nav-members")).toHaveCount(0);
   });
 
   test("PW1-13 @pw1 环境角标 dev", async ({ ownerPage }) => {

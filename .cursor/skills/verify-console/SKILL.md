@@ -26,7 +26,7 @@ Agent 验收 = **像用户一样点控制台**，不是读组件猜。
 ## Clicking rules
 
 - Dialogs: same semantics as `web/e2e/helpers/dialog.ts` — `openCreateDialog`, `chooseSelect` (`[role=option][data-value=…]`), `confirmAlert` (`confirm-ok` / `confirm-cancel`). No native `select` / `window.confirm`.
-- Hidden platform items (`nav-nodes`, `nav-audit`, `nav-dangerous`, `nav-docker-registries`) follow the map’s 角色门. Do not assume every role sees every item.
+- Hidden platform items (`nav-members`, `nav-users`, `nav-nodes`, `nav-audit`, `nav-dangerous`, `nav-docker-registries`) follow the map’s 角色门. Do not assume every role sees every item.
 - Dangerous ops (销毁终审 `dangerous-confirm`, 删除项目/成员) still go through the confirm UI. Do not bypass approval APIs to “make the demo pass”.
 - Web terminal is WebSocket (`ws-web-terminal`); do not treat it as a REST tool.
 

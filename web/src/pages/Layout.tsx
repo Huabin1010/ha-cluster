@@ -30,7 +30,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { spring } from "@/lib/springs";
 import { writeCurrentProject } from "@/lib/current-project";
-import { canApproveDangerousOps, canManageNodes, canManageUsers, canViewAudit, isPlatformAdmin } from "@/lib/permissions";
+import {
+  canApproveDangerousOps,
+  canManageNodes,
+  canManageUsers,
+  canViewAudit,
+  canViewGlobalMembers,
+  isPlatformAdmin,
+} from "@/lib/permissions";
 import { Combobox } from "@/components/ui/combobox";
 import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hover";
 import { FluidHoverHighlight } from "@/components/ui/fluid-hover-highlight";
@@ -195,6 +202,7 @@ export function Layout({ children }: PropsWithChildren) {
   const filteredMenuItems = useMemo(() => {
     return menuItems.filter((item) => {
       if (item.name === "nodes" || item.name === "capacity") return canManageNodes(me?.platform_role);
+      if (item.name === "memberships") return canViewGlobalMembers(me?.platform_role);
       if (item.name === "users") return canManageUsers(me?.platform_role);
       if (item.name === "audit-logs") return canViewAudit(me?.platform_role);
       if (item.name === "dangerous-approvals") return canApproveDangerousOps(me?.platform_role);

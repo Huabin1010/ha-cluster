@@ -145,7 +145,7 @@ export function AcceptInvitePage() {
               {busy ? "提交中…" : "确认接受邀请"}
             </Button>
             <Button variant="ghost" className="text-xs text-muted-foreground hover:text-foreground" asChild>
-              <Link to="/members">返回成员页</Link>
+              <Link to="/projects">返回项目</Link>
             </Button>
           </div>
         </form>

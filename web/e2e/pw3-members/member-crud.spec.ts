@@ -18,7 +18,7 @@ test.describe("PW-3 成员管理与列表", () => {
   });
 
   test("PW3-02 @pw3 @smoke query 带入项目", async ({ pageAs }) => {
-    const { page, tokens } = await pageAs("owner");
+    const { page, tokens } = await pageAs("admin");
     const p = await seedProject(tokens.token, "query");
 
     await page.goto(`/members?project_id=${p.id}`);
@@ -85,9 +85,9 @@ test.describe("PW-3 成员管理与列表", () => {
     await expect(page.locator(".members-panel")).toContainText("owner 不可通过此表单转让");
   });
 
-  test("PW3-13 @pw3 未选项目", async ({ pageAs }) => {
-    const { page } = await pageAs("owner");
+  test("PW3-13 @pw3 admin 未选项目", async ({ pageAs }) => {
+    const { page } = await pageAs("admin");
     await page.goto("/members");
-    await expect(page.locator("section")).toContainText("从上方选择项目");
+    await expect(page.getByText("请选择要管理成员的项目")).toBeVisible();
   });
 });

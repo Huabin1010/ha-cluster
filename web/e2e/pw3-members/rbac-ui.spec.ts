@@ -40,4 +40,14 @@ test.describe("PW-3 权限控制与界面交互", () => {
     await expect(err).toBeVisible();
     await expect(err).toContainText("没有权限");
   });
+
+  test("PW3-14 @pw3 @smoke 普通用户看不到全局成员页", async ({ ownerPage }) => {
+    await ownerPage.goto("/projects");
+    await expect(ownerPage.getByTestId("nav-members")).toHaveCount(0);
+
+    await ownerPage.goto("/members");
+    const forbidden = ownerPage.getByTestId("members-forbidden");
+    await expect(forbidden).toBeVisible();
+    await expect(forbidden).toContainText("无权查看全局成员页");
+  });
 });

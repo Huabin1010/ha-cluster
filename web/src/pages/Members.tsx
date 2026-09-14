@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useGetIdentity, useList } from "@refinedev/core";
-import { Users, FolderKanban, ArrowRight, Plus, Mail } from "lucide-react";
+import { Users, FolderKanban, ArrowRight, Plus, Mail, Shield } from "lucide-react";
 import { MemberList } from "@/pages/members/MemberList";
 import { BatchCreateUsersDialog } from "@/pages/members/BatchCreateUsersDialog";
 import { SelectBox } from "@/components/ui/select";
@@ -12,8 +12,46 @@ import { PageHeading } from "@/components/ui/page-heading";
 import { Elevated } from "@/lib/elevated";
 import { type AuthUser } from "@/providers";
 import { readCurrentProject, writeCurrentProject } from "@/lib/current-project";
+import { canViewGlobalMembers } from "@/lib/permissions";
+import { Loading } from "@/ui";
 
 type Project = { id: string; name: string; slug: string };
+
+function Forbidden() {
+  return (
+    <PageFrame
+      header={
+        <div className="flex items-center gap-3">
+          <span className="size-9 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center shrink-0 border border-destructive/20 shadow-xs">
+            <Shield className="size-4.5" />
+          </span>
+          <div>
+            <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">成员与权限</h2>
+            <p className="mt-1 mb-0 text-sm text-muted-foreground">访问受限</p>
+          </div>
+        </div>
+      }
+    >
+      <div className="py-8 flex justify-center">
+        <Elevated
+          offset={1}
+          shadowLevel={2}
+          className="rounded-2xl border border-destructive/30 bg-destructive/5 p-8 max-w-md w-full text-center flex flex-col items-center gap-3"
+          data-testid="members-forbidden"
+        >
+          <Shield className="size-10 text-destructive" />
+          <h3 className="m-0 text-base font-semibold text-foreground">无权查看全局成员页</h3>
+          <p className="m-0 text-xs text-muted-foreground leading-relaxed break-words min-w-0">
+            全局成员入口仅平台管理员可见。项目成员请从项目详情的「成员与权限」管理同事与 SSH。
+          </p>
+          <Button variant="outline" size="compact" asChild className="mt-1">
+            <Link to="/projects">返回项目</Link>
+          </Button>
+        </Elevated>
+      </div>
+    </PageFrame>
+  );
+}
 
 export function MembersPage() {
   const { id: routeProjectId } = useParams<{ id?: string }>();
@@ -22,10 +60,14 @@ export function MembersPage() {
   const queryId = searchParams.get("project_id") ?? "";
 
   const { data: me } = useGetIdentity<AuthUser>();
-  const isPlatformAdmin = me?.platform_role === "platform_admin";
+  const allowed = canViewGlobalMembers(me?.platform_role);
+  const isPlatformAdmin = allowed;
   const [globalBatchOpen, setGlobalBatchOpen] = useState(false);
 
-  const { data, isLoading } = useList<Project>({ resource: "projects" });
+  const { data, isLoading } = useList<Project>({
+    resource: "projects",
+    queryOptions: { enabled: Boolean(me) && allowed },
+  });
   const projects = data?.data ?? [];
 
   const savedProjectId = readCurrentProject();
@@ -44,6 +86,26 @@ export function MembersPage() {
     () => projects.find((p) => p.id === projectId),
     [projects, projectId],
   );
+
+  if (me === undefined) {
+    return (
+      <PageFrame
+        header={
+          <div className="flex items-center gap-3">
+            <span className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20 shadow-xs">
+              <Users className="size-4.5" />
+            </span>
+            <h2 className="m-0 text-xl font-bold tracking-tight text-foreground">成员与权限</h2>
+          </div>
+        }
+      >
+        <div className="py-12 text-center">
+          <Loading label="校验权限…" />
+        </div>
+      </PageFrame>
+    );
+  }
+  if (!allowed) return <Forbidden />;
 
   function onSelectProject(id: string) {
     setProjectId(id);

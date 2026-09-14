@@ -38,7 +38,7 @@
 | 用户看到的 | testid | 角色门 |
 |---|---|---|
 | 侧栏「项目」 | `nav-projects` | 已登录 |
-| 侧栏「成员」 | `nav-members` | 已登录 |
+| 侧栏「成员」 | `nav-members` | `platform_admin`（全局入口；项目内成员走 `project-tab-members`） |
 | 侧栏「用户」 | `nav-users` | `platform_admin` |
 | 侧栏「服务器」 | `nav-workspaces` | 已登录 |
 | 侧栏「节点」 | `nav-nodes` | `platform_admin` / `platform_ops` |
@@ -267,8 +267,8 @@
 
 ### 怎么进入
 
-- 全局：侧栏 `nav-members` → `/members`，先用 `member-project` 选项目
-- 项目内：`project-tab-members` → `/projects/:id/members`
+- 全局（仅 `platform_admin`）：侧栏 `nav-members` → `/members`，先用 `member-project` 选项目。普通用户侧栏无此项；直链看到 `members-forbidden`，请走项目内成员页
+- 项目内：`project-tab-members` → `/projects/:id/members`（项目成员可见；viewer 只读）
 - 接受邀请：`/invitations/accept`（成员页链接 `invite-accept-page`）
 
 ### 子功能
@@ -283,8 +283,9 @@
 
 ### 选择器
 
-| 用户看到的 | testid |
-|---|---|
+| 用户看到的 | testid | 角色门 |
+|---|---|---|
+| 无权（全局 `/members`） | `members-forbidden` | 非 `platform_admin` |
 | 全局批量创建用户 | `global-batch-create-open` | `platform_admin` |
 | 前往用户列表 | `users-page-link` | `platform_admin` |
 | 接受邀请页链接 | `invite-accept-page` | |
@@ -300,7 +301,7 @@
 | 行内角色 / SSH / 移除 | `member-role-select` / `member-ssh-toggle` / `member-remove` |
 | 接受页 token / 提交 / 对错 | `accept-token` / `accept-submit` / `accept-ok` / `accept-error` |
 
-角色门：添加/改角色/批 SSH 需项目 admin+；viewer 只读。非成员看不见项目。
+角色门：全局 `/members` 仅 `platform_admin`。项目内添加/改角色/批 SSH 需项目 admin+；viewer 只读。非成员看不见项目。
 
 相关 E2E：`web/e2e/pw3-members/`。
 

@@ -1,6 +1,12 @@
 import type { AccessControlProvider } from "@refinedev/core";
 import { authProvider, type AuthUser } from "@/providers";
-import { canApproveDangerousOps, canManageNodes, canViewAudit, isPlatformAdmin } from "@/lib/permissions";
+import {
+  canApproveDangerousOps,
+  canManageNodes,
+  canViewAudit,
+  canViewGlobalMembers,
+  isPlatformAdmin,
+} from "@/lib/permissions";
 
 function adminOnly(role?: string, reason = "仅 platform_admin 可访问此页。") {
   return { can: isPlatformAdmin(role), reason };
@@ -34,6 +40,13 @@ export const accessControlProvider: AccessControlProvider = {
 
     if (resource === "docker-registries" || resource === "ingress-domains") {
       return adminOnly(role);
+    }
+
+    if (resource === "memberships") {
+      return {
+        can: canViewGlobalMembers(role),
+        reason: "仅 platform_admin 可从全局入口管理成员。",
+      };
     }
 
     if (resource === "users") {

@@ -25,6 +25,11 @@ export function canManageUsers(platformRole?: string) {
   return isPlatformAdmin(platformRole);
 }
 
+/** 侧栏「成员」与 `/members` 是平台总览；项目内成员仍走 `/projects/:id/members`。 */
+export function canViewGlobalMembers(platformRole?: string) {
+  return isPlatformAdmin(platformRole);
+}
+
 export function canManageMembers(myRole?: string, platformRole?: string) {
   if (isPlatformAdmin(platformRole)) return true;
   return myRole === "owner" || myRole === "admin";
