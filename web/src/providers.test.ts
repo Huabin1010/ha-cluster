@@ -354,6 +354,7 @@ describe("friendlyError (U3)", () => {
     expect(friendlyError(forbidden)).toBe("没有权限做这件事");
     expect(friendlyError(missing)).toBe("找不到该用户或资源");
     expect(friendlyError(new Error("conflict"))).toMatch(/冲突/);
+    expect(friendlyError(new Error("PURPOSE_REQUIRED"))).toMatch(/用途/);
   });
 });
 

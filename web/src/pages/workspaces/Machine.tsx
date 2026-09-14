@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { api, friendlyError, isApiError, type AuthUser } from "@/providers";
 import { canSSH, sshAccessLabel } from "@/lib/permissions";
+import { purposeMissing } from "@/pages/projects/types";
 import {
   formatCpuCores,
   formatDiskSize,
@@ -444,6 +445,10 @@ export function MachinePage() {
   const isFreeZone = !!selectedZone && !selectedZone.require_approval;
 
   async function submitIngress(confirmSecond: boolean) {
+    if (purposeMissing(projectCtx?.purpose)) {
+      setFormErr("请先填写项目用途，才能继续操作");
+      return;
+    }
     setFormErr("");
     setBusy(true);
     try {
@@ -582,7 +587,8 @@ export function MachinePage() {
   const pending = pendingSpec(ws);
   const wsRunning = ws.status === "running" || ws.status === "fabric_degraded";
   const sshGranted = canSSH(projectCtx?.my_role, projectCtx?.my_ssh_access, me?.platform_role);
-  const canConnect = wsRunning && sshGranted && !isK8sRuntime(ws.runtime);
+  const needsPurpose = Boolean(projectCtx) && purposeMissing(projectCtx?.purpose);
+  const canConnect = wsRunning && sshGranted && !isK8sRuntime(ws.runtime) && !needsPurpose;
   const showSSHRequest = wsRunning && !sshGranted && projectCtx?.my_role === "developer";
   const recentLogs = logs.slice(0, 5);
   const activeRoutes = routes.filter((rt) => rt.status === "active");
@@ -670,6 +676,18 @@ export function MachinePage() {
       }
     >
       <div className="grid gap-5 pb-8">
+        {needsPurpose && (
+          <Alert variant="destructive" data-testid="project-purpose-gate">
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-2 break-words min-w-0">
+              <span className="break-words min-w-0">项目还没有用途。请先到项目页补上，才能启动、连接、apply 或接入域名。</span>
+              {ws.project_id && (
+                <Button type="button" size="compact" asChild className="shrink-0" data-testid="project-purpose-fill">
+                  <Link to={`/projects/${ws.project_id}`}>去填写用途</Link>
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
         {section === "overview" && (
           <div className="grid gap-5">
             {ws.status === "fabric_degraded" && (
@@ -939,7 +957,7 @@ export function MachinePage() {
         )}
 
         {section === "k8s" && (
-          <K8sPanel ws={ws} myRole={projectCtx?.my_role} platformRole={me?.platform_role} />
+          <K8sPanel ws={ws} myRole={projectCtx?.my_role} platformRole={me?.platform_role} opsLocked={needsPurpose} />
         )}
 
         {section === "connect" && (

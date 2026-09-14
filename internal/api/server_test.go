@@ -29,6 +29,8 @@ func testServer(t *testing.T) http.Handler {
 	t.Setenv("HA_BASTION_DIRECT", "0")
 	t.Setenv("HA_AGENT_VIA_LAN", "0")
 	t.Setenv("HA_PROVISION_SYNC", "1")
+	t.Setenv("HA_K8S_MEMORY", "1")
+	t.Setenv("HA_KUBECONFIG", "")
 	st := memory.New()
 	app := service.New(st, workspace.NewMemoryRuntime(), []byte("unit-test-secret-key-32b!!"))
 	const Gi = 1024 * 1024 * 1024
@@ -131,7 +133,7 @@ func TestAuditActorUsernameAndIP(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("patch display_name %d %s", rr.Code, rr.Body.String())
 	}
-	rr = doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "办公室故事", "slug": "office-story"})
+	rr = doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "办公室故事", "slug": "office-story", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -222,7 +224,7 @@ func TestAuditClientIPFromForwardedFor(t *testing.T) {
 func TestWorkspaceAuditHTTP(t *testing.T) {
 	h := testServer(t)
 	tok := registerLogin(t, h, "wsaudit", "wsaudit@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "wa", "slug": "wa"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "wa", "slug": "wa", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -282,7 +284,7 @@ func TestAuthRequired(t *testing.T) {
 func TestWorkspaceQuotaHTTP(t *testing.T) {
 	h := testServer(t)
 	tok := registerLogin(t, h, "alice", "a@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "demo", "slug": "demo"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "demo", "slug": "demo", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -368,7 +370,7 @@ func TestLoginRefreshInvite(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatal(rr.Body.String())
 	}
-	rr = doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "p", "slug": "px"})
+	rr = doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "p", "slug": "px", "purpose": "test purpose"})
 	var p models.Project
 	_ = json.Unmarshal(rr.Body.Bytes(), &p)
 	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/invitations", tok, map[string]string{"email": "x@y.com", "role": "developer"})
@@ -380,7 +382,7 @@ func TestLoginRefreshInvite(t *testing.T) {
 func TestMembersInviteAcceptAndRBAC(t *testing.T) {
 	h := testServer(t)
 	ownerTok := registerLogin(t, h, "own3", "own3@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "m", "slug": "m-u3"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "m", "slug": "m-u3", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -491,7 +493,7 @@ func TestInternalSSHTarget(t *testing.T) {
 	t.Setenv("HA_INTERNAL_TOKEN", "test-internal")
 	h := testServer(t)
 	tok := registerLogin(t, h, "dev1", "dev1@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "p", "slug": "p-ssh"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "p", "slug": "p-ssh", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -569,7 +571,7 @@ func TestWorkspaceApprovalHTTP(t *testing.T) {
 	h := testServer(t)
 	ownerTok := registerLogin(t, h, "own", "own@x.com")
 	devTok := registerLogin(t, h, "devapp", "devapp@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "ap", "slug": "ap"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "ap", "slug": "ap", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -618,7 +620,7 @@ func TestSSHConnectionDirectMode(t *testing.T) {
 	t.Setenv("HA_BASTION_DIRECT", "1")
 	t.Setenv("HA_AGENT_VIA_LAN", "0")
 	tok := registerLogin(t, h, "lab", "lab@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "lab", "slug": "lab-direct"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "lab", "slug": "lab-direct", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -653,7 +655,7 @@ func TestSSHConnectionDirectLanMode(t *testing.T) {
 	t.Setenv("HA_BASTION_DIRECT", "1")
 	t.Setenv("HA_AGENT_VIA_LAN", "1")
 	tok := registerLogin(t, h, "lab2", "lab2@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "lab-lan", "slug": "lab-direct-lan"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "lab-lan", "slug": "lab-direct-lan", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -687,12 +689,17 @@ func TestProjectCreateUsageAndBudget(t *testing.T) {
 	h := testServer(t)
 	tok := registerLogin(t, h, "projowner", "projowner@example.com")
 
-	bad := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "x", "slug": "Bad_Slug"})
+	bad := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "x", "slug": "Bad_Slug", "purpose": "test purpose"})
 	if bad.Code != http.StatusBadRequest {
 		t.Fatalf("invalid slug want 400 got %d %s", bad.Code, bad.Body.String())
 	}
 
-	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "Demo", "slug": "demo-u2"})
+	missing := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "No Purpose", "slug": "no-purpose"})
+	if missing.Code != http.StatusBadRequest {
+		t.Fatalf("missing purpose want 400 got %d %s", missing.Code, missing.Body.String())
+	}
+
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "Demo", "slug": "demo-u2", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
 	}
@@ -700,8 +707,11 @@ func TestProjectCreateUsageAndBudget(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &p); err != nil || p.ID == uuid.Nil {
 		t.Fatal(err, p)
 	}
+	if p.Purpose != "test purpose" {
+		t.Fatalf("purpose %q", p.Purpose)
+	}
 
-	dup := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "Demo2", "slug": "demo-u2"})
+	dup := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "Demo2", "slug": "demo-u2", "purpose": "test purpose"})
 	if dup.Code != http.StatusConflict {
 		t.Fatalf("dup slug want 409 got %d %s", dup.Code, dup.Body.String())
 	}
@@ -811,6 +821,8 @@ func TestApiPrefixAndSPAFallback(t *testing.T) {
 	_ = os.WriteFile(assetsDir+"/test.js", []byte("console.log('ha-web');"), 0644)
 
 	t.Setenv("HA_WEB_DIR", tmpDir)
+	t.Setenv("HA_K8S_MEMORY", "1")
+	t.Setenv("HA_KUBECONFIG", "")
 
 	st := memory.New()
 	app := service.New(st, workspace.NewMemoryRuntime(), []byte("unit-test-secret-key-32b!!"))
@@ -892,7 +904,7 @@ func TestIngressApprovalAPI(t *testing.T) {
 	ownerTok := registerLogin(t, h, "ingowner", "ingowner@x.com")
 	devTok := registerLogin(t, h, "ingdev", "ingdev@x.com")
 
-	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "ingproj", "slug": "ingproj"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "ingproj", "slug": "ingproj", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -1028,7 +1040,7 @@ func TestIngressDomainZonesAPI(t *testing.T) {
 		t.Fatalf("preferred %d %s", prefRR.Code, prefRR.Body.String())
 	}
 
-	rr := doJSON(t, h, http.MethodPost, "/projects", adminTok, map[string]string{"name": "zoneproj", "slug": "zoneproj"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", adminTok, map[string]string{"name": "zoneproj", "slug": "zoneproj", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -1123,7 +1135,7 @@ func TestBatchCreateUsersAPI(t *testing.T) {
 	}
 
 	// 2. 项目 Owner 批量创建并加入当前项目 -> 200 OK
-	resProj := doJSON(t, h, http.MethodPost, "/projects", normTok, map[string]string{"name": "BatchProj", "slug": "batch-proj"})
+	resProj := doJSON(t, h, http.MethodPost, "/projects", normTok, map[string]string{"name": "BatchProj", "slug": "batch-proj", "purpose": "test purpose"})
 	if resProj.Code != http.StatusCreated {
 		t.Fatal(resProj.Body.String())
 	}
@@ -1166,7 +1178,7 @@ func TestListUsersAPI(t *testing.T) {
 		t.Fatalf("expected 403 for non-admin list users, got %d", forbidden.Code)
 	}
 
-	resProj := doJSON(t, h, http.MethodPost, "/projects", adminTok, map[string]string{"name": "UserList", "slug": "user-list"})
+	resProj := doJSON(t, h, http.MethodPost, "/projects", adminTok, map[string]string{"name": "UserList", "slug": "user-list", "purpose": "test purpose"})
 	if resProj.Code != http.StatusCreated {
 		t.Fatal(resProj.Body.String())
 	}
@@ -1317,7 +1329,7 @@ func TestManageUsersAPI(t *testing.T) {
 func TestWorkspaceTerminalAuthAndEcho(t *testing.T) {
 	h := testServer(t)
 	tok := registerLogin(t, h, "term-owner", "term-owner@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "term-p", "slug": "term-p"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "term-p", "slug": "term-p", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -1388,7 +1400,7 @@ func TestWorkspaceTerminalAuthAndEcho(t *testing.T) {
 func TestWorkspaceHTTPExec(t *testing.T) {
 	h := testServer(t)
 	tok := registerLogin(t, h, "exec-owner", "exec-owner@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "exec-p", "slug": "exec-p"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "exec-p", "slug": "exec-p", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -1566,7 +1578,7 @@ func TestK8sWorkspaceApplyKubeconfigAndViewer(t *testing.T) {
 	h := testServer(t)
 	ownerTok := registerLogin(t, h, "k8s-owner", "k8s-owner@x.com")
 	viewerTok := registerLogin(t, h, "k8s-view", "k8s-view@x.com")
-	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "k8s", "slug": "k8sproj"})
+	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{"name": "k8s", "slug": "k8sproj", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}

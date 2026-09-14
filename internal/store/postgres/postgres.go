@@ -65,6 +65,9 @@ var tlsCertsSQL string
 //go:embed sql/016_workspace_runtime.sql
 var workspaceRuntimeSQL string
 
+//go:embed sql/017_project_purpose.sql
+var projectPurposeSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -140,6 +143,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, workspaceRuntimeSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, projectPurposeSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -266,8 +273,8 @@ func (s *Store) CreateProject(ctx context.Context, p *models.Project, ownerRole 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	_, err = tx.ExecContext(ctx, `INSERT INTO projects (id,name,slug,owner_id,status,budget_cpu_milli,budget_mem_bytes,budget_disk_bytes,created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, p.ID, p.Name, p.Slug, p.OwnerID, p.Status, p.BudgetCPUMilli, p.BudgetMemBytes, p.BudgetDiskBytes, p.CreatedAt)
+	_, err = tx.ExecContext(ctx, `INSERT INTO projects (id,name,slug,purpose,owner_id,status,budget_cpu_milli,budget_mem_bytes,budget_disk_bytes,created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, p.ID, p.Name, p.Slug, p.Purpose, p.OwnerID, p.Status, p.BudgetCPUMilli, p.BudgetMemBytes, p.BudgetDiskBytes, p.CreatedAt)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -283,8 +290,8 @@ func (s *Store) CreateProject(ctx context.Context, p *models.Project, ownerRole 
 
 func (s *Store) GetProject(ctx context.Context, id uuid.UUID) (*models.Project, error) {
 	p := &models.Project{}
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,slug,owner_id,status,budget_cpu_milli,budget_mem_bytes,budget_disk_bytes,created_at FROM projects WHERE id=$1`, id).
-		Scan(&p.ID, &p.Name, &p.Slug, &p.OwnerID, &p.Status, &p.BudgetCPUMilli, &p.BudgetMemBytes, &p.BudgetDiskBytes, &p.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,slug,purpose,owner_id,status,budget_cpu_milli,budget_mem_bytes,budget_disk_bytes,created_at FROM projects WHERE id=$1`, id).
+		Scan(&p.ID, &p.Name, &p.Slug, &p.Purpose, &p.OwnerID, &p.Status, &p.BudgetCPUMilli, &p.BudgetMemBytes, &p.BudgetDiskBytes, &p.CreatedAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -292,8 +299,8 @@ func (s *Store) GetProject(ctx context.Context, id uuid.UUID) (*models.Project, 
 }
 
 func (s *Store) UpdateProject(ctx context.Context, p *models.Project) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name=$2,slug=$3,status=$4,budget_cpu_milli=$5,budget_mem_bytes=$6,budget_disk_bytes=$7 WHERE id=$1`,
-		p.ID, p.Name, p.Slug, p.Status, p.BudgetCPUMilli, p.BudgetMemBytes, p.BudgetDiskBytes)
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name=$2,slug=$3,purpose=$4,status=$5,budget_cpu_milli=$6,budget_mem_bytes=$7,budget_disk_bytes=$8 WHERE id=$1`,
+		p.ID, p.Name, p.Slug, p.Purpose, p.Status, p.BudgetCPUMilli, p.BudgetMemBytes, p.BudgetDiskBytes)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -331,7 +338,7 @@ func (s *Store) DeleteProject(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *Store) ListProjectsForUser(ctx context.Context, userID uuid.UUID) ([]models.Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.name,p.slug,p.owner_id,p.status,p.budget_cpu_milli,p.budget_mem_bytes,p.budget_disk_bytes,p.created_at
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.name,p.slug,p.purpose,p.owner_id,p.status,p.budget_cpu_milli,p.budget_mem_bytes,p.budget_disk_bytes,p.created_at
 		FROM projects p JOIN memberships m ON m.project_id=p.id WHERE m.user_id=$1`, userID)
 	if err != nil {
 		return nil, err
@@ -340,7 +347,7 @@ func (s *Store) ListProjectsForUser(ctx context.Context, userID uuid.UUID) ([]mo
 	var out []models.Project
 	for rows.Next() {
 		var p models.Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.OwnerID, &p.Status, &p.BudgetCPUMilli, &p.BudgetMemBytes, &p.BudgetDiskBytes, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Purpose, &p.OwnerID, &p.Status, &p.BudgetCPUMilli, &p.BudgetMemBytes, &p.BudgetDiskBytes, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

@@ -22,7 +22,7 @@ func PreferredRegistry() map[string]any {
 		"server":        "docker.cnb.cool",
 		"console":       "https://cnb.cool",
 		"image_example": "docker.cnb.cool/<组织>/<仓库>:<标签>",
-		"note":          "推送镜像与部署时优先使用 CNB（docker.cnb.cool），不要默认 Docker Hub。平台已注入凭据的工作区可直接 docker pull / push。",
+		"note":          "推送镜像与部署时优先使用 CNB（docker.cnb.cool），不要默认 Docker Hub。平台已注入凭据的 Docker 工作区可直接 docker pull / push；Kubernetes 工作区会写成 Secret ha-registry 并挂到 default ServiceAccount。",
 	}
 }
 

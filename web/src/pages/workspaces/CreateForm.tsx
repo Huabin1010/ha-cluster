@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { api, friendlyError, isInsufficientCapacity } from "@/providers";
 import { formatUsageHint } from "./format";
 import { ARCHES, canApproveRole, formatPlanSpec, PlanItem, PLANS, PLAN_SPECS, ProjectOption, ProjectUsage } from "./types";
+import { purposeMissing } from "@/pages/projects/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectBox } from "@/components/ui/select";
@@ -110,6 +111,12 @@ export function CreateForm({
       onError("请选择项目");
       return;
     }
+    if (purposeMissing(formProject?.purpose)) {
+      const msg = "请先填写项目用途，才能开通服务器";
+      setFormErr(msg);
+      onError(msg);
+      return;
+    }
     setBusy(true);
     setFormErr("");
     onError("");
@@ -171,7 +178,10 @@ export function CreateForm({
                 onValueChange={setProjectId}
                 disabled={showAdvanced}
                 placeholder="选择项目…"
-                options={projects.map((p) => ({ value: p.id, label: `${p.name} (${p.slug})` }))}
+                options={projects.map((p) => ({
+                  value: p.id,
+                  label: purposeMissing(p.purpose) ? `${p.name} (${p.slug}) · 待补用途` : `${p.name} (${p.slug})`,
+                }))}
               />
             </Field>
             <Field label="名称">

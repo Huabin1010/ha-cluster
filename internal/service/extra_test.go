@@ -31,7 +31,7 @@ func TestRefreshAndLogout(t *testing.T) {
 func TestInviteAccept(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "inv", "inv")
+	p, _ := app.CreateProject(ctx, owner.ID, "inv", "inv", "test purpose")
 	bob, _ := app.Register(ctx, "bobinv", "bobinv@x.com", "password1")
 	eve, _ := app.Register(ctx, "eveinv", "eveinv@x.com", "password1")
 
@@ -66,27 +66,71 @@ func TestCreateProjectSlugValidation(t *testing.T) {
 	ctx := context.Background()
 	cases := []string{"", "-lead", "trail-", "a--b", "has space", "under_score"}
 	for _, slug := range cases {
-		if _, err := app.CreateProject(ctx, u.ID, "n", slug); !errors.Is(err, store.ErrInvalidInput) {
+		if _, err := app.CreateProject(ctx, u.ID, "n", slug, "test purpose"); !errors.Is(err, store.ErrInvalidInput) {
 			t.Fatalf("slug %q: want invalid input, got %v", slug, err)
 		}
 	}
 	// Uppercase is normalized to lowercase before validate.
-	if _, err := app.CreateProject(ctx, u.ID, "n", "Bad"); err != nil {
+	if _, err := app.CreateProject(ctx, u.ID, "n", "Bad", "test purpose"); err != nil {
 		t.Fatalf("uppercase should normalize: %v", err)
 	}
-	p, err := app.CreateProject(ctx, u.ID, "ok", "my-app")
-	if err != nil || p.Slug != "my-app" {
+	p, err := app.CreateProject(ctx, u.ID, "ok", "my-app", "unit test")
+	if err != nil || p.Slug != "my-app" || p.Purpose != "unit test" {
 		t.Fatal(err, p)
 	}
-	if _, err := app.CreateProject(ctx, u.ID, "dup", "my-app"); !errors.Is(err, store.ErrConflict) {
+	if _, err := app.CreateProject(ctx, u.ID, "", "ok-slug", "unit test"); !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("empty name: %v", err)
+	}
+	if _, err := app.CreateProject(ctx, u.ID, "ok2", "ok-slug-2", ""); !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("empty purpose: %v", err)
+	}
+	if _, err := app.CreateProject(ctx, u.ID, "same", "same-slug", "same"); !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("purpose must not copy name: %v", err)
+	}
+	if _, err := app.CreateProject(ctx, u.ID, "dup", "my-app", "test purpose"); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("duplicate slug: %v", err)
+	}
+}
+
+func TestEmptyPurposeBlocksOps(t *testing.T) {
+	app, u := setupApp(t)
+	ctx := context.Background()
+	p, err := app.CreateProject(ctx, u.ID, "legacy", "legacy-p", "unit test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Purpose = ""
+	if err := app.Store.UpdateProject(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Plan: "nano", Arch: models.ArchAMD64, Actor: *u,
+	}); !errors.Is(err, store.ErrPurposeRequired) {
+		t.Fatalf("create ws: %v", err)
+	}
+	if _, err := app.Invite(ctx, *u, p.ID, "legacy@example.com", models.RoleDeveloper); !errors.Is(err, store.ErrPurposeRequired) {
+		t.Fatalf("invite: %v", err)
+	}
+	name := "legacy-renamed"
+	if _, err := app.PatchProject(ctx, *u, p.ID, PatchProjectInput{Name: &name}); !errors.Is(err, store.ErrPurposeRequired) {
+		t.Fatalf("patch name: %v", err)
+	}
+	purpose := "补上项目用途"
+	got, err := app.PatchProject(ctx, *u, p.ID, PatchProjectInput{Purpose: &purpose})
+	if err != nil || got.Purpose != "补上项目用途" {
+		t.Fatalf("fill purpose: %+v %v", got, err)
+	}
+	if _, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Plan: "nano", Arch: models.ArchAMD64, Actor: *u,
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestProjectBudget(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, u.ID, "b", "b")
+	p, _ := app.CreateProject(ctx, u.ID, "b", "b", "test purpose")
 	p.BudgetMemBytes = 1 << 20
 	if err := app.Store.UpdateProject(ctx, p); err != nil {
 		t.Fatal(err)
@@ -102,11 +146,11 @@ func TestProjectBudget(t *testing.T) {
 func TestPatchAndDeleteProject(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()
-	p, err := app.CreateProject(ctx, u.ID, "old", "old-slug")
+	p, err := app.CreateProject(ctx, u.ID, "old", "old-slug", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := app.CreateProject(ctx, u.ID, "other", "other-slug")
+	other, err := app.CreateProject(ctx, u.ID, "other", "other-slug", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +161,11 @@ func TestPatchAndDeleteProject(t *testing.T) {
 	}
 	if got.Name != "renamed" || got.Slug != "new-slug" {
 		t.Fatalf("%+v", got)
+	}
+	purpose := "renamed lab"
+	got, err = app.PatchProject(ctx, *u, p.ID, PatchProjectInput{Purpose: &purpose})
+	if err != nil || got.Purpose != "renamed lab" {
+		t.Fatalf("purpose patch: %+v %v", got, err)
 	}
 	dup := "other-slug"
 	if _, err := app.PatchProject(ctx, *u, p.ID, PatchProjectInput{Slug: &dup}); !errors.Is(err, store.ErrConflict) {
@@ -160,7 +209,7 @@ func TestPatchAndDeleteProject(t *testing.T) {
 func TestReconcileReleasesOrphans(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, u.ID, "r", "r")
+	p, _ := app.CreateProject(ctx, u.ID, "r", "r", "test purpose")
 	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{ProjectID: p.ID, Plan: "nano", Arch: models.ArchAMD64, Actor: *u})
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +257,7 @@ func TestSuspend(t *testing.T) {
 func TestPatchMemberAuditMeta(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, err := app.CreateProject(ctx, owner.ID, "mem", "mem")
+	p, err := app.CreateProject(ctx, owner.ID, "mem", "mem", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,7 +26,7 @@ func TestSuspendIdleWorkspacesDisabledByDefault(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()
 
-	p, err := app.CreateProject(ctx, u.ID, "idle-off", "idle-off")
+	p, err := app.CreateProject(ctx, u.ID, "idle-off", "idle-off", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestSuspendIdleWorkspacesWhenWorkspaceHoursSet(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()
 
-	p, err := app.CreateProject(ctx, u.ID, "idle-on", "idle-on")
+	p, err := app.CreateProject(ctx, u.ID, "idle-on", "idle-on", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestSuspendIdleWorkspacesWhenEnvHoursSet(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()
 
-	p, err := app.CreateProject(ctx, u.ID, "idle-env", "idle-env")
+	p, err := app.CreateProject(ctx, u.ID, "idle-env", "idle-env", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestReconcileWorkspaceHealthKeepsSuspended(t *testing.T) {
 	ctx := context.Background()
 	const Gi = 1024 * 1024 * 1024
 
-	p, err := app.CreateProject(ctx, u.ID, "susp", "susp")
+	p, err := app.CreateProject(ctx, u.ID, "susp", "susp", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}

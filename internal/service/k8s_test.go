@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	hak8s "ha-cluster/internal/k8s"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
 )
@@ -12,7 +13,7 @@ import (
 func TestCreateK8sWorkspaceApplyAndViewerDeny(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := t.Context()
-	p, err := app.CreateProject(ctx, owner.ID, "k8s-demo", "k8s-demo")
+	p, err := app.CreateProject(ctx, owner.ID, "k8s-demo", "k8s-demo", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +97,7 @@ metadata:
 func TestDeveloperK8sRequestNeedsApproval(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := t.Context()
-	p, err := app.CreateProject(ctx, owner.ID, "k8s-appr", "k8s-appr")
+	p, err := app.CreateProject(ctx, owner.ID, "k8s-appr", "k8s-appr", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +145,7 @@ func TestCreateK8sWorkspaceNeedsTaggedNode(t *testing.T) {
 	for _, n := range nodes {
 		_ = app.Store.UpdateNodeMeta(ctx, n.ID, n.MachineType, n.Remark, []string{"gpu"})
 	}
-	p, err := app.CreateProject(ctx, owner.ID, "no-k8s", "no-k8s")
+	p, err := app.CreateProject(ctx, owner.ID, "no-k8s", "no-k8s", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +161,7 @@ func TestCreateK8sWorkspaceNeedsTaggedNode(t *testing.T) {
 func TestInvalidRuntimeRejected(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := t.Context()
-	p, err := app.CreateProject(ctx, owner.ID, "bad-rt", "bad-rt")
+	p, err := app.CreateProject(ctx, owner.ID, "bad-rt", "bad-rt", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,5 +171,98 @@ func TestInvalidRuntimeRejected(t *testing.T) {
 	})
 	if !errors.Is(err, store.ErrInvalidInput) {
 		t.Fatalf("%v", err)
+	}
+}
+
+func TestApplyK8sWhenFabricDegraded(t *testing.T) {
+	app, owner := setupApp(t)
+	ctx := t.Context()
+	p, err := app.CreateProject(ctx, owner.ID, "k8s-deg", "k8s-deg", "test purpose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "ns-deg", Plan: "nano", Arch: models.ArchAMD64,
+		Runtime: models.RuntimeK8s, Actor: *owner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.Status = models.WSDegraded
+	if err := app.Store.UpdateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	applied, err := app.ApplyK8sYAML(ctx, *owner, ws.ID, `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snacks-cfg
+data:
+  k: v
+`)
+	if err != nil || len(applied) != 1 {
+		t.Fatal(err, applied)
+	}
+}
+
+func TestCreateK8sRejectedWhenClusterUnavailable(t *testing.T) {
+	app, owner := setupApp(t)
+	app.K8s = hak8s.Unavailable{}
+	ctx := t.Context()
+	p, err := app.CreateProject(ctx, owner.ID, "no-cluster", "no-cluster", "test purpose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "fail", Plan: "nano", Arch: models.ArchAMD64,
+		Runtime: models.RuntimeK8s, Actor: *owner,
+	})
+	if !errors.Is(err, hak8s.ErrUnavailable) {
+		t.Fatalf("want K8S_UNAVAILABLE, got %v", err)
+	}
+}
+
+func TestCreateK8sInjectsAutoRegistryPullSecret(t *testing.T) {
+	app, owner := setupApp(t)
+	ctx := t.Context()
+	if _, err := app.CreateDockerRegistry(ctx, *owner, models.DockerRegistry{
+		Name: "cnb", Server: "docker.cnb.cool", Username: "bot", AutoInject: true,
+	}, "s3cret-token"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := app.CreateProject(ctx, owner.ID, "k8s-pull", "k8s-pull", "test purpose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "ns-pull", Plan: "nano", Arch: models.ArchAMD64,
+		Runtime: models.RuntimeK8s, Actor: *owner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, ok := app.K8s.(*hak8s.Memory)
+	if !ok {
+		t.Fatalf("want memory cluster, got %T", app.K8s)
+	}
+	got := mem.PullSecrets(ws.RuntimeRef)
+	if len(got) != 1 || got[0].Server != "docker.cnb.cool" || got[0].Username != "bot" || got[0].Password != "s3cret-token" {
+		t.Fatalf("%+v", got)
+	}
+	applied, err := app.ApplyK8sYAML(ctx, *owner, ws.ID, `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snacks
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: snacks
+        image: docker.cnb.cool/qzsyzn/docker:snacks
+`)
+	if err != nil || len(applied) != 1 {
+		t.Fatal(err, applied)
 	}
 }

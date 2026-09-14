@@ -503,7 +503,7 @@ def extra_stories(ctx: dict) -> None:
         ok("非法套餐应拒绝", code >= 400, (code, body))
 
     def case_dup_slug():
-        code, body = api("POST", "/projects", {"name": "dup", "slug": ctx["slug"]}, token=c_tok)
+        code, body = api("POST", "/projects", {"name": "dup", "slug": ctx["slug"], "purpose": "重复 slug 探测"}, token=c_tok)
         ok("重复 slug 应拒绝", code in (400, 409), (code, body))
 
     def case_dev_cannot_transfer():
@@ -638,7 +638,7 @@ def extra_stories(ctx: dict) -> None:
 
     def case_project_isolation():
         hidden_slug = f"hid-{ts % 100000}"
-        code, p2 = api("POST", "/projects", {"name": f"隐藏项 {ts}", "slug": hidden_slug}, token=c_tok)
+        code, p2 = api("POST", "/projects", {"name": f"隐藏项 {ts}", "slug": hidden_slug, "purpose": "非成员不可见探测"}, token=c_tok)
         ok("developer 仍可自建项目", code == 201, p2)
         hid = p2.get("id", "")
         code, lst = api("GET", "/projects", token=y_tok)
@@ -801,7 +801,7 @@ def extra_stories(ctx: dict) -> None:
             ok("空名称应拒绝", code >= 400, (code, body))
 
     def case_bad_slug():
-        code, body = api("POST", "/projects", {"name": "坏 slug", "slug": "BAD_SLUG!"}, token=c_tok)
+        code, body = api("POST", "/projects", {"name": "坏 slug", "slug": "BAD_SLUG!", "purpose": "非法 slug 探测"}, token=c_tok)
         ok("非法 slug 应拒绝", code >= 400, (code, body))
 
     def case_list_members():
@@ -1031,7 +1031,7 @@ def main():
     code, proj = api(
         "POST",
         "/projects",
-        {"name": f"办公室故事 {ts}", "slug": slug},
+        {"name": f"办公室故事 {ts}", "slug": slug, "purpose": "办公室协作故事验收"},
         token=c_tok,
     )
     ok("创建项目 201", code == 201, proj)

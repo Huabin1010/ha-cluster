@@ -20,6 +20,7 @@ import (
 type PatchProjectInput struct {
 	Name            *string
 	Slug            *string
+	Purpose         *string
 	BudgetCPUMilli  *int64
 	BudgetMemBytes  *int64
 	BudgetDiskBytes *int64
@@ -32,6 +33,9 @@ func (a *App) PatchProject(ctx context.Context, actor models.User, id uuid.UUID,
 	p, err := a.Store.GetProject(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if !models.HasProjectPurpose(p.Purpose) && in.Purpose == nil {
+		return nil, store.ErrPurposeRequired
 	}
 	if in.Name != nil {
 		name := strings.TrimSpace(*in.Name)
@@ -46,6 +50,16 @@ func (a *App) PatchProject(ctx context.Context, actor models.User, id uuid.UUID,
 			return nil, store.ErrInvalidInput
 		}
 		p.Slug = slug
+	}
+	if in.Purpose != nil {
+		purpose, ok := models.NormalizeProjectPurpose(*in.Purpose)
+		if !ok {
+			return nil, store.ErrInvalidInput
+		}
+		if strings.EqualFold(purpose, p.Name) || strings.EqualFold(purpose, p.Slug) {
+			return nil, store.ErrInvalidInput
+		}
+		p.Purpose = purpose
 	}
 	if in.BudgetCPUMilli != nil {
 		if *in.BudgetCPUMilli < 0 {
@@ -208,7 +222,7 @@ func (a *App) LogoutRefresh(ctx context.Context, refresh string) error {
 }
 
 func (a *App) Invite(ctx context.Context, actor models.User, projectID uuid.UUID, email, role string) (*models.Invitation, error) {
-	callerMem, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin)
+	callerMem, err := a.RequireProjectReady(ctx, actor, projectID, models.RoleAdmin)
 	if err != nil {
 		return nil, err
 	}
@@ -357,7 +371,7 @@ func (a *App) DeleteSSHKey(ctx context.Context, userID, keyID uuid.UUID) error {
 
 // TransferOwnership moves project owner; former owner becomes developer.
 func (a *App) TransferOwnership(ctx context.Context, actor models.User, projectID, newOwnerUserID uuid.UUID) error {
-	mem, err := a.RequireMembership(ctx, actor, projectID, models.RoleOwner)
+	mem, err := a.RequireProjectReady(ctx, actor, projectID, models.RoleOwner)
 	if err != nil {
 		return err
 	}
@@ -445,7 +459,7 @@ type PatchMemberInput struct {
 }
 
 func (a *App) PatchMember(ctx context.Context, actor models.User, projectID, userID uuid.UUID, in PatchMemberInput) (*models.Membership, error) {
-	if _, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, projectID, models.RoleAdmin); err != nil {
 		return nil, err
 	}
 	m, err := a.Store.GetMembership(ctx, projectID, userID)
@@ -488,7 +502,7 @@ func (a *App) PatchMember(ctx context.Context, actor models.User, projectID, use
 
 // RequestSSHAccess sets membership ssh_access to pending for the actor.
 func (a *App) RequestSSHAccess(ctx context.Context, actor models.User, projectID uuid.UUID) (*models.Membership, error) {
-	m, err := a.RequireMembership(ctx, actor, projectID, models.RoleViewer)
+	m, err := a.RequireProjectReady(ctx, actor, projectID, models.RoleViewer)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +528,7 @@ func (a *App) RequestSSHAccess(ctx context.Context, actor models.User, projectID
 
 // ApproveSSHAccess grants SSH for a member (project admin).
 func (a *App) ApproveSSHAccess(ctx context.Context, actor models.User, projectID, userID uuid.UUID) (*models.Membership, error) {
-	if _, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, projectID, models.RoleAdmin); err != nil {
 		return nil, err
 	}
 	m, err := a.Store.GetMembership(ctx, projectID, userID)

@@ -12,16 +12,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { isValidSlug, suggestSlugFromName } from "./types";
+import { isValidPurpose, isValidSlug, PURPOSE_MAX, suggestSlugFromName } from "./types";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: "create" | "edit";
-  initial?: { name: string; slug: string };
+  initial?: { name: string; slug: string; purpose?: string };
   submitting?: boolean;
   error?: string;
-  onSubmit: (name: string, slug: string) => void;
+  onSubmit: (name: string, slug: string, purpose: string) => void;
 };
 
 export function ProjectFormDialog({
@@ -35,14 +35,16 @@ export function ProjectFormDialog({
 }: Props) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [purpose, setPurpose] = useState("");
   const [localErr, setLocalErr] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setName(initial?.name ?? "");
     setSlug(initial?.slug ?? "");
+    setPurpose(initial?.purpose ?? "");
     setLocalErr("");
-  }, [open, initial?.name, initial?.slug]);
+  }, [open, initial?.name, initial?.slug, initial?.purpose]);
 
   function onNameChange(v: string) {
     setName(v);
@@ -56,6 +58,7 @@ export function ProjectFormDialog({
     setLocalErr("");
     const n = name.trim();
     const s = slug.trim().toLowerCase();
+    const p = purpose.trim().replace(/\s+/g, " ");
     if (!n) {
       setLocalErr("请填写项目名称");
       return;
@@ -64,7 +67,11 @@ export function ProjectFormDialog({
       setLocalErr("slug 须为小写字母、数字与短横线（如 my-app）");
       return;
     }
-    onSubmit(n, s);
+    if (!isValidPurpose(p, n, s)) {
+      setLocalErr("请用一句话说明这个项目是干什么的（2–80 字，不要复述名称或 slug）");
+      return;
+    }
+    onSubmit(n, s, p);
   }
 
   const err = localErr || error || "";
@@ -72,11 +79,13 @@ export function ProjectFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg" className="sm:max-w-md">
+      <DialogContent size="lg" className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{create ? "创建项目" : "编辑项目"}</DialogTitle>
           <DialogDescription>
-            {create ? "填写名称与 slug，创建后进入详情页。" : "修改显示名称或 slug。slug 须全局唯一。"}
+            {create
+              ? "填写名称、slug 与用途。用途一句话说清这个项目是干什么的。"
+              : "修改显示名称、slug 或用途。slug 须全局唯一。"}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -91,7 +100,7 @@ export function ProjectFormDialog({
                 data-testid="project-name"
                 value={name}
                 onChange={(e) => onNameChange(e.target.value)}
-                placeholder="演示项目"
+                placeholder="办公零食"
                 required
               />
             </Field>
@@ -100,11 +109,24 @@ export function ProjectFormDialog({
                 data-testid="project-slug"
                 value={slug}
                 onChange={(e) => setSlug(e.target.value.toLowerCase())}
-                placeholder="demo-app"
+                placeholder="office-snacks"
                 pattern="[a-z0-9]+(-[a-z0-9]+)*"
                 title="小写字母、数字与短横线"
                 required
               />
+            </Field>
+            <Field label="用途">
+              <Input
+                data-testid="project-purpose"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                placeholder="办公室零食柜与内部协作"
+                maxLength={PURPOSE_MAX}
+                required
+              />
+              <p className="text-xs text-muted-foreground break-words min-w-0">
+                必填，2–80 字。一句话说清这个项目是干什么的，不要只重复名称。
+              </p>
             </Field>
             {err && (
               <Alert variant="destructive" data-testid="project-error">

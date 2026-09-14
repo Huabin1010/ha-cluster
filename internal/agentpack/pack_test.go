@@ -57,6 +57,12 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[SkillPath], "默认开 Docker + SSH") && !strings.Contains(p.Files[SkillPath], "runtime=container") {
 		t.Fatal("skill should default to compose/container")
 	}
+	if !strings.Contains(p.Files[APIRefPath], "purpose") || !strings.Contains(p.Files[SkillPath], "purpose") {
+		t.Fatal("pack should require project purpose")
+	}
+	if !strings.Contains(p.Files[SkillPath], "PURPOSE_REQUIRED") {
+		t.Fatal("pack should freeze projects missing purpose")
+	}
 	md := Markdown(p)
 	if !strings.Contains(md, SkillPath) || !strings.Contains(md, "HA_CLUSTER_AGENT_PACK v"+Version) {
 		t.Fatal(md[:200])

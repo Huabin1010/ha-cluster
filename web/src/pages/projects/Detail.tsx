@@ -20,13 +20,14 @@ import {
   Server,
   Settings,
   Shield,
+  StickyNote,
   Trash2,
   Users,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { api, friendlyError, type AuthUser } from "@/providers";
 import { copyText, formatBudget, formatBytes, formatCpuMilli, formatTime } from "./format";
-import { canManageProject, type Project, type ProjectUsage } from "./types";
+import { canManageProject, purposeMissing, type Project, type ProjectUsage } from "./types";
 import { ProjectFormDialog } from "./FormDialog";
 import { ProjectDeleteDialog } from "./DeleteDialog";
 import { MemberList } from "@/pages/members/MemberList";
@@ -167,6 +168,8 @@ export function ProjectDetailPage() {
   const project = data?.data;
   const workspaces = (wsData?.data ?? []).filter((w) => w.status !== "destroyed");
   const runningWsCount = workspaces.filter((w) => w.status === "running").length;
+  const needsPurpose = purposeMissing(project?.purpose);
+  const canFillPurpose = canManageProject(project?.my_role, me?.platform_role, project?.owner_id, me?.id);
 
   const tabsRef = useRef<HTMLDivElement>(null);
   const tabsHover = useFluidHover(tabsRef, { axis: "x" });
@@ -183,6 +186,12 @@ export function ProjectDetailPage() {
   useEffect(() => {
     if (project?.id) writeCurrentProject(project.id);
   }, [project?.id]);
+
+  useEffect(() => {
+    if (!needsPurpose || !canFillPurpose) return;
+    setEditErr("");
+    setEditOpen(true);
+  }, [needsPurpose, canFillPurpose, project?.id]);
 
   useEffect(() => {
     if (!project) return;
@@ -215,13 +224,13 @@ export function ProjectDetailPage() {
     }
   }
 
-  function onSaveMeta(name: string, slug: string) {
+  function onSaveMeta(name: string, slug: string, purpose: string) {
     setEditErr("");
     patchMeta(
       {
         resource: "projects",
         id,
-        values: { name, slug },
+        values: { name, slug, purpose },
         successNotification: { message: "项目已保存", type: "success" },
         errorNotification: false,
       },
@@ -273,6 +282,10 @@ export function ProjectDetailPage() {
       setFormErr("预算须为非负整数；填 0 表示不限制");
       return;
     }
+    if (purposeMissing(project?.purpose)) {
+      setFormErr("请先填写项目用途，才能继续操作");
+      return;
+    }
     patch(
       {
         resource: "projects",
@@ -299,7 +312,7 @@ export function ProjectDetailPage() {
     : false;
 
   const projectOptions: ProjectOption[] = useMemo(
-    () => (project ? [{ id: project.id, name: project.name, slug: project.slug, my_role: project.my_role }] : []),
+    () => (project ? [{ id: project.id, name: project.name, slug: project.slug, purpose: project.purpose, my_role: project.my_role }] : []),
     [project],
   );
 
@@ -379,6 +392,23 @@ export function ProjectDetailPage() {
                 )}
               </div>
               <div className="flex min-w-0 flex-wrap items-center gap-2 mt-1 text-xs text-muted-foreground">
+                {project.purpose?.trim() ? (
+                  <Hint label={project.purpose}>
+                    <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
+                      <StickyNote className="size-3 opacity-60 shrink-0" />
+                      <span className="truncate text-foreground" data-testid="project-purpose-text">
+                        {project.purpose}
+                      </span>
+                    </span>
+                  </Hint>
+                ) : (
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                    <Badge variant="danger" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0" data-testid="project-purpose-missing">
+                      <StickyNote className="size-3 shrink-0" />
+                      未填写用途
+                    </Badge>
+                  </span>
+                )}
                 <Hint label={project.id}>
                   <span className="font-mono text-[11px] select-all opacity-80 truncate max-w-[10rem] sm:max-w-[20rem]" data-testid="project-id">
                     {project.id}
@@ -469,6 +499,32 @@ export function ProjectDetailPage() {
           ))}
         </div>
       </div>
+
+      {needsPurpose && (
+        <Alert variant="destructive" className="shrink-0 break-words min-w-0" data-testid="project-purpose-gate">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span className="break-words min-w-0">
+              {canFillPurpose
+                ? "请先填写这个项目是干什么的，才能开通服务器、改成员或继续操作。"
+                : "项目负责人尚未填写用途，暂时无法继续操作。请联系 owner 补上。"}
+            </span>
+            {canFillPurpose && (
+              <Button
+                type="button"
+                size="compact"
+                data-testid="project-purpose-fill"
+                onClick={() => {
+                  setEditErr("");
+                  setEditOpen(true);
+                }}
+                className="shrink-0"
+              >
+                填写用途
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* 错误通知 */}
       {usageErr && (
@@ -789,24 +845,39 @@ export function ProjectDetailPage() {
                 <RefreshCw className={cn("size-3.5", loadingWs && "animate-spin")} />
                 刷新
               </Button>
-              <CreateForm
-                projects={projectOptions}
-                initialProjectId={id}
-                onCreated={() => {
-                  wsPollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
-                  void refetchWs();
-                  void loadUsage();
-                }}
-                onError={(msg) => setWsErr(msg)}
-                canApprove={canApproveRole(project.my_role, me?.platform_role)}
-                platformRole={me?.platform_role}
-                trigger={
-                  <Button size="compact" data-testid="ws-create" className="h-8 px-3 text-xs font-medium gap-1.5 shrink-0">
-                    <Plus className="size-3.5" />
-                    新建工作区
-                  </Button>
-                }
-              />
+              {needsPurpose ? (
+                <Button
+                  size="compact"
+                  data-testid="ws-create"
+                  onClick={() => {
+                    setEditErr("");
+                    setEditOpen(true);
+                  }}
+                  className="h-8 px-3 text-xs font-medium gap-1.5 shrink-0"
+                >
+                  <Plus className="size-3.5" />
+                  新建工作区
+                </Button>
+              ) : (
+                <CreateForm
+                  projects={projectOptions}
+                  initialProjectId={id}
+                  onCreated={() => {
+                    wsPollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
+                    void refetchWs();
+                    void loadUsage();
+                  }}
+                  onError={(msg) => setWsErr(msg)}
+                  canApprove={canApproveRole(project.my_role, me?.platform_role)}
+                  platformRole={me?.platform_role}
+                  trigger={
+                    <Button size="compact" data-testid="ws-create" className="h-8 px-3 text-xs font-medium gap-1.5 shrink-0">
+                      <Plus className="size-3.5" />
+                      新建工作区
+                    </Button>
+                  }
+                />
+              )}
             </div>
           </div>
 
@@ -882,6 +953,7 @@ export function ProjectDetailPage() {
                           myRole={project.my_role}
                           mySshAccess={project.my_ssh_access}
                           projectId={id}
+                          opsLocked={needsPurpose}
                           onBusy={setBusyWsId}
                           onRefresh={() => {
                             wsPollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
@@ -924,7 +996,11 @@ export function ProjectDetailPage() {
             shadowLevel={2}
             className="rounded-2xl border border-border/80 bg-surface-1 p-5 shadow-surface-2 min-h-0 flex-1 flex flex-col overflow-hidden"
           >
-            <MemberList projectId={id} projectName={project.name} />
+            {needsPurpose ? (
+              <Empty text="先填写项目用途" description="补上用途后才能添加或调整成员。" />
+            ) : (
+              <MemberList projectId={id} projectName={project.name} />
+            )}
           </Elevated>
         </div>
       )}
@@ -1133,7 +1209,7 @@ export function ProjectDetailPage() {
           if (!v) setEditErr("");
         }}
         mode="edit"
-        initial={{ name: project.name, slug: project.slug }}
+        initial={{ name: project.name, slug: project.slug, purpose: project.purpose ?? "" }}
         submitting={savingMeta}
         error={editErr}
         onSubmit={onSaveMeta}

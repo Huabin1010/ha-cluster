@@ -25,7 +25,7 @@ func TestReconcileWorkspaceHealthNodeOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := app.CreateProject(ctx, u.ID, "lost", "lost")
+	p, err := app.CreateProject(ctx, u.ID, "lost", "lost", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestRefreshNodeHealthAgentProbeMarksOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := app.CreateProject(ctx, u.ID, "probe", "probe")
+	p, err := app.CreateProject(ctx, u.ID, "probe", "probe", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestReconcileWorkspaceHealthRecoversNodeLost(t *testing.T) {
 	if err := app.Store.UpsertNode(ctx, &n); err != nil {
 		t.Fatal(err)
 	}
-	p, err := app.CreateProject(ctx, u.ID, "back", "back")
+	p, err := app.CreateProject(ctx, u.ID, "back", "back", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,3 +148,47 @@ func TestReconcileWorkspaceHealthRecoversNodeLost(t *testing.T) {
 	}
 }
 
+func TestReconcileDoesNotDegradeK8sWithoutIncus(t *testing.T) {
+	app, u := setupApp(t)
+	ctx := context.Background()
+	p, err := app.CreateProject(ctx, u.ID, "k8s-health", "k8s-health", "test purpose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "ns", Plan: "nano", Arch: models.ArchAMD64,
+		Runtime: models.RuntimeK8s, Actor: *u,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := app.Store.ListNodes(ctx)
+	if err != nil || len(nodes) == 0 {
+		t.Fatal(err)
+	}
+	nodes[0].HealthStatus = models.NodeHealthy
+	nodes[0].Ready = true
+	if err := app.Store.UpsertNode(ctx, &nodes[0]); err != nil {
+		t.Fatal(err)
+	}
+	ws.NodeID = nodes[0].ID
+	if err := app.Store.UpdateWorkspace(ctx, ws); err != nil {
+		t.Fatal(err)
+	}
+	app.Runtime = workspace.NewRemoteAgentRuntime(app.Store, "token", workspace.NewMemoryRuntime())
+
+	updated, err := app.ReconcileWorkspaceHealth(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated != 0 {
+		t.Fatalf("k8s workspace should not be marked degraded, updates=%d", updated)
+	}
+	got, err := app.Store.GetWorkspace(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != models.WSRunning {
+		t.Fatalf("expected running, got %s", got.Status)
+	}
+}

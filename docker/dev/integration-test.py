@@ -115,7 +115,7 @@ def main() -> int:
     check("capacity", code == 200 and "pools" in cap, str(cap)[:120])
 
     slug = f"integration-test-{int(time.time())}"
-    code, proj = api("POST", "/projects", token=token, body={"name": "integration-test", "slug": slug})
+    code, proj = api("POST", "/projects", token=token, body={"name": "integration-test", "slug": slug, "purpose": "集成测试"})
     check("create project", code == 201, str(proj))
     pid = proj.get("id", "")
 

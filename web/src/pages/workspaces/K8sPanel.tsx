@@ -43,17 +43,19 @@ export function K8sPanel({
   ws,
   myRole,
   platformRole,
+  opsLocked,
 }: {
   ws: Workspace;
   myRole?: string;
   platformRole?: AuthUser["platform_role"];
+  opsLocked?: boolean;
 }) {
   const toast = useToast();
   const [yaml, setYaml] = useState(SAMPLE_YAML);
   const [busy, setBusy] = useState(false);
   const [resources, setResources] = useState<K8sResource[]>([]);
   const [listErr, setListErr] = useState("");
-  const canApply = canApproveRole(myRole, platformRole) || myRole === "developer" || myRole === "owner" || myRole === "admin";
+  const canApply = !opsLocked && (canApproveRole(myRole, platformRole) || myRole === "developer" || myRole === "owner" || myRole === "admin");
   const running = ws.status === "running" || ws.status === "fabric_degraded";
 
   const loadResources = useCallback(async () => {

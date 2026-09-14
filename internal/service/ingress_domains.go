@@ -206,7 +206,7 @@ func (a *App) ClaimSharedIngress(ctx context.Context, in ClaimSharedIngressInput
 	if err != nil {
 		return nil, err
 	}
-	if _, err := a.RequireMembership(ctx, in.Actor, ws.ProjectID, models.RoleDeveloper); err != nil {
+	if _, err := a.RequireProjectReady(ctx, in.Actor, ws.ProjectID, models.RoleDeveloper); err != nil {
 		return nil, err
 	}
 	if ws.Status != models.WSRunning && ws.Status != models.WSDegraded {

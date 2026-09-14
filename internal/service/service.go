@@ -124,7 +124,7 @@ func (a *App) Login(ctx context.Context, username, password string) (string, *mo
 	return tok, u, nil
 }
 
-func (a *App) CreateProject(ctx context.Context, actor uuid.UUID, name, slug string) (*models.Project, error) {
+func (a *App) CreateProject(ctx context.Context, actor uuid.UUID, name, slug, purpose string) (*models.Project, error) {
 	name = strings.TrimSpace(name)
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	if name == "" || slug == "" {
@@ -133,7 +133,14 @@ func (a *App) CreateProject(ctx context.Context, actor uuid.UUID, name, slug str
 	if len(name) > 128 || len(slug) > 64 || !validProjectSlug(slug) {
 		return nil, store.ErrInvalidInput
 	}
-	p := &models.Project{ID: uuid.New(), Name: name, Slug: slug, OwnerID: actor, Status: "active", CreatedAt: time.Now()}
+	purposeNorm, ok := models.NormalizeProjectPurpose(purpose)
+	if !ok {
+		return nil, store.ErrInvalidInput
+	}
+	if strings.EqualFold(purposeNorm, name) || strings.EqualFold(purposeNorm, slug) {
+		return nil, store.ErrInvalidInput
+	}
+	p := &models.Project{ID: uuid.New(), Name: name, Slug: slug, Purpose: purposeNorm, OwnerID: actor, Status: "active", CreatedAt: time.Now()}
 	if err := a.Store.CreateProject(ctx, p, models.RoleOwner); err != nil {
 		return nil, err
 	}
@@ -155,6 +162,30 @@ func (a *App) RequireMembership(ctx context.Context, user models.User, projectID
 	return m, err
 }
 
+func (a *App) requireProjectPurpose(ctx context.Context, projectID uuid.UUID) error {
+	p, err := a.Store.GetProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if !models.HasProjectPurpose(p.Purpose) {
+		return store.ErrPurposeRequired
+	}
+	return nil
+}
+
+// RequireProjectReady is membership plus a filled purpose. Use for mutations
+// (create machine, members, SSH, ingress). GET / PATCH purpose / 删除项目除外。
+func (a *App) RequireProjectReady(ctx context.Context, user models.User, projectID uuid.UUID, minRole string) (*models.Membership, error) {
+	m, err := a.RequireMembership(ctx, user, projectID, minRole)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.requireProjectPurpose(ctx, projectID); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 type CreateWorkspaceInput struct {
 	ProjectID  uuid.UUID
 	Name       string
@@ -169,7 +200,7 @@ type CreateWorkspaceInput struct {
 }
 
 func (a *App) CreateWorkspace(ctx context.Context, in CreateWorkspaceInput) (*models.Workspace, error) {
-	mem, err := a.RequireMembership(ctx, in.Actor, in.ProjectID, models.RoleDeveloper)
+	mem, err := a.RequireProjectReady(ctx, in.Actor, in.ProjectID, models.RoleDeveloper)
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +223,9 @@ func (a *App) CreateWorkspace(ctx context.Context, in CreateWorkspaceInput) (*mo
 	rt := models.NormalizeRuntime(in.Runtime)
 	if rt == "" {
 		return nil, store.ErrInvalidInput
+	}
+	if err := a.requireLiveK8s(ctx, rt); err != nil {
+		return nil, err
 	}
 	in.Arch = arch
 	in.Visibility = vis
@@ -317,6 +351,9 @@ func (a *App) finishProvision(ctx context.Context, w *models.Workspace, node mod
 		ns, _, err := a.K8s.Provision(ctx, *w, slug)
 		if err != nil {
 			launchErr = err
+		} else if err := a.syncK8sPullSecrets(ctx, ns); err != nil {
+			_ = a.K8s.DestroyNS(ctx, ns)
+			launchErr = err
 		} else {
 			w.RuntimeRef = ns
 			inst = workspace.Instance{ID: w.ID, NodeID: node.ID, Running: true}
@@ -384,7 +421,7 @@ func (a *App) ApproveWorkspace(ctx context.Context, actor models.User, id uuid.U
 	if err != nil {
 		return nil, err
 	}
-	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
 		return nil, err
 	}
 	if w.Status != models.WSRequested {
@@ -393,6 +430,9 @@ func (a *App) ApproveWorkspace(ctx context.Context, actor models.User, id uuid.U
 	spec := w.Spec()
 	if spec.CPUMilli == 0 {
 		return nil, store.ErrInvalidInput
+	}
+	if err := a.requireLiveK8s(ctx, w.Runtime); err != nil {
+		return nil, err
 	}
 	if err := a.checkProjectBudget(ctx, w.ProjectID, spec); err != nil {
 		return nil, err
@@ -444,7 +484,7 @@ func (a *App) RequestResize(ctx context.Context, actor models.User, id uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
 		return nil, err
 	}
 	if w.Visibility == models.VisPrivate && w.OwnerUserID != actor.ID && actor.PlatformRole != models.RolePlatformAdmin {
@@ -503,7 +543,7 @@ func (a *App) RequestResize(ctx context.Context, actor models.User, id uuid.UUID
 }
 
 func (a *App) actorCanApproveResize(ctx context.Context, actor models.User, projectID uuid.UUID) bool {
-	_, err := a.RequireMembership(ctx, actor, projectID, models.RoleAdmin)
+	_, err := a.RequireProjectReady(ctx, actor, projectID, models.RoleAdmin)
 	return err == nil
 }
 
@@ -512,7 +552,7 @@ func (a *App) ApproveResize(ctx context.Context, actor models.User, id uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
 		return nil, err
 	}
 	if !w.HasPendingResize() {
@@ -711,10 +751,13 @@ func (a *App) executeDestroy(ctx context.Context, actor models.User, w *models.W
 	w.UpdatedAt = time.Now()
 	_ = a.Store.UpdateWorkspace(ctx, w)
 	a.dropWorkspaceIngress(ctx, w.ID)
-	if models.IsK8sRuntime(w.Runtime) && w.RuntimeRef != "" {
-		_ = a.K8s.DestroyNS(ctx, w.RuntimeRef)
+	if models.IsK8sRuntime(w.Runtime) {
+		if w.RuntimeRef != "" {
+			_ = a.K8s.DestroyNS(ctx, w.RuntimeRef)
+		}
+	} else {
+		_ = a.Runtime.Destroy(ctx, w.ID)
 	}
-	_ = a.Runtime.Destroy(ctx, w.ID)
 	if w.AllocationID != uuid.Nil {
 		if err := a.Ledger.Release(ctx, w.AllocationID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
@@ -747,14 +790,16 @@ func (a *App) StopWorkspace(ctx context.Context, actor models.User, id uuid.UUID
 	if err != nil {
 		return err
 	}
-	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
 		return err
 	}
 	if models.WorkspaceClosed(w.Status) || w.Status == models.WSRequested {
 		return store.ErrInvalidInput
 	}
-	if err := a.Runtime.Stop(ctx, id); err != nil {
-		return err
+	if !models.IsK8sRuntime(w.Runtime) {
+		if err := a.Runtime.Stop(ctx, id); err != nil {
+			return err
+		}
 	}
 	w.Status = models.WSStopped
 	w.UpdatedAt = time.Now()
@@ -774,18 +819,24 @@ func (a *App) StartWorkspace(ctx context.Context, actor models.User, id uuid.UUI
 	if err != nil {
 		return err
 	}
-	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
 		return err
 	}
 	if models.WorkspaceClosed(w.Status) || w.Status == models.WSRequested {
 		return store.ErrInvalidInput
 	}
-	if err := a.Runtime.Start(ctx, id); err != nil {
-		return err
-	}
-	// 停机期间登记的公钥不会热同步；开机后再推一次，避免「运行中但 authorized_keys 为空」。
-	if pubs := a.collectWorkspacePubkeys(ctx, *w); len(pubs) > 0 {
-		_ = a.Runtime.SyncKeys(ctx, id, pubs)
+	if !models.IsK8sRuntime(w.Runtime) {
+		if err := a.Runtime.Start(ctx, id); err != nil {
+			return err
+		}
+		// 停机期间登记的公钥不会热同步；开机后再推一次，避免「运行中但 authorized_keys 为空」。
+		if pubs := a.collectWorkspacePubkeys(ctx, *w); len(pubs) > 0 {
+			_ = a.Runtime.SyncKeys(ctx, id, pubs)
+		}
+	} else if w.RuntimeRef != "" {
+		if err := a.syncK8sPullSecrets(ctx, w.RuntimeRef); err != nil {
+			return err
+		}
 	}
 	w.Status = models.WSRunning
 	now := time.Now()
@@ -812,7 +863,7 @@ func (a *App) SSHTarget(ctx context.Context, actor models.User, workspaceID uuid
 	if err != nil {
 		return nil, nil, err
 	}
-	m, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleDeveloper)
+	m, err := a.RequireProjectReady(ctx, actor, w.ProjectID, models.RoleDeveloper)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -884,7 +935,7 @@ func projectAuditMeta(p *models.Project) map[string]any {
 	if p == nil {
 		return nil
 	}
-	return map[string]any{"project_name": p.Name, "project_slug": p.Slug}
+	return map[string]any{"project_name": p.Name, "project_slug": p.Slug, "project_purpose": p.Purpose}
 }
 
 func workspaceAuditMeta(w *models.Workspace) map[string]any {

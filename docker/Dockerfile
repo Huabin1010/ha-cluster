@@ -36,9 +36,15 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /app/bin/ha-
 # ==========================================
 FROM alpine:3.21
 
+ARG TARGETARCH
+
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates tzdata curl incus-client openssh-client
+RUN apk add --no-cache ca-certificates tzdata curl incus-client openssh-client \
+ && arch="${TARGETARCH:-amd64}" \
+ && (curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.31.4/bin/linux/${arch}/kubectl" \
+     || curl -fsSL -o /usr/local/bin/kubectl "https://kubernetes.oss-cn-hangzhou.aliyuncs.com/kubernetes-release/release/v1.31.4/bin/linux/${arch}/kubectl") \
+ && chmod +x /usr/local/bin/kubectl
 
 # 复制后端二进制
 COPY --from=api-builder /app/bin/ha-api /app/ha-api

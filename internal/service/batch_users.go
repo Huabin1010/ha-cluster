@@ -50,7 +50,7 @@ func (a *App) BatchCreateUsers(ctx context.Context, actor models.User, in BatchC
 
 	if in.ProjectID != nil {
 		if actor.PlatformRole != models.RolePlatformAdmin {
-			callerMem, err := a.RequireMembership(ctx, actor, *in.ProjectID, models.RoleAdmin)
+			callerMem, err := a.RequireProjectReady(ctx, actor, *in.ProjectID, models.RoleAdmin)
 			if err != nil {
 				return nil, store.ErrForbidden
 			}

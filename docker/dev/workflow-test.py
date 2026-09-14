@@ -90,7 +90,7 @@ def main():
     ok("developer 注册登录", bool(dev_tok))
 
     step("2. Owner 创建项目")
-    code, proj = api("POST", "/projects", {"name": "我的项目", "slug": slug}, token=owner_tok)
+    code, proj = api("POST", "/projects", {"name": "我的项目", "slug": slug, "purpose": "工作流联调"}, token=owner_tok)
     ok("创建项目 201", code == 201, str(proj))
     pid = proj.get("id", "")
 

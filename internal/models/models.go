@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -94,10 +95,16 @@ type SSHKey struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+const (
+	ProjectPurposeMinRunes = 2
+	ProjectPurposeMaxRunes = 80
+)
+
 type Project struct {
 	ID              uuid.UUID `json:"id"`
 	Name            string    `json:"name"`
 	Slug            string    `json:"slug"`
+	Purpose         string    `json:"purpose"`
 	OwnerID         uuid.UUID `json:"owner_id"`
 	Status          string    `json:"status"`
 	BudgetCPUMilli  int64     `json:"budget_cpu_milli,omitempty"`
@@ -106,6 +113,21 @@ type Project struct {
 	CreatedAt       time.Time `json:"created_at"`
 	MyRole          string    `json:"my_role,omitempty"`
 	MySSHAccess     string    `json:"my_ssh_access,omitempty"`
+}
+
+// NormalizeProjectPurpose trims and collapses whitespace. Empty is invalid.
+func NormalizeProjectPurpose(raw string) (string, bool) {
+	s := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	n := utf8.RuneCountInString(s)
+	if n < ProjectPurposeMinRunes || n > ProjectPurposeMaxRunes {
+		return "", false
+	}
+	return s, true
+}
+
+func HasProjectPurpose(raw string) bool {
+	_, ok := NormalizeProjectPurpose(raw)
+	return ok
 }
 
 type Membership struct {

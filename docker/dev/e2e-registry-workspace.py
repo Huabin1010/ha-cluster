@@ -108,7 +108,7 @@ def project_id(token: str) -> str:
     for p in projects.get("data", []):
         if p.get("slug") == "e2e-lab":
             return p["id"]
-    code, proj = api("POST", "/projects", {"name": "E2E Lab", "slug": "e2e-lab"}, token=token)
+    code, proj = api("POST", "/projects", {"name": "E2E Lab", "slug": "e2e-lab", "purpose": "镜像仓库联调"}, token=token)
     if code not in (200, 201):
         raise SystemExit(f"create project: {code} {proj}")
     return proj["id"]

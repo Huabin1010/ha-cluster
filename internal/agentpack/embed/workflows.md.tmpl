@@ -7,7 +7,10 @@
 **默认这条。** 不写 `runtime` 或写 `container`：Docker + SSH，机子里用 `docker compose` 部署。用户没提 k8s / kubectl / Namespace 时不要走下面的 Kubernetes。
 
 ```
-GET /projects                          → 记下 project_id（或先 POST /projects）
+GET /projects                          → 记下 project_id；若 purpose 为空，先 PATCH 补上再动手
+POST /projects
+  {"name":"办公零食","slug":"office-snacks","purpose":"办公室零食柜与内部协作"}
+PATCH /projects/{pid}                  → 仅当旧项目 purpose 为空：{"purpose":"一句话用途"}；看到 409 PURPOSE_REQUIRED 就停
 GET /projects/{pid}/members            → 看自己的 role / ssh_access
 POST /projects/{pid}/workspaces
   {"name":"dev-1","plan":"2c2g","arch":"amd64","visibility":"shared","runtime":"container"}
@@ -67,6 +70,10 @@ DELETE /workspaces/{id}/k8s/resources?kind=Deployment&name=web
 ```
 
 清单会被强制改写到工作区 Namespace；`ClusterRole` / `Node` 等集群级对象会被拒。viewer 只能 GET resources。需要域名再走现有 Ingress API。
+
+开通和 apply 时会把平台 **auto_inject** 的 Docker 仓库（线上 CNB 登录）写成 Secret `ha-registry`，并挂到 Namespace 的 default ServiceAccount；Deployment 也会自动补 `imagePullSecrets`。不要在清单里再写一遍 docker login。
+
+若 `GET kubeconfig` 里 `server` 是 `https://k8s.invalid`，或 apply 返回 **503 `K8S_UNAVAILABLE`**，说明控制面没有真实 k3s，不要反复换字段重试。`fabric_degraded` 时仍应先 apply（JSON `{yaml}`），不要对 k8s 工作区 `POST /start`（那会去找不存在的 Incus 实例）。
 
 `GET /workspaces/{id}/connection` 含 `exec_example`。`ssh_access` 不是 `granted`（且不是 owner/admin）时 exec 为 403。让用户：
 

@@ -96,7 +96,7 @@ func TestManageUserGuards(t *testing.T) {
 		t.Fatal("should not demote self")
 	}
 
-	p, err := app.CreateProject(ctx, dev.ID, "owned", "owned")
+	p, err := app.CreateProject(ctx, dev.ID, "owned", "owned", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}

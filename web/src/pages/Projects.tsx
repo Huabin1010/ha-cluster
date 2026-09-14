@@ -1,7 +1,7 @@
 import { MouseEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreate, useDelete, useGetIdentity, useList, useUpdate } from "@refinedev/core";
-import { Check, Clock, Copy, ExternalLink, FolderKanban, Hash, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, Tag, Trash2 } from "lucide-react";
+import { Check, Clock, Copy, ExternalLink, FolderKanban, Hash, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, StickyNote, Tag, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +55,8 @@ export function ProjectsPage() {
       (r) =>
         r.name.toLowerCase().includes(q) ||
         r.slug.toLowerCase().includes(q) ||
-        r.id.toLowerCase().includes(q),
+        r.id.toLowerCase().includes(q) ||
+        (r.purpose ?? "").toLowerCase().includes(q),
     );
   }, [rows, search]);
 
@@ -70,10 +71,10 @@ export function ProjectsPage() {
     }
   }
 
-  function onCreate(name: string, slug: string) {
+  function onCreate(name: string, slug: string, purpose: string) {
     setFormErr("");
     create(
-      { resource: "projects", values: { name, slug } },
+      { resource: "projects", values: { name, slug, purpose } },
       {
         onSuccess: (res) => {
           setCreateOpen(false);
@@ -89,14 +90,14 @@ export function ProjectsPage() {
     );
   }
 
-  function onSave(name: string, slug: string) {
+  function onSave(name: string, slug: string, purpose: string) {
     if (!editTarget) return;
     setFormErr("");
     patch(
       {
         resource: "projects",
         id: editTarget.id,
-        values: { name, slug },
+        values: { name, slug, purpose },
         successNotification: { message: "项目已保存", type: "success" },
         errorNotification: false,
       },
@@ -149,7 +150,7 @@ export function ProjectsPage() {
                 {rows.length} 个环境
               </Badge>
             }
-            description="协作与资源边界。登录后先选项目，项目内可申请隔离服务器，管理员批准后获得 SSH 连接。"
+            description="协作与资源边界。每个项目须写清用途。登录后先选项目，项目内可申请隔离服务器，管理员批准后获得 SSH 连接。"
             actions={
               <>
                 <Button
@@ -185,7 +186,7 @@ export function ProjectsPage() {
                   <Input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="搜索项目名称、slug 或 ID…"
+                    placeholder="搜索项目名称、用途、slug 或 ID…"
                     className="h-8 pl-8 text-xs bg-surface-1/70 border-border/80 focus:bg-surface-1"
                   />
                 </div>
@@ -228,13 +229,19 @@ export function ProjectsPage() {
               className="rounded-2xl border border-border/80 bg-surface-1 shadow-surface-2 overflow-hidden flex flex-col"
             >
               <div className="w-full overflow-x-auto">
-                <Table className="min-w-[860px]">
-                  <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
+                <Table className="min-w-[1040px]">
+                  <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                     <TableRow className="border-b border-border/60 hover:bg-transparent">
-                      <TableHead className="font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                      <TableHead className="w-[180px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
                         <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                           <FolderKanban className="size-3.5 opacity-60 shrink-0" />
                           名称
+                        </span>
+                      </TableHead>
+                      <TableHead className="min-w-[200px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <StickyNote className="size-3.5 opacity-60 shrink-0" />
+                          用途
                         </span>
                       </TableHead>
                       <TableHead className="w-[180px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
@@ -282,7 +289,7 @@ export function ProjectsPage() {
                           tabIndex={0}
                           role="link"
                         >
-                          <TableCell className="py-2.5">
+                          <TableCell className="py-2.5 w-[180px]">
                             <div className="flex items-center gap-2.5 min-w-0">
                               <span className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
                                 <FolderKanban className="size-3.5" />
@@ -291,6 +298,20 @@ export function ProjectsPage() {
                                 {p.name}
                               </span>
                             </div>
+                          </TableCell>
+                          <TableCell className="py-2.5 min-w-0 max-w-[280px]" data-testid="project-purpose-cell">
+                            {p.purpose?.trim() ? (
+                              <Hint label={p.purpose} className="min-w-0 block">
+                                <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+                                  <StickyNote className="size-3 opacity-60 shrink-0" />
+                                  <span className="truncate text-sm text-foreground">{p.purpose}</span>
+                                </span>
+                              </Hint>
+                            ) : (
+                              <Badge variant="danger" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0" data-testid="project-purpose-missing">
+                                待补用途
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="py-2.5 w-[180px]">
                             <span className="inline-flex items-center rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 font-mono text-xs text-muted-foreground truncate max-w-[160px]">
@@ -419,6 +440,18 @@ export function ProjectsPage() {
                       title={p.name}
                     />
                     <ListCardMeta>
+                      <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
+                        <StickyNote className="size-3 opacity-60 shrink-0" />
+                        {p.purpose?.trim() ? (
+                          <Hint label={p.purpose} className="min-w-0">
+                            <span className="truncate text-foreground">{p.purpose}</span>
+                          </Hint>
+                        ) : (
+                          <Badge variant="danger" className="inline-flex items-center whitespace-nowrap shrink-0" data-testid="project-purpose-missing">
+                            待补用途
+                          </Badge>
+                        )}
+                      </span>
                       <span className="inline-flex items-center gap-1 min-w-0">
                         <Tag className="size-3 opacity-60 shrink-0" />
                         <span className="font-mono truncate">{p.slug}</span>
@@ -520,7 +553,7 @@ export function ProjectsPage() {
           }
         }}
         mode="edit"
-        initial={editTarget ? { name: editTarget.name, slug: editTarget.slug } : undefined}
+        initial={editTarget ? { name: editTarget.name, slug: editTarget.slug, purpose: editTarget.purpose ?? "" } : undefined}
         submitting={saving}
         error={editTarget ? formErr : ""}
         onSubmit={onSave}

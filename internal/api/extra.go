@@ -92,6 +92,7 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name            *string `json:"name"`
 		Slug            *string `json:"slug"`
+		Purpose         *string `json:"purpose"`
 		BudgetCPUMilli  *int64  `json:"budget_cpu_milli"`
 		BudgetMemBytes  *int64  `json:"budget_mem_bytes"`
 		BudgetDiskBytes *int64  `json:"budget_disk_bytes"`
@@ -101,7 +102,7 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, err := s.App.PatchProject(r.Context(), *userFrom(r), pid, service.PatchProjectInput{
-		Name: body.Name, Slug: body.Slug,
+		Name: body.Name, Slug: body.Slug, Purpose: body.Purpose,
 		BudgetCPUMilli: body.BudgetCPUMilli, BudgetMemBytes: body.BudgetMemBytes, BudgetDiskBytes: body.BudgetDiskBytes,
 	})
 	if err != nil {

@@ -18,5 +18,6 @@ services:
       - HA_BASTION_HOST=${HA_BASTION_HOST:-bastion.mnnumath.vip}
       - HA_BASTION_PORT=${HA_BASTION_PORT:-2222}
       - HA_RUNTIME=${HA_RUNTIME:-memory}
+      - HA_K8S_MEMORY=${HA_K8S_MEMORY:-1}
     ports:
       - "${HA_HOST_PORT:-18082}:8080"

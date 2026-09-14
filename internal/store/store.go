@@ -19,7 +19,8 @@ var (
 	ErrAlreadyReleased = errors.New("already released")
 	ErrDiskShrink      = errors.New("DISK_SHRINK_NOT_SUPPORTED")
 	ErrNotExpansion    = errors.New("ONLY_EXPANSION")
-	ErrSecondPort      = errors.New("SECOND_PORT_CONFIRM_REQUIRED")
+	ErrSecondPort       = errors.New("SECOND_PORT_CONFIRM_REQUIRED")
+	ErrPurposeRequired  = errors.New("PURPOSE_REQUIRED")
 )
 
 type Store interface {

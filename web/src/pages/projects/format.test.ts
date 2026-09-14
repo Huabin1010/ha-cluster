@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatBytes, formatBudget, formatCpuMilli } from "./format";
-import { canManageProject, isValidSlug, suggestSlugFromName } from "./types";
+import { canManageProject, isValidPurpose, purposeMissing, isValidSlug, suggestSlugFromName } from "./types";
 
 describe("project slug", () => {
   it("accepts lowercase alnum hyphen", () => {
@@ -28,6 +28,21 @@ describe("project slug", () => {
     expect(canManageProject("admin")).toBe(false);
     expect(canManageProject("developer")).toBe(false);
     expect(canManageProject()).toBe(false);
+  });
+
+  it("requires a short purpose", () => {
+    expect(isValidPurpose("办公零食柜")).toBe(true);
+    expect(isValidPurpose("  内部协作控制台  ")).toBe(true);
+    expect(isValidPurpose("")).toBe(false);
+    expect(isValidPurpose("x")).toBe(false);
+    expect(isValidPurpose("办公零食柜", "办公零食柜")).toBe(false);
+    expect(isValidPurpose("demo-app", "Demo", "demo-app")).toBe(false);
+  });
+
+  it("treats empty purpose as blocking", () => {
+    expect(purposeMissing("")).toBe(true);
+    expect(purposeMissing(undefined)).toBe(true);
+    expect(purposeMissing("办公零食柜")).toBe(false);
   });
 });
 

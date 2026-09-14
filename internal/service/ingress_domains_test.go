@@ -29,7 +29,7 @@ func seedIngressWS(t *testing.T, app *App, owner *models.User) (*models.Workspac
 	if err := app.Store.UpsertNode(ctx, node); err != nil {
 		t.Fatal(err)
 	}
-	p, err := app.CreateProject(ctx, owner.ID, "proj-zone", "pz"+uuid.NewString()[:6])
+	p, err := app.CreateProject(ctx, owner.ID, "proj-zone", "pz"+uuid.NewString()[:6], "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}

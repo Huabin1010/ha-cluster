@@ -124,7 +124,7 @@ def main() -> int:
 
     # ── 2. Alice 创建项目（系统）──
     slug = f"story-{TS}"
-    code, proj = alice.req("POST", "/projects", {"name": f"故事项目 {TS}", "slug": slug})
+    code, proj = alice.req("POST", "/projects", {"name": f"故事项目 {TS}", "slug": slug, "purpose": "用户故事验收"})
     expect(results, "Alice 创建项目", code == 201 and proj.get("id"), str(proj))
     pid = proj["id"]
 

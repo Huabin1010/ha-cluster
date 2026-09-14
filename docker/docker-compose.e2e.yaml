@@ -15,6 +15,7 @@ services:
       - HA_WEB_DIR=/app/web/dist
       - HA_ADMIN_PASSWORD=123456qq
       - HA_JWT_SECRET=e2e-test-secret-at-least-32-bytes-long
+      - HA_K8S_MEMORY=1
     volumes:
       - /var/lib/incus/unix.socket:/var/lib/incus/unix.socket
     healthcheck:

@@ -1,6 +1,32 @@
 package models
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestNormalizeProjectPurpose(t *testing.T) {
+	ok, good := NormalizeProjectPurpose("  办公零食柜  ")
+	if !good || ok != "办公零食柜" {
+		t.Fatalf("got %q %v", ok, good)
+	}
+	if _, valid := NormalizeProjectPurpose(""); valid {
+		t.Fatal("empty")
+	}
+	if _, valid := NormalizeProjectPurpose("a"); valid {
+		t.Fatal("too short")
+	}
+	long := strings.Repeat("用", ProjectPurposeMaxRunes+1)
+	if _, valid := NormalizeProjectPurpose(long); valid {
+		t.Fatal("too long")
+	}
+	if HasProjectPurpose("") || HasProjectPurpose("x") {
+		t.Fatal("empty is missing")
+	}
+	if !HasProjectPurpose("办公零食柜") {
+		t.Fatal("filled")
+	}
+}
 
 func TestRoleRankOrdering(t *testing.T) {
 	if RoleRank(RoleOwner) <= RoleRank(RoleAdmin) {

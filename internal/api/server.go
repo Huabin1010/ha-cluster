@@ -20,6 +20,7 @@ import (
 	"ha-cluster/internal/auth"
 	"ha-cluster/internal/authz"
 	"ha-cluster/internal/bastion"
+	hak8s "ha-cluster/internal/k8s"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/requestmeta"
 	"ha-cluster/internal/service"
@@ -335,6 +336,9 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 		code = http.StatusForbidden
 	} else if errors.Is(err, store.ErrUnauthorized) {
 		code = http.StatusUnauthorized
+	} else if errors.Is(err, store.ErrPurposeRequired) {
+		code = http.StatusConflict
+		msg = "PURPOSE_REQUIRED"
 	} else if errors.Is(err, store.ErrSecondPort) {
 		code = http.StatusConflict
 		msg = err.Error()
@@ -343,6 +347,9 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 		msg = err.Error()
 	} else if errors.Is(err, store.ErrInvalidInput) {
 		code = http.StatusBadRequest
+	} else if errors.Is(err, hak8s.ErrUnavailable) {
+		code = http.StatusServiceUnavailable
+		msg = "K8S_UNAVAILABLE"
 	}
 	writeJSON(w, code, map[string]string{"error": msg})
 }
@@ -508,14 +515,15 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name string `json:"name"`
-		Slug string `json:"slug"`
+		Name    string `json:"name"`
+		Slug    string `json:"slug"`
+		Purpose string `json:"purpose"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	p, err := s.App.CreateProject(r.Context(), userFrom(r).ID, body.Name, body.Slug)
+	p, err := s.App.CreateProject(r.Context(), userFrom(r).ID, body.Name, body.Slug, body.Purpose)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
@@ -595,7 +603,7 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	callerMem, err := s.App.RequireMembership(r.Context(), *userFrom(r), id, models.RoleAdmin)
+	callerMem, err := s.App.RequireProjectReady(r.Context(), *userFrom(r), id, models.RoleAdmin)
 	if err != nil {
 		writeErr(w, http.StatusForbidden, err)
 		return
@@ -647,7 +655,7 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	callerMem, err := s.App.RequireMembership(r.Context(), *userFrom(r), pid, models.RoleAdmin)
+	callerMem, err := s.App.RequireProjectReady(r.Context(), *userFrom(r), pid, models.RoleAdmin)
 	if err != nil {
 		writeErr(w, http.StatusForbidden, err)
 		return

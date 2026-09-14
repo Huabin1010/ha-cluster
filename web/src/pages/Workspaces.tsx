@@ -1,19 +1,12 @@
 import { useCallback, useRef, useState, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useGetIdentity, useList } from "@refinedev/core";
 import { Server, Layers, Cpu, RefreshCw, FolderKanban, ShieldAlert, PlayCircle, Clock, HeartPulse, SlidersHorizontal } from "lucide-react";
 import { isInsufficientCapacity, type AuthUser } from "@/providers";
 import { Banner, Loading, useToast } from "@/ui";
 import { CreateForm } from "@/pages/workspaces/CreateForm";
 import { WorkspaceRow } from "@/pages/workspaces/WorkspaceRow";
-import {
-  canApproveRole,
-  ProjectOption,
-  Workspace,
-  WORKSPACE_POLL_AFTER_MUTATION_MS,
-  WORKSPACE_POLL_INTERVAL_MS,
-  workspaceListQueryPollInterval,
-} from "@/pages/workspaces/types";
+import { canApproveRole, Workspace, WORKSPACE_POLL_AFTER_MUTATION_MS, WORKSPACE_POLL_INTERVAL_MS, workspaceListQueryPollInterval } from "@/pages/workspaces/types";
 import { Button } from "@/components/ui/button";
 import { SelectBox } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +17,7 @@ import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
 import { useClientPager } from "@/lib/use-client-pager";
 import { writeCurrentProject } from "@/lib/current-project";
+import { purposeMissing, type Project } from "@/pages/projects/types";
 
 export function WorkspacesPage() {
   const toast = useToast();
@@ -42,7 +36,7 @@ export function WorkspacesPage() {
     setInsufficient(!!msg && (isInsufficient || isInsufficientCapacity(msg)));
   }, []);
 
-  const { data: projectData } = useList<ProjectOption>({
+  const { data: projectData } = useList<Project>({
     resource: "projects",
     pagination: { mode: "off" },
   });
@@ -62,6 +56,7 @@ export function WorkspacesPage() {
   const projects = projectData?.data ?? [];
   const selected = projects.find((p) => p.id === projectFilter);
   const canApprove = canApproveRole(selected?.my_role, me?.platform_role);
+  const selectedNeedsPurpose = Boolean(selected) && purposeMissing(selected?.purpose);
   const [showAbnormal, setShowAbnormal] = useState(false);
   const rows = useMemo(() => {
     const list = data?.data ?? [];
@@ -116,19 +111,25 @@ export function WorkspacesPage() {
           }
           description="项目隔离的 Linux 计算环境。升配：管理员直接生效，成员需审批。降配一律需审批。管理员销毁无需再走申请。"
           actions={
-            <CreateForm
-              projects={projects}
-              initialProjectId={projectFilter}
-              reloadUsageRef={reloadUsageRef}
-              canApprove={canApprove}
-              platformRole={me?.platform_role}
-              onCreated={() => {
-                showError("");
-                toast.show(canApprove ? "创建成功" : "已提交申请，等待管理员审批", "success");
-                afterMutation();
-              }}
-              onError={showError}
-            />
+            selectedNeedsPurpose && selected ? (
+              <Button asChild data-testid="project-purpose-fill">
+                <Link to={`/projects/${selected.id}`}>去填写用途</Link>
+              </Button>
+            ) : (
+              <CreateForm
+                projects={projects}
+                initialProjectId={projectFilter}
+                reloadUsageRef={reloadUsageRef}
+                canApprove={canApprove}
+                platformRole={me?.platform_role}
+                onCreated={() => {
+                  showError("");
+                  toast.show(canApprove ? "创建成功" : "已提交申请，等待管理员审批", "success");
+                  afterMutation();
+                }}
+                onError={showError}
+              />
+            )
           }
         >
 
@@ -196,6 +197,11 @@ export function WorkspacesPage() {
           </div>
 
           {/* 审批与通知横幅 */}
+          {selectedNeedsPurpose && (
+            <Banner kind="error">
+              <span data-testid="project-purpose-gate">当前项目还没有用途。请先到项目页补上，才能开通或操作服务器。</span>
+            </Banner>
+          )}
           {pending > 0 && canApprove && (
             <Banner kind="info">
               <span data-testid="ws-pending-banner">有 {pending} 条服务器申请待审批</span>
@@ -362,6 +368,7 @@ export function WorkspacesPage() {
                   myRole={selected?.my_role}
                   mySshAccess={selected?.my_ssh_access}
                   projectId={projectFilter}
+                  opsLocked={purposeMissing(projects.find((p) => p.id === ws.project_id)?.purpose) && projects.some((p) => p.id === ws.project_id)}
                   onBusy={setBusyId}
                   onRefresh={() => {
                     kickPoll();

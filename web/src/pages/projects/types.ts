@@ -2,6 +2,7 @@ export type Project = {
   id: string;
   name: string;
   slug: string;
+  purpose?: string;
   owner_id?: string;
   status?: string;
   my_role?: string;
@@ -46,4 +47,26 @@ export function canManageProject(
   if (role === "owner") return true;
   if (ownerId && currentUserId && ownerId === currentUserId) return true;
   return false;
+}
+
+export const PURPOSE_MIN = 2;
+export const PURPOSE_MAX = 80;
+
+export function normalizePurpose(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ");
+}
+
+export function isValidPurpose(raw: string, name = "", slug = ""): boolean {
+  const p = normalizePurpose(raw);
+  const n = Array.from(p).length;
+  if (n < PURPOSE_MIN || n > PURPOSE_MAX) return false;
+  const nName = name.trim();
+  const nSlug = slug.trim().toLowerCase();
+  if (nName && p.toLowerCase() === nName.toLowerCase()) return false;
+  if (nSlug && p.toLowerCase() === nSlug) return false;
+  return true;
+}
+
+export function purposeMissing(purpose?: string): boolean {
+  return !isValidPurpose(purpose ?? "");
 }

@@ -19,6 +19,8 @@ import (
 func setupApp(t *testing.T) (*App, *models.User) {
 	t.Helper()
 	t.Setenv("HA_PROVISION_SYNC", "1")
+	t.Setenv("HA_K8S_MEMORY", "1")
+	t.Setenv("HA_KUBECONFIG", "")
 	st := memory.New()
 	app := New(st, workspace.NewMemoryRuntime(), []byte("unit-test-secret-key-32b!!"))
 	u, err := app.Register(context.Background(), "alice", "alice@example.com", "password1")
@@ -91,7 +93,7 @@ func TestRegisterLoginAndDuplicate(t *testing.T) {
 func TestCreateWorkspaceOccupiesAndRelease(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()
-	p, err := app.CreateProject(ctx, u.ID, "demo", "demo")
+	p, err := app.CreateProject(ctx, u.ID, "demo", "demo", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +133,7 @@ func TestCreateWorkspaceRollbackOnRuntimeFailure(t *testing.T) {
 		ID: uuid.New(), Name: "pc1", Arch: models.ArchAMD64, Role: "worker",
 		AllocatableCPU: 8000, AllocatableMem: 8 * Gi, AllocatableDisk: 100 * Gi, Ready: true,
 	})
-	p, _ := app.CreateProject(context.Background(), u.ID, "p", "p")
+	p, _ := app.CreateProject(context.Background(), u.ID, "p", "p", "test purpose")
 	_, err := app.CreateWorkspace(context.Background(), CreateWorkspaceInput{
 		ProjectID: p.ID, Plan: "small", Arch: models.ArchAMD64, Actor: *u,
 	})
@@ -166,7 +168,7 @@ func TestNormalizeWorkspaceArch(t *testing.T) {
 func TestCreateWorkspaceRejectsUnknownArch(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "p", "p-arch")
+	p, _ := app.CreateProject(ctx, owner.ID, "p", "p-arch", "test purpose")
 	_, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
 		ProjectID: p.ID, Name: "bad", Plan: "nano", Arch: "mips", Actor: *owner,
 	})
@@ -187,7 +189,7 @@ func TestCreateWorkspaceRejectsUnknownArch(t *testing.T) {
 func TestViewerCannotCreateWorkspace(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "p", "p")
+	p, _ := app.CreateProject(ctx, owner.ID, "p", "p", "test purpose")
 	viewer, _ := app.Register(ctx, "carol", "carol@example.com", "password1")
 	_ = app.Store.AddMembership(ctx, models.Membership{ProjectID: p.ID, UserID: viewer.ID, Role: models.RoleViewer})
 	_, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
@@ -201,7 +203,7 @@ func TestViewerCannotCreateWorkspace(t *testing.T) {
 func TestPrivateWorkspaceSSHACL(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "p", "p")
+	p, _ := app.CreateProject(ctx, owner.ID, "p", "p", "test purpose")
 	dev, _ := app.Register(ctx, "dev", "dev@example.com", "password1")
 	_ = app.Store.AddMembership(ctx, models.Membership{ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper})
 	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
@@ -222,7 +224,7 @@ func TestPrivateWorkspaceSSHACL(t *testing.T) {
 func TestStopDoesNotReleaseQuota(t *testing.T) {
 	app, u := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, u.ID, "p", "p")
+	p, _ := app.CreateProject(ctx, u.ID, "p", "p", "test purpose")
 	ws, _ := app.CreateWorkspace(ctx, CreateWorkspaceInput{
 		ProjectID: p.ID, Plan: "large", Arch: models.ArchAMD64, Actor: *u,
 	})
@@ -240,7 +242,7 @@ func TestStopDoesNotReleaseQuota(t *testing.T) {
 func TestDeveloperRequestNeedsApproval(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "p", "p")
+	p, _ := app.CreateProject(ctx, owner.ID, "p", "p", "test purpose")
 	dev, _ := app.Register(ctx, "devreq", "devreq@example.com", "password1")
 	_ = app.Store.AddMembership(ctx, models.Membership{
 		ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper, SSHAccess: models.SSHAccessGranted,
@@ -286,7 +288,7 @@ func TestDeveloperRequestNeedsApproval(t *testing.T) {
 func TestRejectWorkspaceRequest(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "p", "p")
+	p, _ := app.CreateProject(ctx, owner.ID, "p", "p", "test purpose")
 	dev, _ := app.Register(ctx, "devrej", "devrej@example.com", "password1")
 	_ = app.Store.AddMembership(ctx, models.Membership{ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper})
 	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
@@ -310,7 +312,7 @@ func TestRejectWorkspaceRequest(t *testing.T) {
 func TestResizeRequestApproveAndNoDiskShrink(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "p", "p")
+	p, _ := app.CreateProject(ctx, owner.ID, "p", "p", "test purpose")
 	dev, _ := app.Register(ctx, "devrs", "devrs@example.com", "password1")
 	_ = app.Store.AddMembership(ctx, models.Membership{
 		ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper, SSHAccess: models.SSHAccessGranted,
@@ -391,7 +393,7 @@ func TestResizeRequestApproveAndNoDiskShrink(t *testing.T) {
 func TestRequestResizeSkipsApprovalForAdmins(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "p-rsz", "p-rsz")
+	p, _ := app.CreateProject(ctx, owner.ID, "p-rsz", "p-rsz", "test purpose")
 	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
 		ProjectID: p.ID, Name: "admin-box", Plan: "nano", Arch: models.ArchAMD64, Actor: *owner,
 	})
@@ -415,7 +417,7 @@ func TestRequestResizeSkipsApprovalForAdmins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p2, err := app.CreateProject(ctx, projOwner.ID, "p-own", "p-own")
+	p2, err := app.CreateProject(ctx, projOwner.ID, "p-own", "p-own", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +450,7 @@ func TestRequestResizeSkipsApprovalForAdmins(t *testing.T) {
 func TestIngressOnePortThenSecondNeedsConfirm(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, _ := app.CreateProject(ctx, owner.ID, "p", "p")
+	p, _ := app.CreateProject(ctx, owner.ID, "p", "p", "test purpose")
 	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
 		ProjectID: p.ID, Name: "web", Plan: "nano", Arch: models.ArchAMD64, Actor: *owner,
 	})
@@ -490,7 +492,7 @@ func TestIngressOnePortThenSecondNeedsConfirm(t *testing.T) {
 func TestSSHKeySyncToWorkspaces(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := context.Background()
-	p, err := app.CreateProject(ctx, owner.ID, "keys-proj", "keys-slug")
+	p, err := app.CreateProject(ctx, owner.ID, "keys-proj", "keys-slug", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +561,7 @@ func TestRequestDestroySkipsApprovalsForAdmins(t *testing.T) {
 	app, plat := setupApp(t)
 	ctx := context.Background()
 
-	pDev, err := app.CreateProject(ctx, plat.ID, "skip-dev", "skip-dev")
+	pDev, err := app.CreateProject(ctx, plat.ID, "skip-dev", "skip-dev", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -588,7 +590,7 @@ func TestRequestDestroySkipsApprovalsForAdmins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pOwn, err := app.CreateProject(ctx, owner.ID, "skip-own", "skip-own")
+	pOwn, err := app.CreateProject(ctx, owner.ID, "skip-own", "skip-own", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -609,7 +611,7 @@ func TestRequestDestroySkipsApprovalsForAdmins(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pPlat, err := app.CreateProject(ctx, plat.ID, "skip-plat", "skip-plat")
+	pPlat, err := app.CreateProject(ctx, plat.ID, "skip-plat", "skip-plat", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +656,7 @@ func assertForceDestroyBeatsLaunch(t *testing.T, failLaunch bool) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := app.CreateProject(ctx, u.ID, "lab", "lab")
+	p, err := app.CreateProject(ctx, u.ID, "lab", "lab", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,7 +734,7 @@ func TestForceDestroyWinsOverProvisionCommitRace(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := app.CreateProject(ctx, u.ID, "lab", "lab")
+	p, err := app.CreateProject(ctx, u.ID, "lab", "lab", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}

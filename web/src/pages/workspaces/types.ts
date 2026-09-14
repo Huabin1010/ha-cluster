@@ -28,6 +28,7 @@ export type ProjectOption = {
   id: string;
   name: string;
   slug: string;
+  purpose?: string;
   my_role?: string;
   my_ssh_access?: string;
 };

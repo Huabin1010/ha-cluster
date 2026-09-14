@@ -132,7 +132,7 @@ def main() -> int:
 
     alice, bob, outsider = users["alice"], users["bob"], users["outsider"]
     slug = f"k8scollab-{TS}"
-    code, proj = alice.req("POST", "/projects", {"name": f"K8s 故事 {TS}", "slug": slug})
+    code, proj = alice.req("POST", "/projects", {"name": f"K8s 故事 {TS}", "slug": slug, "purpose": "K8s 协作故事"})
     expect(results, "Alice 创建项目", code == 201 and (proj or {}).get("id"), str(proj))
     pid = (proj or {}).get("id")
 

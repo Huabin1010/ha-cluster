@@ -43,14 +43,14 @@ Content-Type: application/json
 curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me
 ```
 
-列表接口返回 `{ "data": [...], "total": N }`。错误返回 `{ "error": "..." }`，HTTP：400 参数 / 401 令牌 / 403 权限 / 404 不存在 / 409 冲突（含 `INSUFFICIENT_CAPACITY`、`SECOND_PORT_CONFIRM_REQUIRED`）。
+列表接口返回 `{ "data": [...], "total": N }`。错误返回 `{ "error": "..." }`，HTTP：400 参数 / 401 令牌 / 403 权限 / 404 不存在 / 409 冲突（含 `INSUFFICIENT_CAPACITY`、`PURPOSE_REQUIRED`、`SECOND_PORT_CONFIRM_REQUIRED`）。
 
 不要把 `{{TOKEN}}` 写进公开 git remote、截图或群聊。需要轮换时让用户在控制台点「轮换密钥」。
 
 ## 先摸清身份
 
 1. `GET /me` → `id` / `username` / `platform_role` / `email`
-2. `GET /projects` → 可见项目（非成员的项目不会出现）
+2. `GET /projects` → 可见项目（非成员的项目不会出现）。`purpose` 为空的旧项目须先 `PATCH` 补用途，否则后续操作 `409 PURPOSE_REQUIRED`
 3. `GET /plans` → 套餐（常用 `2c2g`）
 4. `GET /me/ssh-keys` → 至少一把公钥才能走 Bastion
 
@@ -70,10 +70,10 @@ curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me
 
 **默认开 Docker + SSH 机器，用 Compose 部署。** 创建时不写 `runtime` 或写 `runtime=container`。用户没提 Kubernetes / k3s / kubectl / Namespace 时，不要改开 k8s。
 
-1. **建项目** → 转让 owner → 拉成员 → 授 SSH
+1. **建项目**：`POST /projects` `{name,slug,purpose}`。**purpose 必填**，2–80 字，一句话说清这个项目是干什么的；禁止空、禁止把 name/slug 原样当用途。然后转让 owner → 拉成员 → 授 SSH
 2. **申请机器**（developer）→ owner/admin 审批 → 等到 `running`（默认 `container`）
 3. **进机器部署（默认）**：`POST /workspaces/{id}/exec` 在机子里 `docker compose up`（HTTPS + Bearer）。不要本机 `ssh` / ssh-config / 8099。控制台网页终端走 JWT+WS。
-4. **仅当用户要 k8s**：创建时才加 `runtime=k8s`（**审批与 Docker 相同**：developer 等 owner/admin `POST /workspaces/{id}/approve`；owner/admin 直建）→ 等 `running` → `POST /workspaces/{id}/k8s/apply` `{yaml}`；下载 `GET /workspaces/{id}/kubeconfig`；看资源 `GET /workspaces/{id}/k8s/resources`。k8s 工作区的 exec 会 400，不要再试 SSH。
+4. **仅当用户要 k8s**：创建时才加 `runtime=k8s`（**审批与 Docker 相同**：developer 等 owner/admin `POST /workspaces/{id}/approve`；owner/admin 直建）。创建前控制面必须已接真实集群，否则 **503 `K8S_UNAVAILABLE`**，不要留下半残工作区。等 `running`（或虚网降级仍可 apply）→ `POST /workspaces/{id}/k8s/apply` **必须** `{yaml}`。平台会把控制台「自动注入」的镜像仓库（含 CNB）写成 Secret `ha-registry` 并挂到 default ServiceAccount，**清单不必写 docker login / imagePullSecrets**。`GET /workspaces/{id}/kubeconfig` 的 `server` 不能是 `https://k8s.invalid`。看资源 `GET /workspaces/{id}/k8s/resources`。k8s 工作区的 exec 会 400，不要再试 SSH。
 5. **暴露 HTTP**：工作区内自己起服务 → `POST /workspaces/{id}/ingress/shared`（公共域已带平台通配符 HTTPS）
 6. **推镜像 / 部署**：优先推到 **CNB** `docker.cnb.cool/<组织>/<仓库>:<标签>`，不要默认 Docker Hub。`GET /registries/preferred` 可核对推荐仓库。默认在 **Compose 机器**里 `docker compose`；用户点名 k8s 再 apply。
 7. **邀请同事**：`POST /projects/{id}/invitations`（按邮箱；accept 必须邮箱匹配）
@@ -82,6 +82,8 @@ curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me
 ## 硬约束
 
 - 不要编造项目/机器 ID，先 list 再操作。
+- **创建项目必须带 `purpose`**（2–80 字，简洁说明用途）。缺了会 400。
+- **旧项目若 `purpose` 为空**：先 `PATCH /projects/{id}` `{purpose}`，否则开通机器 / 加人 / SSH / exec 会 `409 PURPOSE_REQUIRED`。
 - **默认 `runtime=container`（Docker Compose）**；只有用户明确要 k8s 才设 `runtime=k8s`。
 - 不要对非 `running` 的机器 claim 域名或假设 HTTP 执行可用。
 - 第二端口必须 `confirm_second_port: true`，否则 409。

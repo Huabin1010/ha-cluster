@@ -81,7 +81,7 @@ def main():
         sys.exit(2)
     tok = login["token"]
     slug = f"k8slab{int(time.time()) % 100000}"
-    code, proj = api("POST", "/projects", {"name": slug, "slug": slug}, tok)
+    code, proj = api("POST", "/projects", {"name": slug, "slug": slug, "purpose": "K8s 工作区测试"}, tok)
     ok("create project", code == 201, str(proj))
     pid = proj.get("id")
     code, ws = api(

@@ -350,6 +350,7 @@ export function friendlyError(e: unknown): string {
   }
   const msg = e instanceof Error ? e.message : String(e);
   if (msg === "SECOND_PORT_CONFIRM_REQUIRED") return "这台机器已有一个服务端口。多站点请在主机内用 nginx 做路径路由。";
+  if (msg === "PURPOSE_REQUIRED") return "请先填写项目用途，才能继续操作";
   if (msg === "DISK_SHRINK_NOT_SUPPORTED") return "不提供硬盘缩容，请只申请更大的磁盘";
   if (msg === "ONLY_EXPANSION") return "只支持扩容：CPU / 内存 / 磁盘均不可下调";
   if (msg === "unauthorized" || msg === "Unauthorized") return "用户名或密码错误";

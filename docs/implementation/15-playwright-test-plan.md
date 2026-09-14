@@ -304,7 +304,7 @@ register(username, email, password)            // POST /auth/register  201 / 409
 login(username, password)                      // POST /auth/login → { token, refresh_token, user }
 logout(refresh_token)                          // POST /auth/logout  204
 me(token)                                      // GET /me
-createProject(token, { name, slug })           // POST /projects
+createProject(token, { name, slug, purpose })   // POST /projects；purpose 必填
 patchProject(token, id, { budget_cpu_milli, budget_mem_bytes, budget_disk_bytes })  // PATCH /projects/{id}
 usage(token, id)                               // GET /projects/{id}/usage
 addMember(token, pid, { username, role })      // POST /projects/{id}/members

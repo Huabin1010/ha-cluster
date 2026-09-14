@@ -115,7 +115,8 @@
 
 ### 子功能
 
-- 列表：创建、编辑、删除、复制 ID
+- 列表：创建（**用途必填**）、编辑、删除、复制 ID；「用途」列一句话说清这个项目是干什么的
+- **旧项目未填用途会冻结**：不能开通机器、加人、SSH、改预算；红条 `project-purpose-gate`，负责人点 `project-purpose-fill` 补上后才能继续
 - 详情 Tab：项目概览 / 工作区服务器 / 成员与权限 / 设置与预算
 - 概览：用量卡片、跳到服务器列表
 - 设置：预算 CPU/内存/磁盘、保存、删除项目
@@ -132,7 +133,9 @@
 |---|---|
 | 新建项目 | `project-create-open` |
 | 创建表单 | `project-create-form` |
-| 名称 / slug | `project-name` / `project-slug` |
+| 名称 / slug / 用途 | `project-name` / `project-slug` / `project-purpose` |
+| 列表用途格 | `project-purpose-cell` |
+| 待补用途徽章 | `project-purpose-missing` |
 | 提交创建 | `project-create` |
 | 列表错误 | `project-list-error` |
 | 项目行 | `project-row` |
@@ -157,12 +160,16 @@
 | 设置与预算 | `project-tab-settings` | 同上 |
 | 窄屏 Tab 条 | `project-mobile-tabs` | `md:hidden` |
 | 项目 ID | `project-id` | |
+| 项目用途 | `project-purpose-text` | 详情头 |
+| 未填用途徽章 | `project-purpose-missing` | 详情头 / 列表 |
+| 未填用途拦截条 | `project-purpose-gate` | 详情 / 服务器列表 / 机器详情 |
+| 填写用途 | `project-purpose-fill` | owner；服务器页筛选到未填项目时也会出现 |
 | 用量卡片 | `project-usage` | |
 | 预算输入 | `budget-cpu` / `budget-mem` / `budget-disk` | owner |
 | 保存预算 | `budget-save` | owner |
 | 空列表 | `empty-state` | 通用空态 |
 
-角色门：非成员项目 404；改预算 / 删项目需 owner；viewer 不能申请机器。
+角色门：非成员项目 404；改预算 / 删项目需 owner；viewer 不能申请机器。未填用途时除查看、补用途、删除项目 / 销毁机器外一律 `409 PURPOSE_REQUIRED`。
 
 相关 E2E：`web/e2e/pw2-projects/`。
 
@@ -178,8 +185,9 @@
 
 ### 子功能
 
-- 项目内列表右上角「新建工作区」同样是 `ws-create`（自定义 trigger，不要漏 testid）
+- 项目内列表右上角「新建工作区」同样是 `ws-create`（自定义 trigger，不要漏 testid）；筛到未填用途的项目时变成 `project-purpose-fill`
 - 按项目筛选、含异常、刷新
+- 未填用途的项目：列表出现 `project-purpose-gate`，行内启停/终端/升配禁用，销毁仍可做
 - **开通 / 销毁 / 审批过程会自动轮询**（约 3s）：`provisioning`「开通中」、`destroying`、待审批不必点「刷新列表」等稳态
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
 - 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行

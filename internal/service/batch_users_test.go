@@ -31,7 +31,7 @@ func TestBatchCreateUsers(t *testing.T) {
 	}
 
 	// Admin creates a project
-	proj, err := app.CreateProject(ctx, admin.ID, "Batch Demo", "batch-demo")
+	proj, err := app.CreateProject(ctx, admin.ID, "Batch Demo", "batch-demo", "test purpose")
 	if err != nil {
 		t.Fatalf("create project failed: %v", err)
 	}

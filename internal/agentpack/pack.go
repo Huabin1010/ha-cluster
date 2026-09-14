@@ -30,21 +30,21 @@ const (
 	VersionPath   = ".cursor/skills/ha-cluster-agent/VERSION"
 
 	// Version is a monotonic integer. Bump when pack files change so Agents can self-update.
-	Version    = "6"
+	Version    = "10"
 	ReleasedAt = "2026-09-14"
-	Notes      = "Kubernetes 与 Docker 同一审批：developer 待审，owner/admin 直建"
+	Notes      = "k8s 工作区自动注入 CNB 等 auto_inject 仓库为 ImagePullSecret"
 )
 
 type Vars struct {
-	APIBase       string
-	ConsoleURL    string
-	Token         string
-	Username      string
-	UserID        string
-	PlatformRole  string
-	PackURL       string
-	TokenPrefix   string
-	CreatedAt     time.Time
+	APIBase      string
+	ConsoleURL   string
+	Token        string
+	Username     string
+	UserID       string
+	PlatformRole string
+	PackURL      string
+	TokenPrefix  string
+	CreatedAt    time.Time
 }
 
 type File struct {
@@ -142,25 +142,25 @@ HARD RULE: use only curl (Shell / terminal). Do NOT use Cursor fetch, WebFetch,
 mcp_web_fetch, browser tools, or any built-in HTTP fetch. curl.exe on Windows is OK.
 
 1. Pull the pack:
-   curl -fsSL '`+v.PackURL+`'
+   curl -fsSL '` + v.PackURL + `'
    No cookies. No Authorization header. Follow redirects (-L is already in -fsSL).
 2. The JSON has:
    - files: { "<relative-path>": "<file content>", ... }
    - auth: { api_base, token, username, user_id, platform_role }
 3. Write every files entry into the current workspace (create directories).
    Required paths:
-   - `+RulePath+`
-   - `+SkillPath+`
-   - `+WorkflowsPath+`
-   - `+APIRefPath+`
-   - `+VersionPath+`
-4. Then act as user `+v.Username+`. Read `+SkillPath+`.
+   - ` + RulePath + `
+   - ` + SkillPath + `
+   - ` + WorkflowsPath + `
+   - ` + APIRefPath + `
+   - ` + VersionPath + `
+4. Then act as user ` + v.Username + `. Read ` + SkillPath + `.
    All later API calls must also be curl, e.g.
-   curl -fsS -H "Authorization: Bearer <auth.token>" '`+v.APIBase+`/me'
+   curl -fsS -H "Authorization: Bearer <auth.token>" '` + v.APIBase + `/me'
 5. Version check (do this at the start of a session, or when the user says
    the platform / skill was updated):
-   curl -fsS '`+v.APIBase+`/agent-pack/version'
-   Compare JSON "version" with local `+VersionPath+` (or SKILL.md pack_version).
+   curl -fsS '` + v.APIBase + `/agent-pack/version'
+   Compare JSON "version" with local ` + VersionPath + ` (or SKILL.md pack_version).
    Version is a rising integer. If remote is greater, curl the pack URL again
    and overwrite the files (keep using the same token).
 

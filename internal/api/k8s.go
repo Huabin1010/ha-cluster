@@ -1,7 +1,10 @@
 package api
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -9,20 +12,39 @@ import (
 	"ha-cluster/internal/store"
 )
 
+func decodeApplyYAML(r *http.Request) (string, error) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return "", store.ErrInvalidInput
+	}
+	ct := strings.ToLower(r.Header.Get("Content-Type"))
+	if strings.Contains(ct, "yaml") {
+		return string(raw), nil
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return "", store.ErrInvalidInput
+	}
+	for _, key := range []string{"yaml", "manifest", "content"} {
+		if s, ok := body[key].(string); ok && strings.TrimSpace(s) != "" {
+			return s, nil
+		}
+	}
+	return "", store.ErrInvalidInput
+}
+
 func (s *Server) applyK8s(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	var body struct {
-		YAML string `json:"yaml"`
-	}
-	if err := decodeJSON(r, &body); err != nil {
+	yamlText, err := decodeApplyYAML(r)
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	res, err := s.App.ApplyK8sYAML(r.Context(), *userFrom(r), id, body.YAML)
+	res, err := s.App.ApplyK8sYAML(r.Context(), *userFrom(r), id, yamlText)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return

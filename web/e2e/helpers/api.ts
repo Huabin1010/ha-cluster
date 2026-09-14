@@ -87,10 +87,10 @@ export const api = {
     return request("/me", { method: "GET" }, token);
   },
 
-  async createProject(token: string, data: { name: string; slug: string }) {
-    const res = await request<{ id: string; name: string; slug: string }>("/projects", {
+  async createProject(token: string, data: { name: string; slug: string; purpose?: string }) {
+    const res = await request<{ id: string; name: string; slug: string; purpose?: string }>("/projects", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ purpose: "e2e", ...data }),
     }, token);
     return res.data;
   },

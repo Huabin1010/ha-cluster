@@ -30,6 +30,29 @@ spec:
 	}
 }
 
+func TestSplitAndSanitizeInjectsImagePullSecret(t *testing.T) {
+	objs, err := SplitAndSanitize(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snacks
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: snacks
+        image: docker.cnb.cool/qzsyzn/docker:snacks
+`, "proj-demo-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := string(objs[0].Raw)
+	if !strings.Contains(raw, "name: "+PullSecretName) || !strings.Contains(raw, "imagePullSecrets") {
+		t.Fatalf("missing pull secret: %s", raw)
+	}
+}
+
 func TestSplitAndSanitizeRejectsClusterRole(t *testing.T) {
 	_, err := SplitAndSanitize(`
 apiVersion: rbac.authorization.k8s.io/v1

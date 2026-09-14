@@ -36,12 +36,15 @@ x-ha-api: &ha-api
     HA_BT_PANEL: ${HA_BT_PANEL:-}
     HA_BT_KEY: ${HA_BT_KEY:-}
     HA_BT_SSL_SITE: ${HA_BT_SSL_SITE:-apps.cl.qzsyzn.com}
+    HA_KUBECONFIG: ${HA_KUBECONFIG:-/etc/ha-cluster/kubeconfig}
+    HA_K8S_SERVER: ${HA_K8S_SERVER:-https://10.129.129.230:6443}
   extra_hosts:
     - "host.docker.internal:host-gateway"
   volumes:
     - ha-ingress-conf:/var/lib/ha-ingress
     - ha-tls-data:/var/lib/ha-cluster/tls
     - /etc/ha-cluster/bastion_ws_ed25519:/etc/ha-cluster/bastion_ws_ed25519:ro
+    - /etc/ha-cluster/kubeconfig:/etc/ha-cluster/kubeconfig:ro
   depends_on:
     postgres:
       condition: service_healthy

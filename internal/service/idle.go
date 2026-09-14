@@ -70,6 +70,9 @@ func (a *App) SuspendIdleWorkspaces(ctx context.Context) (suspended int, err err
 		if now.Sub(last) < thresh {
 			continue
 		}
+		if models.IsK8sRuntime(w.Runtime) {
+			continue
+		}
 		if err := a.Runtime.Stop(ctx, w.ID); err != nil {
 			continue
 		}
@@ -94,8 +97,10 @@ func (a *App) WakeWorkspaceIfSuspended(ctx context.Context, w *models.Workspace)
 	if w.Status != models.WSSuspended && w.Status != models.WSStopped {
 		return nil
 	}
-	if err := a.Runtime.Start(ctx, w.ID); err != nil {
-		return err
+	if !models.IsK8sRuntime(w.Runtime) {
+		if err := a.Runtime.Start(ctx, w.ID); err != nil {
+			return err
+		}
 	}
 	now := time.Now()
 	w.Status = models.WSRunning

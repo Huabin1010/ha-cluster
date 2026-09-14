@@ -81,6 +81,7 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     await openCreateDialog(ownerPage, "project-create-open");
     await ownerPage.fill("[data-testid=project-name]", projName);
     await ownerPage.fill("[data-testid=project-slug]", projSlug);
+    await ownerPage.fill("[data-testid=project-purpose]", "E2E 用户旅程演示");
     await ownerPage.click("[data-testid=project-create]");
 
     // 创建成功后自动跳转至 /projects/:id

@@ -29,7 +29,7 @@ func TestIngressWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := app.CreateProject(ctx, owner.ID, "proj-ingress", "pi")
+	p, err := app.CreateProject(ctx, owner.ID, "proj-ingress", "pi", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}

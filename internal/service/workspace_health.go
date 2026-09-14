@@ -81,6 +81,12 @@ func (a *App) ReconcileWorkspaceHealth(ctx context.Context) (updated int, err er
 					newStatus = models.WSDegraded
 				}
 			case models.NodeHealthy:
+				if models.IsK8sRuntime(w.Runtime) {
+					if w.Status == models.WSNodeLost || w.Status == models.WSDegraded {
+						newStatus = models.WSRunning
+					}
+					break
+				}
 				if rem != nil {
 					inst, ok, gerr := rem.GetStrict(ctx, w.ID)
 					if gerr == nil && ok {

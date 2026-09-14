@@ -47,6 +47,7 @@ type Props = {
   myRole?: string;
   mySshAccess?: string;
   projectId?: string;
+  opsLocked?: boolean;
   onBusy: (id: string | null) => void;
   onRefresh: () => void | Promise<unknown>;
   onToast: (msg: string) => void;
@@ -61,6 +62,7 @@ export function WorkspaceRow({
   myRole,
   mySshAccess,
   projectId,
+  opsLocked,
   onBusy,
   onRefresh,
   onToast,
@@ -74,6 +76,7 @@ export function WorkspaceRow({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
   const busy = busyId === ws.id || pendingAction !== null;
+  const actionDisabled = busy || Boolean(opsLocked);
   const isCreateRequested = ws.status === "requested";
   const destroyPending = isDestroyPending(ws);
   const destroyRequested = isDestroyRequested(ws);
@@ -115,6 +118,17 @@ export function WorkspaceRow({
   }, [ws.status, optimisticStatus]);
 
   async function run(action: () => Promise<void>, kind = "work") {
+    if (
+      opsLocked &&
+      kind !== "destroy" &&
+      kind !== "destroy-force" &&
+      kind !== "destroy-approve" &&
+      kind !== "cancel-request" &&
+      kind !== "reject"
+    ) {
+      onError("请先填写项目用途，才能继续操作");
+      return;
+    }
     setPendingAction(kind);
     if ((kind === "destroy" && destroyNow) || kind === "destroy-force") {
       setOptimisticStatus("destroying");
@@ -229,7 +243,7 @@ export function WorkspaceRow({
               type="button"
               size="compact"
               data-testid="ws-approve"
-              disabled={busy}
+              disabled={actionDisabled}
               className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
@@ -276,7 +290,7 @@ export function WorkspaceRow({
                             body: JSON.stringify({ reason: "rejected" }),
                           });
                           onToast("已拒绝申请");
-                        });
+                        }, "reject");
                       }}
                     >
                       确定拒绝
@@ -290,8 +304,8 @@ export function WorkspaceRow({
             <Button
               type="button"
               size="compact"
-              data-testid="ws-resize-approve"
-              disabled={busy}
+                data-testid="ws-resize-approve"
+              disabled={actionDisabled}
               className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
                 run(async () => {
@@ -319,7 +333,7 @@ export function WorkspaceRow({
                     body: JSON.stringify({ reason: "rejected" }),
                   });
                   onToast("已拒绝扩容申请");
-                })
+                }, "reject")
               }
             >
               <X className="size-3.5 shrink-0" />
@@ -329,7 +343,7 @@ export function WorkspaceRow({
           {canResize && (
             <ResizeDialog
               ws={ws}
-              disabled={busy}
+              disabled={actionDisabled}
               canApprove={canApprove}
               onSubmitted={(applied) => {
                 onToast(applied ? "已完成升配" : "已提交申请，等待管理员审批");
@@ -344,7 +358,7 @@ export function WorkspaceRow({
               variant="ghost"
               size="compact"
               data-testid="ws-start"
-              disabled={busy}
+              disabled={actionDisabled}
               loading={pendingAction === "start"}
               className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
@@ -364,7 +378,7 @@ export function WorkspaceRow({
               variant="ghost"
               size="compact"
               data-testid="ws-stop"
-              disabled={busy}
+              disabled={actionDisabled}
               loading={pendingAction === "stop"}
               className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
               onClick={() =>
@@ -549,8 +563,15 @@ export function WorkspaceRow({
                 type="button"
                 size="compact"
                 data-testid="ws-web-terminal"
+                disabled={actionDisabled}
                 className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
-                onClick={() => setTermOpen(true)}
+                onClick={() => {
+                  if (opsLocked) {
+                    onError("请先填写项目用途，才能继续操作");
+                    return;
+                  }
+                  setTermOpen(true);
+                }}
               >
                 <Terminal className="size-3.5 shrink-0" />
                 打开终端
@@ -572,7 +593,7 @@ export function WorkspaceRow({
                   variant="ghost"
                   size="compact"
                   data-testid="ws-copy-http-exec"
-                  disabled={busy}
+                  disabled={actionDisabled}
                   className={cn(
                     "inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 px-2 text-xs",
                     copiedExec && "text-emerald-500 font-medium"

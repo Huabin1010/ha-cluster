@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"ha-cluster/internal/ingress"
+	hak8s "ha-cluster/internal/k8s"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
 )
@@ -74,6 +75,19 @@ type createRouteParams struct {
 	ZoneID            *uuid.UUID
 	Prefix            string
 	AutoReview        bool
+}
+
+func (a *App) exposeWorkspacePort(ctx context.Context, w *models.Workspace, routeID uuid.UUID, port int) (int, error) {
+	if w != nil && models.IsK8sRuntime(w.Runtime) {
+		if a.K8s == nil {
+			return 0, hak8s.ErrUnavailable
+		}
+		return a.K8s.ServiceNodePort(ctx, w.RuntimeRef, port)
+	}
+	if w == nil {
+		return 0, store.ErrNotFound
+	}
+	return a.Runtime.ExposePort(ctx, w.ID, routeID, port)
 }
 
 func (a *App) annotateRoute(ctx context.Context, r *models.IngressRoute) {
@@ -149,7 +163,7 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 	if err != nil {
 		return nil, err
 	}
-	mem, err := a.RequireMembership(ctx, in.Actor, ws.ProjectID, models.RoleDeveloper)
+	mem, err := a.RequireProjectReady(ctx, in.Actor, ws.ProjectID, models.RoleDeveloper)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +275,7 @@ func (a *App) createIngressRoute(ctx context.Context, in createRouteParams) (*mo
 		return nil, err
 	}
 	if in.Status == models.IngressActive {
-		if hp, err := a.Runtime.ExposePort(ctx, in.WS.ID, r.ID, r.Port); err == nil && hp > 0 {
+		if hp, err := a.exposeWorkspacePort(ctx, in.WS, r.ID, r.Port); err == nil && hp > 0 {
 			r.HostPort = hp
 			_ = a.Store.UpdateIngress(ctx, r)
 		}
@@ -284,14 +298,16 @@ func (a *App) ApproveIngress(ctx context.Context, actor models.User, id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	if _, err := a.RequireMembership(ctx, actor, r.ProjectID, models.RoleAdmin); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, r.ProjectID, models.RoleAdmin); err != nil {
 		return nil, err
 	}
 	if r.Status != models.IngressPendingApproval && r.Status != models.IngressRejected {
 		return nil, store.ErrInvalidInput
 	}
-	if hp, err := a.Runtime.ExposePort(ctx, r.WorkspaceID, r.ID, r.Port); err == nil && hp > 0 {
-		r.HostPort = hp
+	if ws, werr := a.Store.GetWorkspace(ctx, r.WorkspaceID); werr == nil {
+		if hp, err := a.exposeWorkspacePort(ctx, ws, r.ID, r.Port); err == nil && hp > 0 {
+			r.HostPort = hp
+		}
 	}
 	r.Status = models.IngressActive
 	r.ReviewedBy = &actor.ID
@@ -316,7 +332,7 @@ func (a *App) RejectIngress(ctx context.Context, actor models.User, id uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	if _, err := a.RequireMembership(ctx, actor, r.ProjectID, models.RoleAdmin); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, r.ProjectID, models.RoleAdmin); err != nil {
 		return nil, err
 	}
 	if r.Status == models.IngressRejected {
@@ -351,7 +367,7 @@ func (a *App) DeleteIngress(ctx context.Context, actor models.User, id uuid.UUID
 	if err != nil {
 		return err
 	}
-	if _, err := a.RequireMembership(ctx, actor, r.ProjectID, models.RoleDeveloper); err != nil {
+	if _, err := a.RequireProjectReady(ctx, actor, r.ProjectID, models.RoleDeveloper); err != nil {
 		return err
 	}
 	if r.Status == models.IngressActive {
@@ -404,13 +420,13 @@ func (a *App) IngressPublicInfo(ctx context.Context) map[string]any {
 	}
 	fab := FabricEdgeHost()
 	return map[string]any{
-		"public_host":         PublicIngressHost(),
-		"presets":             ingress.Presets(),
-		"zones":               zonesOut,
-		"fabric_host":         fab,
-		"fabric_http_port":    FabricHTTPPort(),
-		"fabric_dns":          fab,
-		"preferred_registry":  PreferredRegistry(),
+		"public_host":        PublicIngressHost(),
+		"presets":            ingress.Presets(),
+		"zones":              zonesOut,
+		"fabric_host":        fab,
+		"fabric_http_port":   FabricHTTPPort(),
+		"fabric_dns":         fab,
+		"preferred_registry": PreferredRegistry(),
 		"note": "公网 A 记录仍指入口机；已加入 EasyTier 时把 DNS 指向 fabric_dns（仅 cl.qzsyzn.com 后缀），" +
 			"域名不变、流量走虚网、不经 42 公网网卡。默认每个主机只暴露一个服务端口。",
 	}

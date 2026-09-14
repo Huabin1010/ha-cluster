@@ -3,20 +3,41 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 
+	hak8s "ha-cluster/internal/k8s"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/store"
 )
+
+func k8sWorkspaceReady(status string) bool {
+	switch status {
+	case models.WSRunning, models.WSDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) requireLiveK8s(ctx context.Context, runtime string) error {
+	if !models.IsK8sRuntime(runtime) {
+		return nil
+	}
+	if a.K8s == nil {
+		return hak8s.ErrUnavailable
+	}
+	return a.K8s.Available(ctx)
+}
 
 func (a *App) k8sWorkspace(ctx context.Context, actor models.User, id uuid.UUID, minRole string) (*models.Workspace, *models.Membership, error) {
 	w, err := a.Store.GetWorkspace(ctx, id)
 	if err != nil {
 		return nil, nil, err
 	}
-	mem, err := a.RequireMembership(ctx, actor, w.ProjectID, minRole)
+	mem, err := a.RequireProjectReady(ctx, actor, w.ProjectID, minRole)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -31,11 +52,17 @@ func (a *App) ApplyK8sYAML(ctx context.Context, actor models.User, id uuid.UUID,
 	if err != nil {
 		return nil, err
 	}
-	if w.Status != models.WSRunning {
-		return nil, store.ErrInvalidInput
-	}
 	if mem.Role == models.RoleViewer {
 		return nil, store.ErrForbidden
+	}
+	if !k8sWorkspaceReady(w.Status) {
+		return nil, fmt.Errorf("工作区未就绪（%s），无法 apply", w.Status)
+	}
+	if err := a.requireLiveK8s(ctx, w.Runtime); err != nil {
+		return nil, err
+	}
+	if err := a.syncK8sPullSecrets(ctx, w.RuntimeRef); err != nil {
+		return nil, err
 	}
 	res, err := a.K8s.Apply(ctx, w.RuntimeRef, yamlText)
 	if err != nil {
@@ -119,3 +146,13 @@ func (a *App) requireK8sOrErr(w *models.Workspace) error {
 	return errors.New("Kubernetes 工作区请用 apply / kubeconfig，不支持 SSH 执行")
 }
 
+func (a *App) syncK8sPullSecrets(ctx context.Context, ns string) error {
+	if a.K8s == nil || strings.TrimSpace(ns) == "" {
+		return hak8s.ErrUnavailable
+	}
+	regs, err := a.CollectAutoInjectRegistryCreds(ctx)
+	if err != nil {
+		return fmt.Errorf("docker registries: %w", err)
+	}
+	return a.K8s.SyncPullSecrets(ctx, ns, regs)
+}

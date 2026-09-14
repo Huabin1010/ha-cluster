@@ -101,7 +101,7 @@ def main() -> int:
     ok("存在带 k3s 标签的 Ready 节点", len(tagged) >= 1, str([(n.get("name"), n.get("tags")) for n in (nodes or {}).get("data", [])]))
 
     slug = f"k8sstory{int(time.time()) % 100000}"
-    code, proj = api(base, "POST", "/projects", {"name": slug, "slug": slug}, tok)
+    code, proj = api(base, "POST", "/projects", {"name": slug, "slug": slug, "purpose": "K8s 故事验收"}, tok)
     ok("创建项目", code == 201, str(proj))
     pid = proj.get("id")
 

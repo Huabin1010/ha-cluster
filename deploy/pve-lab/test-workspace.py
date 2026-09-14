@@ -72,7 +72,7 @@ def main() -> int:
         return 1
 
     slug = f"ws-lab-{int(time.time())}"
-    code, proj = api(base, "POST", "/projects", token=token, body={"name": "pve-lab", "slug": slug})
+    code, proj = api(base, "POST", "/projects", token=token, body={"name": "pve-lab", "slug": slug, "purpose": "PVE 实验室验收"})
     if code not in (200, 201):
         print(f"FAIL create project {code} {proj}", file=sys.stderr)
         return 1

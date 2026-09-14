@@ -23,17 +23,19 @@ test.describe("PW-2 项目列表与创建", () => {
     await openCreateDialog(page, "project-create-open");
     await page.getByTestId("project-name").fill(name);
     await page.getByTestId("project-slug").fill(slug);
+    await page.getByTestId("project-purpose").fill("E2E 项目用途");
     await page.getByTestId("project-create").click();
 
     // 创建成功直接跳到详情页
     await expect(page).toHaveURL(/\/projects\/[a-f0-9-]+$/);
     await expect(page.getByTestId("project-id")).toBeVisible();
-    await expect(page.locator("h2")).toContainText(name);
+    await expect(page.getByTestId("project-purpose-text")).toContainText("E2E 项目用途");
 
     // 返回列表能够看到该行
     await page.goto("/projects");
     const row = page.locator("tr", { hasText: name });
     await expect(row).toBeVisible();
+    await expect(row).toContainText("E2E 项目用途");
   });
 
   test("PW2-03 @pw2 slug 非法", async ({ pageAs }) => {
@@ -42,6 +44,7 @@ test.describe("PW-2 项目列表与创建", () => {
 
     await openCreateDialog(page, "project-create-open");
     await page.getByTestId("project-name").fill("Invalid Slug Test");
+    await page.getByTestId("project-purpose").fill("E2E 非法 slug");
     const slugIn = page.getByTestId("project-slug");
     await slugIn.fill("Invalid Slug!");
 
@@ -62,6 +65,7 @@ test.describe("PW-2 项目列表与创建", () => {
     await openCreateDialog(page, "project-create-open");
     await page.getByTestId("project-name").fill("Another Project");
     await page.getByTestId("project-slug").fill(existing.slug);
+    await page.getByTestId("project-purpose").fill("E2E 冲突用途");
     await page.getByTestId("project-create").click();
 
     const err = page.getByTestId("project-error");
@@ -118,6 +122,7 @@ test.describe("PW-2 项目列表与创建", () => {
     await openCreateDialog(page, "project-create-open");
     await page.getByTestId("project-name").fill(longName);
     await page.getByTestId("project-slug").fill(slug);
+    await page.getByTestId("project-purpose").fill("E2E 长名称项目");
     await page.getByTestId("project-create").click();
 
     await expect(page).toHaveURL(/\/projects\/[a-f0-9-]+$/);
@@ -145,6 +150,22 @@ test.describe("PW-2 项目列表与创建", () => {
     await expect(page.locator("tr", { hasText: nextName })).toBeVisible();
     await expect(page.locator("tr", { hasText: nextSlug })).toBeVisible();
     await expect(page).toHaveURL(/\/projects\/?$/);
+  });
+
+  test("PW2-17 @pw2 创建必须填写用途", async ({ pageAs }) => {
+    const { page } = await pageAs("owner");
+    await page.goto("/projects");
+
+    await openCreateDialog(page, "project-create-open");
+    await page.getByTestId("project-name").fill("No Purpose");
+    await page.getByTestId("project-slug").fill(uniq("nopurpose"));
+    await page.getByTestId("project-create").click();
+
+    const purposeIn = page.getByTestId("project-purpose");
+    const valid = await purposeIn.evaluate((el: HTMLInputElement) => el.checkValidity());
+    expect(valid).toBe(false);
+    expect(page.url()).toContain("/projects");
+    await expect(page.getByTestId("project-create-form")).toBeVisible();
   });
 
   test("PW2-15 @pw2 @smoke 删除项目", async ({ pageAs }) => {

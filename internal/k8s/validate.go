@@ -83,6 +83,7 @@ func sanitizeDoc(doc, ns string) (Object, error) {
 		return Object{}, fmt.Errorf("%s 缺少 metadata.name", kind)
 	}
 	setMappingString(meta, "namespace", ns)
+	injectImagePullSecret(m, kind)
 	buf, err := yaml.Marshal(m)
 	if err != nil {
 		return Object{}, err
@@ -94,6 +95,74 @@ func sanitizeDoc(doc, ns string) (Object, error) {
 		Namespace:  ns,
 		Raw:        bytes.TrimSpace(buf),
 	}, nil
+}
+
+func injectImagePullSecret(root *yaml.Node, kind string) {
+	for _, spec := range podSpecNodes(root, kind) {
+		ensureImagePullSecret(spec)
+	}
+}
+
+func podSpecNodes(root *yaml.Node, kind string) []*yaml.Node {
+	switch strings.ToLower(kind) {
+	case "pod":
+		if spec := mappingMap(root, "spec"); spec != nil {
+			return []*yaml.Node{spec}
+		}
+	case "deployment", "statefulset", "daemonset", "replicaset", "job":
+		spec := mappingMap(root, "spec")
+		tmpl := mappingMap(spec, "template")
+		if pod := mappingMap(tmpl, "spec"); pod != nil {
+			return []*yaml.Node{pod}
+		}
+	case "cronjob":
+		spec := mappingMap(root, "spec")
+		job := mappingMap(spec, "jobTemplate")
+		jobSpec := mappingMap(job, "spec")
+		tmpl := mappingMap(jobSpec, "template")
+		if pod := mappingMap(tmpl, "spec"); pod != nil {
+			return []*yaml.Node{pod}
+		}
+	}
+	return nil
+}
+
+func ensureImagePullSecret(spec *yaml.Node) {
+	if spec == nil {
+		return
+	}
+	seq := mappingSeq(spec, "imagePullSecrets")
+	if seq == nil {
+		seq = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		spec.Content = append(spec.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "imagePullSecrets"},
+			seq,
+		)
+	}
+	for _, item := range seq.Content {
+		if mappingString(item, "name") == PullSecretName {
+			return
+		}
+	}
+	seq.Content = append(seq.Content, &yaml.Node{
+		Kind: yaml.MappingNode, Tag: "!!map",
+		Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Tag: "!!str", Value: "name"},
+			{Kind: yaml.ScalarNode, Tag: "!!str", Value: PullSecretName},
+		},
+	})
+}
+
+func mappingSeq(n *yaml.Node, key string) *yaml.Node {
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == key && n.Content[i+1].Kind == yaml.SequenceNode {
+			return n.Content[i+1]
+		}
+	}
+	return nil
 }
 
 func mappingMap(n *yaml.Node, key string) *yaml.Node {

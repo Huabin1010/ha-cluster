@@ -4,7 +4,7 @@ import { uniq } from "../helpers/ids";
 export async function seedProject(ownerToken: string, prefix = "proj") {
   const slug = uniq(prefix);
   const name = `E2E ${slug}`;
-  const p = await api.createProject(ownerToken, { name, slug });
+  const p = await api.createProject(ownerToken, { name, slug, purpose: `E2E ${prefix}` });
   return p;
 }
 
