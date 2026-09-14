@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { CanAccess, useCustomMutation, useGetIdentity, useList } from "@refinedev/core";
 import { Activity, Check, Clock, Copy, Globe, Hash, Layers, RefreshCw, Shield, User } from "lucide-react";
 import { toast } from "sonner";
@@ -12,19 +12,22 @@ import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
 import { canManageUsers } from "@/lib/permissions";
-import { ApiError, friendlyError, type AuthUser } from "@/providers";
+import { api, ApiError, friendlyError, isApiError, type AuthUser } from "@/providers";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
 import { copyText } from "@/ui/format";
 import { type Workspace } from "@/pages/workspaces/types";
 import {
+  actionBadgeStyle,
   actionLabel,
   auditActorLabel,
   auditChangeSummary,
   auditCopySnippet,
   auditPreferredName,
+  auditResourceExists,
   auditResourceHref,
   auditResourceName,
+  auditResourceProbe,
   canOpenAuditResource,
   fmtTime,
   resourceTypeLabel,
@@ -87,17 +90,19 @@ function Forbidden() {
   );
 }
 
-function actionVariant(action: string): "default" | "outline" | "ok" | "warn" | "danger" {
-  if (action.includes("deny") || action.includes("delete") || action.includes("destroy") || action.includes("fail")) {
-    return "danger";
-  }
-  if (action.includes("allow") || action.includes("success") || action.includes("approve")) {
-    return "ok";
-  }
-  if (action.includes("request") || action.includes("pending")) {
-    return "warn";
-  }
-  return "outline";
+function AuditActionBadge({ action }: { action: string }) {
+  const style = actionBadgeStyle(action);
+  return (
+    <Hint label={action} className="font-mono">
+      <Badge
+        variant={style.variant}
+        color={style.color}
+        className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+      >
+        {actionLabel(action)}
+      </Badge>
+    </Hint>
+  );
 }
 
 function auditLogDisplayName(log: AuditLog, workspaces: Workspace[], projects: AuditHoverProject[]): string {
@@ -121,6 +126,7 @@ function AuditTargetCell({
   logs,
   workspaces,
   projects,
+  listsReady,
 }: {
   log: AuditLog;
   me?: AuthUser;
@@ -128,7 +134,10 @@ function AuditTargetCell({
   logs: AuditLog[];
   workspaces: Workspace[];
   projects: AuditHoverProject[];
+  listsReady: boolean;
 }) {
+  const navigate = useNavigate();
+  const [opening, setOpening] = useState(false);
   const change = auditChangeSummary(log.action, log.meta);
   const name = auditLogDisplayName(log, workspaces, projects);
   const href = auditResourceHref(log.resource_type, log.resource_id, log.meta);
@@ -142,6 +151,55 @@ function AuditTargetCell({
   const workspace = workspaces.find((w) => w.id === log.resource_id);
   const projectId = log.resource_type === "project" ? log.resource_id : workspace?.project_id;
   const project = projects.find((p) => p.id === projectId);
+  const liveKnown =
+    log.resource_type === "workspace"
+      ? workspace
+        ? true
+        : listsReady
+          ? false
+          : undefined
+      : log.resource_type === "project"
+        ? project
+          ? true
+          : listsReady
+            ? false
+            : undefined
+        : undefined;
+
+  async function openTarget(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (!to) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    if (opening) return;
+    if (liveKnown === true) {
+      navigate(to);
+      return;
+    }
+    if (liveKnown === false) {
+      toast.error("资源已被销毁");
+      return;
+    }
+    setOpening(true);
+    try {
+      const exists = await auditResourceExists(
+        auditResourceProbe(log.resource_type, log.resource_id, log.meta),
+        (path) => api(path),
+      );
+      if (!exists) {
+        toast.error("资源已被销毁");
+        return;
+      }
+      navigate(to);
+    } catch (err) {
+      if (isApiError(err) && err.status === 404) {
+        toast.error("资源已被销毁");
+        return;
+      }
+      toast.error(friendlyError(err));
+    } finally {
+      setOpening(false);
+    }
+  }
 
   const body = (
     <div className={cn("flex flex-col gap-0.5 min-w-0", to ? "cursor-pointer" : "cursor-help")}>
@@ -173,7 +231,12 @@ function AuditTargetCell({
       project={project}
     >
       {to ? (
-        <Link to={to} data-testid="audit-target-link" className="min-w-0 max-w-full block">
+        <Link
+          to={to}
+          data-testid="audit-target-link"
+          className={cn("min-w-0 max-w-full block", opening && "pointer-events-none opacity-70")}
+          onClick={(e) => void openTarget(e)}
+        >
           {body}
         </Link>
       ) : (
@@ -238,11 +301,11 @@ function AuditList() {
     errorNotification: false,
     queryOptions: { retry: false },
   });
-  const { data: workspaceData } = useList<Workspace>({
+  const { data: workspaceData, isLoading: workspacesLoading } = useList<Workspace>({
     resource: "workspaces",
     pagination: { mode: "off" },
   });
-  const { data: projectData } = useList<AuditHoverProject>({
+  const { data: projectData, isLoading: projectsLoading } = useList<AuditHoverProject>({
     resource: "projects",
     pagination: { mode: "off" },
   });
@@ -254,6 +317,7 @@ function AuditList() {
   });
   const workspaces = workspaceData?.data ?? [];
   const projects = projectData?.data ?? [];
+  const listsReady = !workspacesLoading && !projectsLoading;
   const users = userData?.data ?? [];
   const visible = useMemo<VisibleSets>(
     () => ({
@@ -451,11 +515,7 @@ function AuditList() {
                     </AuditActorHover>
                   </TableCell>
                   <TableCell className="py-2.5 whitespace-nowrap">
-                    <Hint label={l.action} className="font-mono">
-                      <Badge variant={actionVariant(l.action)} className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-                        {actionLabel(l.action)}
-                      </Badge>
-                    </Hint>
+                    <AuditActionBadge action={l.action} />
                   </TableCell>
                   <TableCell className="py-2.5 text-xs min-w-[220px] max-w-[420px]">
                     <AuditTargetCell
@@ -465,6 +525,7 @@ function AuditList() {
                       logs={logs}
                       workspaces={workspaces}
                       projects={projects}
+                      listsReady={listsReady}
                     />
                   </TableCell>
                   <TableCell className="mono font-mono text-xs py-2.5 text-right pr-4 whitespace-nowrap text-foreground">

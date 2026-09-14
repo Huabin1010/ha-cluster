@@ -76,10 +76,88 @@ export const RESOURCE_LABEL: Record<string, string> = {
 };
 
 export function actionLabel(action: string): string {
+  if (!action) return "—";
   if (ACTION_LABEL[action]) return ACTION_LABEL[action];
   const keys = Object.keys(ACTION_LABEL).sort((a, b) => b.length - a.length);
   const prefix = keys.find((key) => action === key || action.startsWith(`${key}.`));
   return prefix ? ACTION_LABEL[prefix] : action;
+}
+
+export type ActionBadgeColor =
+  | "gray"
+  | "red"
+  | "orange"
+  | "amber"
+  | "yellow"
+  | "lime"
+  | "green"
+  | "emerald"
+  | "teal"
+  | "cyan"
+  | "blue"
+  | "indigo"
+  | "violet"
+  | "purple"
+  | "fuchsia"
+  | "pink"
+  | "rose";
+
+export type ActionBadgeStyle = {
+  variant: "solid" | "ok" | "warn" | "danger" | "outline";
+  color?: ActionBadgeColor;
+};
+
+const ACTION_FAMILY_COLOR: Record<string, ActionBadgeColor> = {
+  tls: "teal",
+  ssh: "cyan",
+  ssh_access: "cyan",
+  ingress: "orange",
+  ingress_domain_zone: "orange",
+  k8s: "indigo",
+  kubeconfig: "indigo",
+  user: "blue",
+  project: "violet",
+  workspace: "blue",
+  member: "purple",
+  membership: "purple",
+  invite: "fuchsia",
+  node: "lime",
+  agent_token: "lime",
+  docker_registry: "cyan",
+};
+
+/** 安全动作徽章：危险/通过/待审走语义色，其余按动作族分色 */
+export function actionBadgeStyle(action: string): ActionBadgeStyle {
+  if (!action) return { variant: "outline" };
+  const a = action.toLowerCase();
+  if (a.includes("unsuspend")) {
+    return { variant: "ok" };
+  }
+  if (
+    a.includes("deny") ||
+    a.includes("delete") ||
+    a.includes("destroy") ||
+    a.includes("fail") ||
+    a.includes("reject") ||
+    a.includes("suspend")
+  ) {
+    return { variant: "danger" };
+  }
+  if (a.includes("approve") || a.includes("allow") || a.includes("grant") || a.includes("success")) {
+    return { variant: "ok" };
+  }
+  if (a.includes("request") || a.includes("pending")) {
+    return { variant: "warn" };
+  }
+  if (a.startsWith("ssh.exec")) return { variant: "solid", color: "violet" };
+  if (a.startsWith("ssh.session")) return { variant: "solid", color: "cyan" };
+  if (a.startsWith("workspace.start")) return { variant: "solid", color: "emerald" };
+  if (a.startsWith("workspace.stop") || a.includes("idle_suspend")) return { variant: "solid", color: "amber" };
+  if (a.startsWith("tls.")) return { variant: "solid", color: "teal" };
+  const family = action.split(".")[0] || "";
+  const color = ACTION_FAMILY_COLOR[family];
+  if (color) return { variant: "solid", color };
+  return { variant: "outline" };
 }
 
 export function resourceTypeLabel(type?: string): string {
@@ -147,8 +225,28 @@ function specLine(cpu?: number, mem?: number, disk?: number): string {
   return bits.join(" / ");
 }
 
+function metaJoinedNames(meta: AuditMeta | undefined): string {
+  if (!meta) return "";
+  const raw = meta.names;
+  if (Array.isArray(raw)) {
+    return raw.map((item) => String(item ?? "").trim()).filter(Boolean).join(" · ");
+  }
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  return "";
+}
+
 /** 资源列名称：优先接口回填 / 项目名 / 用户名 / 工作区名 / 域名，否则短 ID */
 export function auditResourceName(type?: string, id?: string, meta?: AuditMeta, resolved?: string): string {
+  if (type === "tls_cert") {
+    const names = metaJoinedNames(meta) || metaStr(meta, "name");
+    if (names) return names;
+  } else if (type === "ingress_domain_zone") {
+    const name = metaStr(meta, "suffix") || metaStr(meta, "display_name") || metaStr(meta, "name");
+    if (name) return name;
+  } else if (type === "docker_registry") {
+    const name = metaStr(meta, "name") || metaStr(meta, "server");
+    if (name) return name;
+  }
   const live = resolved?.trim();
   if (live) return live;
   if (type === "project") {
@@ -173,7 +271,13 @@ export function auditResourceName(type?: string, id?: string, meta?: AuditMeta, 
     if (name) return name;
   }
   if (type !== "workspace") {
-    const fallback = metaStr(meta, "project_name") || metaStr(meta, "workspace_name") || metaStr(meta, "name");
+    const fallback =
+      metaStr(meta, "project_name") ||
+      metaStr(meta, "workspace_name") ||
+      metaStr(meta, "name") ||
+      metaStr(meta, "domain") ||
+      metaStr(meta, "suffix") ||
+      metaStr(meta, "server");
     if (fallback) return fallback;
   }
   return shortId(id);
@@ -327,6 +431,62 @@ export function canOpenAuditResource(
   }
 }
 
+export type AuditResourceProbe =
+  | { mode: "get"; path: string }
+  | { mode: "list"; path: string; matchId: string }
+  | { mode: "none" };
+
+/** 点击审计资源前的存活探测：无对应接口则跳过 */
+export function auditResourceProbe(type?: string, id?: string, meta?: AuditMeta): AuditResourceProbe {
+  switch (type) {
+    case "workspace":
+      return id ? { mode: "get", path: `/workspaces/${id}` } : { mode: "none" };
+    case "project":
+      return id ? { mode: "get", path: `/projects/${id}` } : { mode: "none" };
+    case "membership": {
+      const pid = metaStr(meta, "project_id");
+      return pid ? { mode: "get", path: `/projects/${pid}` } : { mode: "none" };
+    }
+    case "ingress": {
+      const ws = metaStr(meta, "workspace");
+      return ws ? { mode: "get", path: `/workspaces/${ws}` } : { mode: "none" };
+    }
+    case "user":
+      return id ? { mode: "list", path: "/users", matchId: id } : { mode: "none" };
+    case "node":
+      return id ? { mode: "list", path: "/nodes", matchId: id } : { mode: "none" };
+    case "tls_cert":
+      return id ? { mode: "list", path: "/admin/tls-certs", matchId: id } : { mode: "none" };
+    case "ingress_domain_zone":
+      return id ? { mode: "list", path: "/admin/ingress-domains", matchId: id } : { mode: "none" };
+    case "docker_registry":
+      return id ? { mode: "list", path: "/admin/docker-registries", matchId: id } : { mode: "none" };
+    default:
+      return { mode: "none" };
+  }
+}
+
+function collectionHasId(payload: unknown, id: string): boolean {
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { data?: unknown }).data)
+      ? ((payload as { data: unknown[] }).data)
+      : [];
+  return rows.some((row) => row && typeof row === "object" && String((row as { id?: unknown }).id) === id);
+}
+
+export async function auditResourceExists(
+  probe: AuditResourceProbe,
+  getJSON: (path: string) => Promise<unknown>,
+): Promise<boolean> {
+  if (probe.mode === "none") return true;
+  if (probe.mode === "get") {
+    await getJSON(probe.path);
+    return true;
+  }
+  return collectionHasId(await getJSON(probe.path), probe.matchId);
+}
+
 /** 资源列第二行：扩容从 A→B、权限从 xx→xx 等变更摘要 */
 export function auditChangeSummary(action: string, meta?: AuditMeta): string {
   if (!meta) return "";
@@ -379,6 +539,11 @@ export function auditChangeSummary(action: string, meta?: AuditMeta): string {
   if (domain && action.includes("ingress")) {
     // 标题已展示域名时不再重复
     if (metaStr(meta, "workspace")) parts.push(`工作区 ${shortId(metaStr(meta, "workspace"))}`);
+  }
+
+  const issuer = metaStr(meta, "issuer");
+  if (issuer && action.startsWith("tls.")) {
+    parts.push(`签发机构 ${issuer}`);
   }
 
   const command = metaStr(meta, "command");

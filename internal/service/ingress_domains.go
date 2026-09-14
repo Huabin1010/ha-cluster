@@ -179,12 +179,17 @@ func (a *App) DeleteIngressDomainZone(ctx context.Context, actor models.User, id
 	if actor.PlatformRole != models.RolePlatformAdmin {
 		return store.ErrForbidden
 	}
+	z, err := a.Store.GetIngressDomainZone(ctx, id)
+	if err != nil {
+		return err
+	}
 	if err := a.Store.DeleteIngressDomainZone(ctx, id); err != nil {
 		return err
 	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "ingress_domain_zone.delete",
 		ResourceType: "ingress_domain_zone", ResourceID: id.String(),
+		Meta: map[string]any{"suffix": z.Suffix, "display_name": z.DisplayName},
 	})
 	return nil
 }

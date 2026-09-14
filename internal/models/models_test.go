@@ -125,4 +125,16 @@ func TestAuditResourceNameFromMetaIgnoresActorUsernameForWorkspace(t *testing.T)
 	if got := AuditResourceNameFromMeta("user", map[string]any{"username": "huanghuabin"}); got != "huanghuabin" {
 		t.Fatalf("user name=%q", got)
 	}
+	if got := AuditResourceNameFromMeta("tls_cert", map[string]any{"names": []string{"*.apps.example.com", "apps.example.com"}}); got != "*.apps.example.com · apps.example.com" {
+		t.Fatalf("tls names=%q", got)
+	}
+	if got := AuditResourceNameFromMeta("tls_cert", map[string]any{"names": []any{"*.cl.qzsyzn.com"}}); got != "*.cl.qzsyzn.com" {
+		t.Fatalf("tls any names=%q", got)
+	}
+	if got := AuditResourceNameFromMeta("ingress_domain_zone", map[string]any{"suffix": "apps.cl.qzsyzn.com"}); got != "apps.cl.qzsyzn.com" {
+		t.Fatalf("zone suffix=%q", got)
+	}
+	if got := AuditResourceNameFromMeta("docker_registry", map[string]any{"server": "docker.cnb.cool"}); got != "docker.cnb.cool" {
+		t.Fatalf("registry server=%q", got)
+	}
 }

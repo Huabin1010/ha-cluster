@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  actionBadgeStyle,
   actionLabel,
   auditActorLabel,
   auditChangeSummary,
   auditCopySnippet,
   auditPreferredName,
+  auditResourceExists,
   auditResourceHref,
   auditResourceName,
+  auditResourceProbe,
   auditResourceTitle,
   canOpenAuditResource,
   findLastAction,
@@ -131,6 +134,22 @@ describe("audit change summary", () => {
     expect(auditResourceTitle("user", "00000000-xxxx", { display_name: "黄华斌", username: "huanghuabin" })).toBe("用户 黄华斌");
   });
 
+  it("shows tls / zone / registry domain names instead of ids", () => {
+    expect(
+      auditResourceName("tls_cert", "6c2a07c2-aaaa", {
+        names: ["*.apps.cl.qzsyzn.com", "apps.cl.qzsyzn.com"],
+      }),
+    ).toBe("*.apps.cl.qzsyzn.com · apps.cl.qzsyzn.com");
+    expect(
+      auditResourceName("tls_cert", "6c2a07c2-aaaa", { name: "*.cl.qzsyzn.com" }, "6c2a07c2…"),
+    ).toBe("*.cl.qzsyzn.com");
+    expect(auditResourceTitle("ingress_domain_zone", "zone-1", { suffix: "apps.cl.qzsyzn.com" })).toBe(
+      "域名分区 apps.cl.qzsyzn.com",
+    );
+    expect(auditResourceName("docker_registry", "reg-1", { server: "docker.cnb.cool" })).toBe("docker.cnb.cool");
+    expect(auditChangeSummary("tls.issue", { issuer: "Let's Encrypt" })).toBe("签发机构 Let's Encrypt");
+  });
+
   it("does not treat actor username as a workspace name", () => {
     expect(
       auditResourceName("workspace", "ws-1", { username: "huanghuabin", command: "uname -a" }),
@@ -227,6 +246,42 @@ describe("audit resource links", () => {
     expect(
       canOpenAuditResource("user", "other", undefined, { userId: "me", platformRole: "platform_user" }),
     ).toBe(false);
+  });
+
+  it("colors action badges by family and severity", () => {
+    expect(actionBadgeStyle("workspace.destroy")).toEqual({ variant: "danger" });
+    expect(actionBadgeStyle("project.delete")).toEqual({ variant: "danger" });
+    expect(actionBadgeStyle("workspace.approve")).toEqual({ variant: "ok" });
+    expect(actionBadgeStyle("workspace.request")).toEqual({ variant: "warn" });
+    expect(actionBadgeStyle("tls.issue")).toEqual({ variant: "solid", color: "teal" });
+    expect(actionBadgeStyle("ssh.session.open")).toEqual({ variant: "solid", color: "cyan" });
+    expect(actionBadgeStyle("ssh.exec")).toEqual({ variant: "solid", color: "violet" });
+    expect(actionBadgeStyle("user.login")).toEqual({ variant: "solid", color: "blue" });
+    expect(actionBadgeStyle("ingress.delete")).toEqual({ variant: "danger" });
+  });
+
+  it("probes the matching resource endpoint", () => {
+    expect(auditResourceProbe("workspace", "ws-1")).toEqual({ mode: "get", path: "/workspaces/ws-1" });
+    expect(auditResourceProbe("tls_cert", "cert-1")).toEqual({
+      mode: "list",
+      path: "/admin/tls-certs",
+      matchId: "cert-1",
+    });
+    expect(auditResourceProbe("cluster", "ha-c1")).toEqual({ mode: "none" });
+  });
+
+  it("treats missing list rows as destroyed", async () => {
+    await expect(
+      auditResourceExists({ mode: "list", path: "/admin/tls-certs", matchId: "gone" }, async () => ({
+        data: [{ id: "alive" }],
+      })),
+    ).resolves.toBe(false);
+    await expect(
+      auditResourceExists({ mode: "list", path: "/admin/tls-certs", matchId: "alive" }, async () => ({
+        data: [{ id: "alive" }],
+      })),
+    ).resolves.toBe(true);
+    await expect(auditResourceExists({ mode: "none" }, async () => ({}))).resolves.toBe(true);
   });
 });
 

@@ -838,6 +838,14 @@ func (s *Store) decorateAuditLocked(l models.AuditLog) models.AuditLog {
 		if r := s.ingress[id]; r != nil {
 			l.ResourceName = r.Domain
 		}
+	case "tls_cert":
+		if c := s.tlsCerts[id]; c != nil {
+			l.ResourceName = c.Name
+		}
+	case "ingress_domain_zone":
+		if z := s.ingressZones[id]; z != nil {
+			l.ResourceName = z.Suffix
+		}
 	}
 	return l
 }

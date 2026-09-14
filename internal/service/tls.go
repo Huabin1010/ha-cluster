@@ -84,7 +84,7 @@ func (a *App) IssueTLSCert(ctx context.Context, actor models.User, id uuid.UUID)
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "tls.issue",
 		ResourceType: "tls_cert", ResourceID: c.ID.String(),
-		Meta: map[string]any{"names": c.Names, "status": c.Status, "issuer": c.Issuer},
+		Meta: map[string]any{"name": c.Name, "names": c.Names, "status": c.Status, "issuer": c.Issuer},
 	})
 	pub := c.Public()
 	return &pub, nil

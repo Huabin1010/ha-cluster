@@ -100,6 +100,85 @@ test.describe("PW-5 审计日志", () => {
     await expect(adminPage).toHaveURL(/\/workspaces\/ws-demo-id/);
   });
 
+  test("PW5-16 @pw5 证书显示域名且已销毁资源提示", async ({ adminPage }) => {
+    await adminPage.route("**/api/audit-logs*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: [
+            {
+              id: 801,
+              actor_user_id: "admin",
+              actor_username: "admin",
+              actor_display_name: "管理员",
+              action: "tls.issue",
+              resource_type: "tls_cert",
+              resource_id: "6c2a07c2-aaaa-bbbb-cccc-dddddddddddd",
+              meta: { names: ["*.apps.cl.qzsyzn.com", "apps.cl.qzsyzn.com"], issuer: "Let's Encrypt" },
+              created_at: "2026-09-14T05:38:02Z",
+            },
+            {
+              id: 800,
+              actor_user_id: "admin",
+              actor_username: "admin",
+              actor_display_name: "管理员",
+              action: "workspace.destroy",
+              resource_type: "workspace",
+              resource_id: "ws-gone-id",
+              resource_name: "snacks-1",
+              meta: { workspace_name: "snacks-1" },
+              created_at: "2026-09-14T05:33:40Z",
+            },
+          ],
+          total: 2,
+        }),
+      });
+    });
+    await adminPage.route("**/api/workspaces*", async (route) => {
+      const url = route.request().url();
+      if (/\/workspaces\/ws-gone-id/.test(url)) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "not found" }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: [], total: 0 }),
+      });
+    });
+    await adminPage.route("**/api/projects*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: [], total: 0 }),
+      });
+    });
+    await adminPage.route("**/api/admin/tls-certs*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: [], total: 0 }),
+      });
+    });
+
+    await adminPage.goto("/audit");
+    const table = adminPage.getByTestId("audit-table");
+    await expect(table).toBeVisible();
+    await expect(table).toContainText("签发 TLS 证书");
+    await expect(table).toContainText("*.apps.cl.qzsyzn.com");
+    await expect(table).not.toContainText("6c2a07c2");
+    await expect(table).toContainText("snacks-1");
+
+    await table.getByTestId("audit-target-link").nth(1).click();
+    await expect(adminPage.getByText("资源已被销毁")).toBeVisible();
+    await expect(adminPage).toHaveURL(/\/audit/);
+  });
+
   test("PW5-14 @pw5 审计加载", async ({ adminPage }) => {
     await adminPage.route("**/api/audit-logs*", async (route) => {
       await new Promise((r) => setTimeout(r, 800));

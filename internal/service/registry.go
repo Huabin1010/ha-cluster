@@ -77,7 +77,7 @@ func (a *App) CreateDockerRegistry(ctx context.Context, actor models.User, in mo
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "docker_registry.create",
 		ResourceType: "docker_registry", ResourceID: in.ID.String(),
-		Meta: map[string]any{"server": in.Server, "auto_inject": in.AutoInject},
+		Meta: map[string]any{"name": in.Name, "server": in.Server, "auto_inject": in.AutoInject},
 	})
 	pub := in.Public()
 	return &pub, nil
@@ -130,12 +130,17 @@ func (a *App) DeleteDockerRegistry(ctx context.Context, actor models.User, id uu
 	if actor.PlatformRole != models.RolePlatformAdmin {
 		return store.ErrForbidden
 	}
+	cur, err := a.Store.GetDockerRegistry(ctx, id)
+	if err != nil {
+		return err
+	}
 	if err := a.Store.DeleteDockerRegistry(ctx, id); err != nil {
 		return err
 	}
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "docker_registry.delete",
 		ResourceType: "docker_registry", ResourceID: id.String(),
+		Meta: map[string]any{"name": cur.Name, "server": cur.Server},
 	})
 	return nil
 }

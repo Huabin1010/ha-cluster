@@ -259,6 +259,38 @@ func firstMetaString(meta map[string]any, keys ...string) string {
 	return ""
 }
 
+func metaJoinedNames(meta map[string]any) string {
+	if meta == nil {
+		return ""
+	}
+	appendName := func(parts []string, raw string) []string {
+		if t := strings.TrimSpace(raw); t != "" {
+			return append(parts, t)
+		}
+		return parts
+	}
+	switch v := meta["names"].(type) {
+	case []string:
+		var parts []string
+		for _, s := range v {
+			parts = appendName(parts, s)
+		}
+		return strings.Join(parts, " · ")
+	case []any:
+		var parts []string
+		for _, x := range v {
+			s, ok := x.(string)
+			if !ok {
+				continue
+			}
+			parts = appendName(parts, s)
+		}
+		return strings.Join(parts, " · ")
+	default:
+		return ""
+	}
+}
+
 // AuditResourceNameFromMeta picks a display name from audit meta for the resource type.
 // SSH/exec logs often include the actor username; that must not become a workspace name.
 func AuditResourceNameFromMeta(resourceType string, meta map[string]any) string {
@@ -275,10 +307,17 @@ func AuditResourceNameFromMeta(resourceType string, meta map[string]any) string 
 		return firstMetaString(meta, "node", "name")
 	case "ingress":
 		return firstMetaString(meta, "domain")
-	case "docker_registry":
+	case "tls_cert":
+		if names := metaJoinedNames(meta); names != "" {
+			return names
+		}
 		return firstMetaString(meta, "name")
+	case "ingress_domain_zone":
+		return firstMetaString(meta, "suffix", "display_name", "name")
+	case "docker_registry":
+		return firstMetaString(meta, "name", "server")
 	default:
-		return firstMetaString(meta, "project_name", "workspace_name", "name", "domain")
+		return firstMetaString(meta, "project_name", "workspace_name", "name", "domain", "suffix", "server")
 	}
 }
 

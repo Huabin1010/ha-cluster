@@ -921,17 +921,32 @@ SELECT a.id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.ip, a.
       )
       WHEN 'docker_registry' THEN COALESCE(
         NULLIF(TRIM(a.meta->>'name'), ''),
-        NULLIF(TRIM(dr.name), '')
+        NULLIF(TRIM(a.meta->>'server'), ''),
+        NULLIF(TRIM(dr.name), ''),
+        NULLIF(TRIM(dr.server), '')
       )
       WHEN 'ingress' THEN COALESCE(
         NULLIF(TRIM(a.meta->>'domain'), ''),
         NULLIF(TRIM(ir.domain), '')
       )
+      WHEN 'tls_cert' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'name'), ''),
+        NULLIF(TRIM(a.meta->'names'->>0), ''),
+        NULLIF(TRIM(tc.name), '')
+      )
+      WHEN 'ingress_domain_zone' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'suffix'), ''),
+        NULLIF(TRIM(a.meta->>'display_name'), ''),
+        NULLIF(TRIM(z.suffix), ''),
+        NULLIF(TRIM(z.display_name), '')
+      )
       ELSE COALESCE(
         NULLIF(TRIM(a.meta->>'project_name'), ''),
         NULLIF(TRIM(a.meta->>'workspace_name'), ''),
         NULLIF(TRIM(a.meta->>'name'), ''),
-        NULLIF(TRIM(a.meta->>'domain'), '')
+        NULLIF(TRIM(a.meta->>'domain'), ''),
+        NULLIF(TRIM(a.meta->>'suffix'), ''),
+        NULLIF(TRIM(a.meta->>'server'), '')
       )
     END,
     ''
@@ -944,6 +959,8 @@ LEFT JOIN users tu ON a.resource_type IN ('user', 'membership') AND tu.id::text 
 LEFT JOIN nodes n ON a.resource_type = 'node' AND n.id::text = a.resource_id
 LEFT JOIN docker_registries dr ON a.resource_type = 'docker_registry' AND dr.id::text = a.resource_id
 LEFT JOIN ingress_routes ir ON a.resource_type = 'ingress' AND ir.id::text = a.resource_id
+LEFT JOIN tls_certs tc ON a.resource_type = 'tls_cert' AND tc.id::text = a.resource_id
+LEFT JOIN ingress_domain_zones z ON a.resource_type = 'ingress_domain_zone' AND z.id::text = a.resource_id
 `
 
 func scanAuditRows(rows *sql.Rows) ([]models.AuditLog, error) {
