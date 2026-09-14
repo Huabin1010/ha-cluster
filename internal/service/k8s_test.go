@@ -93,6 +93,50 @@ metadata:
 	}
 }
 
+func TestDeveloperK8sRequestNeedsApproval(t *testing.T) {
+	app, owner := setupApp(t)
+	ctx := t.Context()
+	p, err := app.CreateProject(ctx, owner.ID, "k8s-appr", "k8s-appr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev, err := app.Register(ctx, "k8s-dev", "k8s-dev@example.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Store.AddMembership(ctx, models.Membership{
+		ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper, SSHAccess: models.SSHAccessGranted,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "k8s-need-ok", Plan: "nano", Arch: models.ArchAMD64,
+		Runtime: models.RuntimeK8s, Actor: *dev,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.Status != models.WSRequested || !models.IsK8sRuntime(ws.Runtime) {
+		t.Fatalf("developer k8s must wait for approval, got %+v", ws)
+	}
+	nodes, _ := app.Store.ListNodes(ctx)
+	if nodes[0].UsedMem != 0 {
+		t.Fatal("k8s request must not occupy capacity")
+	}
+	if _, err := app.ApproveWorkspace(ctx, *dev, ws.ID); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("developer cannot approve k8s, got %v", err)
+	}
+
+	got, err := app.ApproveWorkspace(ctx, *owner, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != models.WSRunning || !models.IsK8sRuntime(got.Runtime) || got.RuntimeRef == "" {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestCreateK8sWorkspaceNeedsTaggedNode(t *testing.T) {
 	app, owner := setupApp(t)
 	ctx := t.Context()

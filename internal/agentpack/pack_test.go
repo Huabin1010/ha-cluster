@@ -48,6 +48,12 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[WorkflowsPath], "/k8s/apply") || !strings.Contains(p.Files[APIRefPath], "runtime") {
 		t.Fatal("pack should document k8s apply")
 	}
+	if !strings.Contains(p.Files[WorkflowsPath], "审批链与 Docker 相同") {
+		t.Fatal("pack should say k8s uses the same approval as docker")
+	}
+	if !strings.Contains(p.Files[SkillPath], "审批与 Docker 相同") {
+		t.Fatal("skill should say k8s uses the same approval as docker")
+	}
 	if !strings.Contains(p.Files[SkillPath], "默认开 Docker + SSH") && !strings.Contains(p.Files[SkillPath], "runtime=container") {
 		t.Fatal("skill should default to compose/container")
 	}

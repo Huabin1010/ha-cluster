@@ -8,7 +8,7 @@
 
 **默认这条。** `GET /projects` → `POST /projects/{id}/workspaces` `{"name","plan":"2c2g","arch":"amd64","runtime":"container"}` → 若 `requested` 则 owner/admin `POST /workspaces/{id}/approve` → 轮询至 `running`。机子里用 `docker compose` 部署。
 
-仅当用户明确要 Kubernetes：同样路径加 `"runtime":"k8s"`（节点须带 `k3s`/`k8s`/`both`，否则 409）。等 running 后 `POST /workspaces/{id}/k8s/apply` `{yaml}`，`GET …/kubeconfig`，`GET …/k8s/resources`。k8s 工作区不要走 exec。
+仅当用户明确要 Kubernetes：同样路径加 `"runtime":"k8s"`（节点须带 `k3s`/`k8s`/`both`，否则 409）。**审批与 Docker 相同**（developer 待审，owner/admin 直建）。等 running 后 `POST /workspaces/{id}/k8s/apply` `{yaml}`，`GET …/kubeconfig`，`GET …/k8s/resources`。k8s 工作区不要走 exec。
 
 viewer 不能申请。`409 INSUFFICIENT_CAPACITY` 先清闲置机器。
 

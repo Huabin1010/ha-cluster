@@ -184,7 +184,7 @@
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
 - 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行
 - 机器详情：网页终端、HTTP 执行 curl、Ingress（含推荐 CNB 镜像仓库）、审计历史
-- **运行环境**：开通默认 **Docker + SSH（Compose 部署）**；用户需要时才选 Kubernetes。详情页粘贴 YAML apply、下载 kubeconfig、看资源列表（viewer 只读）
+- **运行环境**：开通默认 **Docker + SSH（Compose 部署）**；用户需要时才选 Kubernetes。详情页粘贴 YAML apply、下载 kubeconfig、看资源列表（viewer 只读）。**审批与 Docker 相同**：developer 提交后待审；owner / admin / `platform_admin` 直建，不必再审
 
 ### 快捷键
 
@@ -243,7 +243,7 @@
 角色门：
 
 - viewer 不能申请机器
-- developer 创建通常需审批；owner/admin 可直建
+- developer 创建（含 Kubernetes）需审批；owner/admin 可直建
 - 升配：admin 可直接生效（视实现），降配一律审批
 - SSH：成员 + `ssh_access=granted` + 机器 running/fabric_degraded；否则只显示申请入口
 - 销毁：项目 admin 初审 → 平台终审（`nav-dangerous`）

@@ -55,7 +55,7 @@
 |---|---|---|
 | GET | `/workspaces` | `?project_id=` |
 | GET | `/workspaces/{id}` | |
-| POST | `/projects/{id}/workspaces` | `{name,plan,arch,visibility,runtime?,cpu_milli?,mem_bytes?,disk_bytes?}`；默认不写或 `container`（Docker Compose）；用户要 k8s 才 `runtime=k8s` |
+| POST | `/projects/{id}/workspaces` | `{name,plan,arch,visibility,runtime?,cpu_milli?,mem_bytes?,disk_bytes?}`；默认不写或 `container`（Docker Compose）；用户要 k8s 才 `runtime=k8s`。developer 一律 `requested`（含 k8s）；owner/admin 直建 |
 | POST | `/workspaces/{id}/approve` | admin；`requested`→开通 |
 | POST | `/workspaces/{id}/reject` | `{reason?}` |
 | POST | `/workspaces/{id}/stop` `/start` | |

@@ -154,8 +154,12 @@ export function CreateForm({
           <DialogTitle>{canApprove ? "开通服务器" : "申请服务器"}</DialogTitle>
           <DialogDescription>
             {canApprove
-              ? "选择套餐后开通隔离机器。示例规格 2c2g = 2 核 / 2GiB 内存 / 5GiB 盘。停止后仍占配额。"
-              : "提交申请后由项目管理员审批。通过后才会占用配额并创建机器。开通后可再申请扩容（硬盘不能缩小）。"}
+              ? runtime === "k8s"
+                ? "项目管理员开通 Kubernetes 无需再审，立即建 Namespace。停止后仍占配额。"
+                : "选择套餐后开通隔离机器。示例规格 2c2g = 2 核 / 2GiB 内存 / 5GiB 盘。停止后仍占配额。"
+              : runtime === "k8s"
+                ? "Kubernetes 与 Docker 一样需要项目管理员审批。通过后才会占用配额并创建 Namespace。"
+                : "提交申请后由项目管理员审批。通过后才会占用配额并创建机器。开通后可再申请扩容（硬盘不能缩小）。"}
           </DialogDescription>
         </DialogHeader>
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>

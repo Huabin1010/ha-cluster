@@ -1,6 +1,6 @@
 import { test, expect } from "../fixtures/auth";
 import { api } from "../helpers/api";
-import { seedProject, seedWorkspace } from "../fixtures/seed";
+import { seedProject, seedProjectWithMembers, seedWorkspace } from "../fixtures/seed";
 import { openCreateDialog, chooseSelect } from "../helpers/dialog";
 
 const DEMO_YAML = `apiVersion: apps/v1
@@ -73,5 +73,48 @@ test.describe("PW-4 Kubernetes 工作区", () => {
     await page.getByTestId("ws-k8s-apply").click();
     await expect(page.getByTestId("ws-k8s-resources")).toContainText("e2e-web");
     await expect(page.getByTestId("ws-k8s-kubeconfig")).toBeEnabled();
+  });
+
+  test("PW4-k8s-approve @pw4 developer 申请 Kubernetes 后 owner 批准", async ({ pageAs }) => {
+    await api.heartbeat({
+      name: `e2e-k3s-appr-${Date.now()}`,
+      arch: "amd64",
+      role: "worker",
+      ready: true,
+      fabric_ip: "10.88.0.222",
+      allocatable_cpu_milli: 8000,
+      allocatable_mem_bytes: 8 * 1024 * 1024 * 1024,
+      allocatable_disk_bytes: 200 * 1024 * 1024 * 1024,
+      tags: ["k3s"],
+    });
+
+    const { tokens: ownerTokens, page: ownerPage } = await pageAs("owner");
+    const p = await seedProjectWithMembers(ownerTokens.token, "ws-k8s-appr");
+
+    const { page: devPage } = await pageAs("dev");
+    await devPage.goto(`/workspaces?project_id=${p.id}`);
+    await openCreateDialog(devPage, "ws-create");
+    await chooseSelect(devPage, "ws-plan-select", "nano");
+    await chooseSelect(devPage, "ws-arch-select", "amd64");
+    await chooseSelect(devPage, "ws-create-runtime", "k8s");
+    await devPage.getByTestId("ws-name-input").fill("k8s-need-ok");
+    await devPage.getByTestId("ws-submit").click();
+
+    const devRow = devPage.locator('[data-testid="ws-row"]', { hasText: "k8s-need-ok" });
+    await expect(devRow).toBeVisible();
+    await expect(devRow).toHaveAttribute("data-status", "requested");
+    await expect(devRow).toContainText("Kubernetes");
+    await expect(devRow.getByTestId("ws-approve")).not.toBeVisible();
+
+    await ownerPage.goto(`/workspaces?project_id=${p.id}`);
+    const ownerRow = ownerPage.locator('[data-testid="ws-row"]', { hasText: "k8s-need-ok" });
+    await expect(ownerRow).toBeVisible();
+    await ownerRow.getByTestId("ws-approve").click();
+    await expect(ownerRow).toHaveAttribute("data-status", "running", { timeout: 30_000 });
+    await expect(ownerRow).toContainText("Kubernetes");
+
+    await ownerRow.getByTestId("ws-manage").click();
+    await expect(ownerPage).toHaveURL(/\/workspaces\/.+\/k8s/);
+    await expect(ownerPage.getByTestId("ws-k8s-yaml")).toBeVisible();
   });
 });

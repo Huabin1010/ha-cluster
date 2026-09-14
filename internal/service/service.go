@@ -225,7 +225,7 @@ func (a *App) requestWorkspace(ctx context.Context, in CreateWorkspaceInput, spe
 		ActorUserID: in.Actor.ID, Action: "workspace.request",
 		ResourceType: "workspace", ResourceID: w.ID.String(),
 		Meta: map[string]any{
-			"workspace_name": in.Name, "plan": spec.Name, "arch": in.Arch,
+			"workspace_name": in.Name, "plan": spec.Name, "arch": in.Arch, "runtime": in.Runtime,
 			"cpu_milli": spec.CPUMilli, "mem_bytes": spec.MemBytes, "disk_bytes": spec.DiskBytes,
 		},
 	})

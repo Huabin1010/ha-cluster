@@ -193,7 +193,7 @@ developer 发起申请（选择套餐、架构、名称）
 ```
 
 - **`viewer` 不能申请机器**（只读角色）；须先被提升为 `developer` 或具备相应权限。
-- **`owner` / `admin` 在控制台直建**：可 **免审**，立即 Reserve + Provisioning（便于管理员自用排障）。
+- **`owner` / `admin` 在控制台直建**：可 **免审**，立即 Reserve + Provisioning（便于管理员自用排障）。**Kubernetes 与 Docker + SSH 同一套审批**：developer 选 `runtime=k8s` 仍进 `requested`；owner/admin 直建立即建 Namespace。
 - 审批前只做 **项目预算校验**，**不扣**全局池；**审批通过后**才硬占用并 **自动安装** 工作区（用户无需 SSH 进宿主机手工装环境）。
 
 ```mermaid

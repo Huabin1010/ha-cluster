@@ -13,16 +13,16 @@ POST /projects/{pid}/workspaces
   {"name":"dev-1","plan":"2c2g","arch":"amd64","visibility":"shared","runtime":"container"}
 ```
 
-仅当用户明确要 Kubernetes（需节点带 `k3s` / `k8s` / `both` 标签，否则 `409 INSUFFICIENT_CAPACITY`）：
+仅当用户明确要 Kubernetes（需节点带 `k3s` / `k8s` / `both` 标签，否则 `409 INSUFFICIENT_CAPACITY`）。**审批链与 Docker 相同，不是免审。**
 
 ```
 POST /projects/{pid}/workspaces
   {"name":"k8s-1","plan":"nano","arch":"amd64","visibility":"shared","runtime":"k8s"}
 ```
 
-- 自己是 owner/admin：可能直接进入开通，轮询 `GET /workspaces/{id}` 直到 `running`（通常 <90s）。
+- 自己是 owner/admin / `platform_admin`：直接开通，轮询 `GET /workspaces/{id}` 直到 `running`（通常 <90s）。
 - 自己是 developer：`status=requested`，请项目 owner/admin：
-  `POST /workspaces/{id}/approve`
+  `POST /workspaces/{id}/approve`（Docker 与 Kubernetes 相同）
 - viewer：403，停止。
 
 容量不够：`409 INSUFFICIENT_CAPACITY`。先让用户停/销毁闲置机器，或换小套餐。
