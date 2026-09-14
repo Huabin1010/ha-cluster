@@ -232,7 +232,7 @@ export function ProjectsPage() {
               className="rounded-2xl border border-border/80 bg-surface-1 shadow-surface-2 overflow-hidden flex flex-col"
             >
               <div className="w-full overflow-x-auto">
-                <Table className="min-w-[1040px]">
+                <Table stackOnMobile={false} className="min-w-[1040px]">
                   <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                     <TableRow className="border-b border-border/60 hover:bg-transparent">
                       <TableHead className="w-[180px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">

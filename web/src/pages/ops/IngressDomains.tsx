@@ -18,11 +18,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
 import { Elevated } from "@/lib/elevated";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
+import { useIsMd } from "@/hooks/use-media-query";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -219,6 +221,39 @@ export function IngressDomainsPage() {
   }
 
   const freeCount = rows.filter((r) => !r.require_approval && r.enabled).length;
+  const isMd = useIsMd();
+  const metricsBar = (
+            <div className="grid grid-cols-2 gap-1.5 md:gap-3">
+              <Elevated
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-2 md:p-3.5 shadow-surface-1 flex flex-col justify-between"
+              >
+                <span className="text-[10px] md:text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                  <Globe className="size-3.5 text-primary shrink-0" />
+                  <span className="md:hidden">后缀</span>
+                  <span className="hidden md:inline">已配置后缀</span>
+                </span>
+                <div className="text-sm md:text-xl font-bold tracking-tight text-foreground font-mono mt-0.5 md:mt-1">
+                  {rows.length} <span className="text-[10px] md:text-xs font-normal text-muted-foreground">个</span>
+                </div>
+              </Elevated>
+              <Elevated
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-2 md:p-3.5 shadow-surface-1 flex flex-col justify-between"
+              >
+                <span className="text-[10px] md:text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                  <span className="md:hidden">免审</span>
+                  <span className="hidden md:inline">启用中的免审域</span>
+                </span>
+                <div className="text-sm md:text-xl font-bold tracking-tight text-foreground font-mono mt-0.5 md:mt-1">
+                  {freeCount} <span className="text-[10px] md:text-xs font-normal text-muted-foreground">个</span>
+                </div>
+              </Elevated>
+            </div>
+  );
 
   return (
     <>
@@ -237,7 +272,7 @@ export function IngressDomainsPage() {
             }
             description="配置平台域名后缀，并为公共域自动签发 / 续期 HTTPS 通配符证书。用户领取的 *.apps 子域出厂带绿锁。"
             actions={
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
                 <Button
                   type="button"
                   variant="outline"
@@ -337,32 +372,7 @@ export function IngressDomainsPage() {
               </div>
             }
           >
-            <div className="grid grid-cols-2 gap-3">
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
-              >
-                <span className="text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
-                  <Globe className="size-3.5 text-primary shrink-0" /> 已配置后缀
-                </span>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {rows.length} <span className="text-xs font-normal text-muted-foreground">个</span>
-                </div>
-              </Elevated>
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
-              >
-                <span className="text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
-                  <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" /> 启用中的免审域
-                </span>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {freeCount} <span className="text-xs font-normal text-muted-foreground">个</span>
-                </div>
-              </Elevated>
-            </div>
+            {isMd ? metricsBar : null}
           </PageHeading>
         }
       >
@@ -372,13 +382,14 @@ export function IngressDomainsPage() {
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-6">
+            {!isMd ? metricsBar : null}
             <section className="shrink-0 grid gap-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="m-0 text-sm font-semibold text-foreground inline-flex items-center gap-1.5">
                   <ShieldCheck className="size-4 shrink-0 text-primary" />
                   HTTPS 证书
                 </h3>
-                <p className="m-0 text-xs text-muted-foreground break-words min-w-0">
+                <p className="m-0 hidden text-xs text-muted-foreground break-words min-w-0 md:block">
                   ACME DNS-01 通配符证书，到期前 30 天自动续期。签发后写入平台并挂到入口 HTTPS。
                 </p>
               </div>
@@ -386,7 +397,9 @@ export function IngressDomainsPage() {
                 <p className="m-0 text-sm text-muted-foreground">添加启用中的域名后缀后，会自动登记通配符证书。</p>
               ) : (
                 <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-                  <Table data-testid="tls-cert-table" className="min-w-[720px]">
+                  <ResponsiveList
+                    table={
+                  <Table data-testid="tls-cert-table" stackOnMobile={false} className="min-w-[720px]">
                     <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
                       <TableRow className="hover:bg-transparent">
                         <TableHead className="py-2.5">覆盖域名</TableHead>
@@ -439,6 +452,49 @@ export function IngressDomainsPage() {
                       })}
                     </TableBody>
                   </Table>
+                    }
+                    cards={certs.map((c) => {
+                      const st = tlsStatusLabel(c.status, c.not_after);
+                      return (
+                        <ListCard key={c.id} data-testid="tls-cert-row">
+                          <ListCardHeader
+                            title={<span className="font-mono truncate">{c.name}</span>}
+                            trailing={
+                              <Badge variant={st.variant} className="inline-flex items-center whitespace-nowrap shrink-0">
+                                {st.text}
+                              </Badge>
+                            }
+                          />
+                          <ListCardMeta>
+                            <span className="inline-flex items-center gap-1 shrink-0">
+                              {c.auto_renew ? "自动续期" : "已关闭自动续期"}
+                              {c.issuer ? ` · ${c.issuer}` : ""}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 shrink-0">
+                              <Clock className="size-3 opacity-60 shrink-0" />
+                              {c.not_after ? new Date(c.not_after).toLocaleString("zh-CN") : "—"}
+                            </span>
+                          </ListCardMeta>
+                          {c.last_error ? (
+                            <p className="m-0 mt-2 text-xs text-destructive break-words min-w-0">{c.last_error}</p>
+                          ) : null}
+                          <ListCardActions>
+                            <Button
+                              type="button"
+                              size="compact"
+                              variant="outline"
+                              data-testid="tls-cert-issue"
+                              disabled={issuing === c.id}
+                              className="h-7 px-2 text-xs inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                              onClick={() => void issueCert(c.id)}
+                            >
+                              {issuing === c.id ? "签发中…" : c.status === "issued" ? "立即续期" : "立即签发"}
+                            </Button>
+                          </ListCardActions>
+                        </ListCard>
+                      );
+                    })}
+                  />
                 </div>
               )}
             </section>
@@ -461,8 +517,10 @@ export function IngressDomainsPage() {
             </Elevated>
           </div>
         ) : (
+          <ResponsiveList
+            table={
           <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-            <Table data-testid="ing-zone-table" className="min-w-[720px]">
+            <Table data-testid="ing-zone-table" stackOnMobile={false} className="min-w-[720px]">
               <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                 <TableRow className="border-b border-border/60 hover:bg-transparent">
                   <TableHead className="py-2.5">名称 / 后缀</TableHead>
@@ -535,6 +593,57 @@ export function IngressDomainsPage() {
               </TableBody>
             </Table>
           </div>
+            }
+            cards={rows.map((row) => (
+              <ListCard key={row.id} data-testid="ing-zone-row">
+                <ListCardHeader
+                  title={row.display_name || row.suffix}
+                  trailing={
+                    <Badge variant={row.enabled ? "ok" : "outline"} className="inline-flex items-center whitespace-nowrap shrink-0">
+                      {row.enabled ? "启用" : "停用"}
+                    </Badge>
+                  }
+                />
+                <ListCardMeta>
+                  <span className="font-mono truncate">*.{row.suffix}</span>
+                  <Badge variant={row.require_approval ? "warn" : "ok"} className="inline-flex items-center whitespace-nowrap shrink-0">
+                    {row.require_approval ? "需审批" : "免审"}
+                  </Badge>
+                  <span className="inline-flex items-center gap-1 shrink-0">
+                    {row.require_approval
+                      ? "申请前缀"
+                      : [row.allow_random ? "随机" : null, row.allow_custom_prefix ? "自定义" : null]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                  </span>
+                </ListCardMeta>
+                <ListCardActions>
+                  <Button
+                    type="button"
+                    size="compact"
+                    variant="outline"
+                    className="h-7 px-2 text-xs shrink-0"
+                    data-testid="ing-zone-toggle"
+                    onClick={() => void toggleEnabled(row)}
+                  >
+                    {row.enabled ? "停用" : "启用"}
+                  </Button>
+                  <Hint label="删除">
+                    <Button
+                      type="button"
+                      size="compact"
+                      variant="ghost"
+                      className="size-7 p-0 shrink-0 text-destructive"
+                      data-testid="ing-zone-delete"
+                      onClick={() => setDeleteTarget(row)}
+                    >
+                      <Trash2 className="size-3.5 shrink-0" />
+                    </Button>
+                  </Hint>
+                </ListCardActions>
+              </ListCard>
+            ))}
+          />
         )}
           </div>
         )}

@@ -19,11 +19,13 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
 import { Elevated } from "@/lib/elevated";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
+import { useIsMd } from "@/hooks/use-media-query";
 import { toast } from "sonner";
 import { PREFERRED_REGISTRY, isPreferredRegistry } from "@/lib/preferred-registry";
 import {
@@ -176,6 +178,39 @@ export function DockerRegistriesPage() {
   }
 
   const activeInjectCount = rows.filter((r) => r.auto_inject).length;
+  const isMd = useIsMd();
+  const metricsBar = (
+            <div className="grid grid-cols-2 gap-1.5 md:gap-3">
+              <Elevated
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-2 md:p-3.5 shadow-surface-1 flex flex-col justify-between"
+              >
+                <span className="text-[10px] md:text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                  <Layers className="size-3.5 text-primary" />
+                  <span className="md:hidden">仓库</span>
+                  <span className="hidden md:inline">已配置私有 Registry</span>
+                </span>
+                <div className="text-sm md:text-xl font-bold tracking-tight text-foreground font-mono mt-0.5 md:mt-1">
+                  {rows.length} <span className="text-[10px] md:text-xs font-normal text-muted-foreground">个</span>
+                </div>
+              </Elevated>
+              <Elevated
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-2 md:p-3.5 shadow-surface-1 flex flex-col justify-between"
+              >
+                <span className="text-[10px] md:text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="size-3.5 text-emerald-500" />
+                  <span className="md:hidden">注入</span>
+                  <span className="hidden md:inline">已启用自动注入</span>
+                </span>
+                <div className="text-sm md:text-xl font-bold tracking-tight text-foreground font-mono mt-0.5 md:mt-1">
+                  {activeInjectCount} <span className="text-[10px] md:text-xs font-normal text-muted-foreground">个</span>
+                </div>
+              </Elevated>
+            </div>
+  );
 
   return (
     <>
@@ -191,7 +226,7 @@ export function DockerRegistriesPage() {
             }
             description={`配置私有或内网 Docker Registry 认证凭据。推送与部署优先推荐 ${PREFERRED_REGISTRY.name}（${PREFERRED_REGISTRY.server}）。开启自动注入后，新开通的工作区可直接拉取/推送该仓库。`}
             actions={
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
                 <Button
                   type="button"
                   variant="outline"
@@ -303,41 +338,11 @@ export function DockerRegistriesPage() {
             }
           >
 
-            {/* 指标条 */}
-            <div className="grid grid-cols-2 gap-3">
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <Layers className="size-3.5 text-primary" /> 已配置私有 Registry
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {rows.length} <span className="text-xs font-normal text-muted-foreground">个</span>
-                </div>
-              </Elevated>
-
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <CheckCircle2 className="size-3.5 text-emerald-500" /> 已启用自动注入
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {activeInjectCount} <span className="text-xs font-normal text-muted-foreground">个</span>
-                </div>
-              </Elevated>
-            </div>
+            {isMd ? metricsBar : null}
           </PageHeading>
         }
       >
+        {!isMd ? <div className="mb-3">{metricsBar}</div> : null}
         {loading ? (
           <div className="py-12 text-center">
             <Loading label="加载镜像仓库配置…" />
@@ -361,8 +366,10 @@ export function DockerRegistriesPage() {
             </Elevated>
           </div>
         ) : (
+          <ResponsiveList
+            table={
           <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-            <Table data-testid="registries-table" className="min-w-[780px]">
+            <Table data-testid="registries-table" stackOnMobile={false} className="min-w-[780px]">
               <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
                 <TableRow className="border-b border-border/60 hover:bg-transparent">
                   <TableHead className="py-2.5">
@@ -477,6 +484,76 @@ export function DockerRegistriesPage() {
               </TableBody>
             </Table>
           </div>
+            }
+            cards={rows.map((r) => (
+              <ListCard key={r.id} data-testid="registries-row">
+                <ListCardHeader
+                  leading={
+                    <span
+                      className={`size-2 rounded-full shrink-0 ${
+                        r.auto_inject
+                          ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.45)]"
+                          : "bg-muted-foreground/40"
+                      }`}
+                    />
+                  }
+                  title={
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <span className="truncate">{r.name}</span>
+                      {isPreferredRegistry(r.server) ? (
+                        <Badge variant="ok" className="inline-flex items-center whitespace-nowrap shrink-0">
+                          推荐
+                        </Badge>
+                      ) : null}
+                    </span>
+                  }
+                />
+                <ListCardMeta className="text-foreground">
+                  <span className="inline-flex min-w-0 items-center gap-1 font-mono">
+                    <Globe className="size-3 opacity-60 shrink-0" />
+                    <span className="truncate">{r.server}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 font-mono">
+                    <User className="size-3 opacity-60 shrink-0" />
+                    {r.username || "（匿名访问）"}
+                  </span>
+                  <Badge
+                    variant={r.auto_inject ? "ok" : "outline"}
+                    data-testid="registries-inject-toggle"
+                    className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                    onClick={() => void toggleInject(r)}
+                  >
+                    {r.auto_inject ? "已启用" : "未注入"}
+                  </Badge>
+                </ListCardMeta>
+                <ListCardActions>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="compact"
+                    data-testid="registries-test"
+                    disabled={testingId === r.id}
+                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs px-2"
+                    onClick={() => void testRow(r)}
+                  >
+                    <Play className="size-3 text-primary shrink-0" />
+                    {testingId === r.id ? "测试中…" : "测连通"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="compact"
+                    data-testid="registries-delete"
+                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs px-2"
+                    onClick={() => setDeleteTarget(r)}
+                  >
+                    <Trash2 className="size-3.5 shrink-0" />
+                    删除
+                  </Button>
+                </ListCardActions>
+              </ListCard>
+            ))}
+          />
         )}
       </PageFrame>
 

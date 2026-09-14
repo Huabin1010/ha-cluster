@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Hint, Tooltip } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
@@ -328,8 +329,10 @@ export function UsersPage() {
             </Elevated>
           </div>
         ) : (
-          <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-            <Table data-testid="users-table" className="min-w-[1080px]">
+          <ResponsiveList
+            table={
+              <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
+            <Table data-testid="users-table" stackOnMobile={false} className="min-w-[1080px]">
               <TableHeader className="sticky top-0 z-20 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                 <TableRow className="border-b border-border/60 hover:bg-transparent">
                   <TableHead className="py-2.5">
@@ -445,7 +448,87 @@ export function UsersPage() {
                 ))}
               </TableBody>
             </Table>
-          </div>
+              </div>
+            }
+            cards={pager.slice.map((u) => (
+              <ListCard key={u.id} data-testid="users-row">
+                <ListCardHeader
+                  leading={
+                    <span className="inline-flex items-center gap-2 shrink-0">
+                      <span className={cn("size-2 rounded-full shrink-0", statusDotClass(u.status))} />
+                      <span className="size-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[11px] shrink-0 border border-primary/20">
+                        {(u.display_name || u.username).slice(0, 1).toUpperCase()}
+                      </span>
+                    </span>
+                  }
+                  title={u.username}
+                  trailing={
+                    <Hint label={u.status || "—"} className="font-mono">
+                      {u.status === "suspended" || u.status === "deleted" ? (
+                        <Badge variant="danger" className="inline-flex items-center whitespace-nowrap shrink-0">
+                          {userStatusLabel(u.status)}
+                        </Badge>
+                      ) : (
+                        <Badge variant="ok" className="inline-flex items-center whitespace-nowrap shrink-0">
+                          {userStatusLabel(u.status)}
+                        </Badge>
+                      )}
+                    </Hint>
+                  }
+                />
+                <ListCardMeta className="text-foreground">
+                  {u.display_name?.trim() ? (
+                    <span className="inline-flex items-center gap-1 shrink-0">
+                      <UserCog className="size-3 opacity-60 shrink-0" />
+                      {u.display_name}
+                    </span>
+                  ) : null}
+                  {u.email ? (
+                    <span className="inline-flex min-w-0 items-center gap-1">
+                      <Mail className="size-3 opacity-60 shrink-0" />
+                      <span className="truncate">{u.email}</span>
+                    </span>
+                  ) : null}
+                  <Hint label={u.platform_role || "—"} className="font-mono">
+                    {platformRoleBadge(u.platform_role)}
+                  </Hint>
+                  <span className="inline-flex items-center gap-1 shrink-0">
+                    <Clock className="size-3 opacity-60 shrink-0" />
+                    {fmtTime(u.created_at)}
+                  </span>
+                </ListCardMeta>
+                <div className="mt-2">
+                  <UserProjectsCell projects={u.projects ?? []} />
+                </div>
+                <ListCardActions>
+                  <Hint label="复制 ID">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="compact"
+                      className="size-7 p-0 shrink-0"
+                      data-testid="users-copy-id"
+                      onClick={() => void copyId(u.id)}
+                    >
+                      {copiedId === u.id ? (
+                        <Check className="size-3.5 text-emerald-500 shrink-0" />
+                      ) : (
+                        <Copy className="size-3.5 opacity-60 shrink-0" />
+                      )}
+                    </Button>
+                  </Hint>
+                  <UserRowActions
+                    user={u}
+                    isSelf={me?.id === u.id}
+                    onAction={(kind, target) => {
+                      setActionUser(target);
+                      setAction(kind);
+                    }}
+                  />
+                </ListCardActions>
+              </ListCard>
+            ))}
+          />
         )}
       </PageFrame>
 

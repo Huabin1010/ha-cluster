@@ -34,10 +34,12 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Hint } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
 import { Paginator } from "@/components/ui/pagination";
 import { Elevated } from "@/lib/elevated";
+import { useIsMd } from "@/hooks/use-media-query";
 import { Empty, PageBody, PageHeader } from "@/ui";
 import { fmtBytes } from "@/pages/ops/format";
 import { copyText } from "@/ui/format";
@@ -251,6 +253,37 @@ export function NodesPage() {
   const degradedCount = rows.filter((n) => n.health_status === "degraded").length;
   const offlineCount = rows.filter((n) => n.health_status === "offline" || (!n.ready && n.health_status !== "degraded")).length;
   const oomRisk = rows.filter((n) => isHostPressure(hostMemMeter(n))).length;
+  const isMd = useIsMd();
+
+  const metricsBar =
+    rows.length > 0 ? (
+      <div className="grid grid-cols-4 gap-1.5 md:gap-3" data-testid="nodes-metrics-cards">
+        {(
+          [
+            { short: "在线", label: "在线 Ready", value: readyCount, icon: CheckCircle2, iconClass: "text-emerald-500", valueClass: "text-foreground" },
+            { short: "降级", label: "网络降级", value: degradedCount, icon: AlertTriangle, iconClass: "text-amber-500", valueClass: "text-amber-500" },
+            { short: "离线", label: "离线节点", value: offlineCount, icon: WifiOff, iconClass: "text-rose-500", valueClass: "text-rose-500" },
+            { short: "预警", label: "内存预警", value: oomRisk, icon: Activity, iconClass: "text-primary", valueClass: "text-foreground" },
+          ] as const
+        ).map((stat) => (
+          <Elevated
+            key={stat.short}
+            offset={1}
+            shadowLevel={1}
+            className="rounded-xl border border-border bg-background p-2 md:p-3.5 shadow-xs flex min-w-0 flex-col justify-between"
+          >
+            <span className="text-[10px] md:text-xs font-medium text-muted-foreground inline-flex items-center gap-1 md:gap-1.5 min-w-0">
+              <stat.icon className={`size-3 md:size-3.5 shrink-0 ${stat.iconClass}`} />
+              <span className="truncate md:hidden">{stat.short}</span>
+              <span className="hidden md:inline truncate">{stat.label}</span>
+            </span>
+            <div className={`text-sm md:text-xl font-bold tracking-tight font-mono mt-0.5 md:mt-1 ${stat.valueClass}`}>
+              {stat.value} <span className="text-[10px] md:text-xs font-normal text-muted-foreground">台</span>
+            </div>
+          </Elevated>
+        ))}
+      </div>
+    ) : null;
 
   return (
     <PageFrame
@@ -277,7 +310,7 @@ export function NodesPage() {
           }
           description="在线与离线 worker 一并列出；离线行会标红，方便对账和排障。"
           actions={
-            <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-background p-1 shadow-xs w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-background p-1 shadow-xs shrink-0">
               <Button
                 type="button"
                 variant="ghost"
@@ -464,70 +497,7 @@ export function NodesPage() {
           }
         >
 
-          {/* 指标卡片条 */}
-          {rows.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="nodes-metrics-cards">
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border bg-background p-3.5 shadow-xs flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <CheckCircle2 className="size-3.5 text-emerald-500" /> 在线 Ready
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {readyCount} <span className="text-xs font-normal text-muted-foreground">台</span>
-                </div>
-              </Elevated>
-
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border bg-background p-3.5 shadow-xs flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <AlertTriangle className="size-3.5 text-amber-500" /> 网络降级
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-amber-500 font-mono mt-1">
-                  {degradedCount} <span className="text-xs font-normal text-muted-foreground">台</span>
-                </div>
-              </Elevated>
-
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border bg-background p-3.5 shadow-xs flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <WifiOff className="size-3.5 text-rose-500" /> 离线节点
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-rose-500 font-mono mt-1">
-                  {offlineCount} <span className="text-xs font-normal text-muted-foreground">台</span>
-                </div>
-              </Elevated>
-
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border bg-background p-3.5 shadow-xs flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <Activity className="size-3.5 text-primary" /> 内存预警
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {oomRisk} <span className="text-xs font-normal text-muted-foreground">台</span>
-                </div>
-              </Elevated>
-            </div>
-          )}
+          {isMd ? metricsBar : null}
         </PageHeading>
       }
       footer={
@@ -542,6 +512,7 @@ export function NodesPage() {
       }
     >
       <PageBody loading={isLoading}>
+        {!isMd && metricsBar ? <div className="mb-3">{metricsBar}</div> : null}
         {rows.length === 0 ? (
           <div className="py-8 flex flex-col items-center justify-center">
             <Elevated
@@ -561,8 +532,10 @@ export function NodesPage() {
             </Elevated>
           </div>
         ) : (
+          <ResponsiveList
+            table={
           <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-            <Table className="min-w-[960px]">
+            <Table stackOnMobile={false} className="min-w-[960px]">
               <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                 <TableRow className="border-b border-border/60 hover:bg-transparent">
                   <TableHead className="py-2.5 text-muted-foreground">
@@ -662,6 +635,48 @@ export function NodesPage() {
               </TableBody>
             </Table>
           </div>
+            }
+            cards={pager.slice.map((n) => (
+              <ListCard key={n.id} data-testid="node-row" className={nodeRowClass(n)}>
+                <ListCardHeader
+                  leading={<span className={cn("size-2 rounded-full shrink-0 transition-all", nodeStatusDot(n))} />}
+                  title={n.name}
+                  trailing={
+                    <Hint label={`path: ${n.fabric_path || "direct"}`}>
+                      <Badge variant={healthVariant(n)} data-testid="node-ready">
+                        {healthLabel(n)}
+                      </Badge>
+                    </Hint>
+                  }
+                />
+                <ListCardMeta className="text-foreground">
+                  <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                    <Cpu className="size-3 opacity-60 shrink-0" />
+                    {n.arch}
+                  </span>
+                  <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                    <Globe className="size-3 opacity-60 shrink-0" />
+                    {n.fabric_ip || "—"}
+                  </span>
+                  <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                    <Gauge className="size-3 opacity-60 shrink-0" />
+                    {n.cpu_usage_pct != null ? `${n.cpu_usage_pct.toFixed(1)}%` : "—"}
+                  </span>
+                  <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                    <Activity className="size-3 opacity-60 shrink-0" />
+                    {n.fabric_rtt_ms != null ? `${n.fabric_rtt_ms} ms` : "—"}
+                  </span>
+                </ListCardMeta>
+                <div className="mt-3 flex flex-col gap-1.5">
+                  <ResourceMeter icon={MemoryStick} meter={hostMemMeter(n)} warn={isHostPressure(hostMemMeter(n))} testId="node-mem" />
+                  <ResourceMeter icon={HardDrive} meter={hostDiskMeter(n)} warn={isHostPressure(hostDiskMeter(n))} testId="node-disk" />
+                  {isHostPressure(hostMemMeter(n)) && (
+                    <Badge variant="danger" className="w-fit text-[10px] px-1.5 py-0">OOM 风险</Badge>
+                  )}
+                </div>
+              </ListCard>
+            ))}
+          />
         )}
       </PageBody>
     </PageFrame>

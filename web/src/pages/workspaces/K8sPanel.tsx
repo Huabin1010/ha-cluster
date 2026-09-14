@@ -340,7 +340,7 @@ export function K8sPanel({
 
             {status.deployments.length > 0 && (
               <div className="w-full overflow-x-auto rounded-xl border border-border/80" data-testid="ws-k8s-deployments">
-                <Table>
+                <Table stackOnMobile={false}>
                   <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
                     <TableRow>
                       <TableHead className="min-w-0">Deployment</TableHead>
@@ -378,7 +378,7 @@ export function K8sPanel({
 
             {status.replica_sets.length > 0 && (
               <div className="w-full overflow-x-auto rounded-xl border border-border/80">
-                <Table>
+                <Table stackOnMobile={false}>
                   <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
                     <TableRow>
                       <TableHead className="min-w-0">ReplicaSet</TableHead>
@@ -421,7 +421,7 @@ export function K8sPanel({
             )}
 
             <div className="w-full overflow-x-auto rounded-xl border border-border/80" data-testid="ws-k8s-pods">
-              <Table>
+              <Table stackOnMobile={false}>
                 <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
                   <TableRow>
                     <TableHead className="min-w-0">Pod</TableHead>
@@ -466,7 +466,7 @@ export function K8sPanel({
 
             {warningEvents.length > 0 && (
               <div className="w-full overflow-x-auto rounded-xl border border-border/80">
-                <Table>
+                <Table stackOnMobile={false}>
                   <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
                     <TableRow>
                       <TableHead className="w-[140px] whitespace-nowrap">当前事件</TableHead>
@@ -493,7 +493,7 @@ export function K8sPanel({
 
             {historyEvents.length > 0 && (
               <div className="w-full overflow-x-auto rounded-xl border border-border/80" data-testid="ws-k8s-history-events">
-                <Table>
+                <Table stackOnMobile={false}>
                   <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
                     <TableRow>
                       <TableHead className="w-[140px] whitespace-nowrap">历史事件</TableHead>
@@ -520,7 +520,7 @@ export function K8sPanel({
           </div>
 
           <div className="w-full overflow-x-auto rounded-xl border border-border/80" data-testid="ws-k8s-resources">
-            <Table>
+            <Table stackOnMobile={false}>
               <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs">
                 <TableRow>
                   <TableHead className="w-[140px] whitespace-nowrap">Kind</TableHead>

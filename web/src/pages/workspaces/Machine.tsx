@@ -54,6 +54,7 @@ import { SelectBox } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { PageFrame } from "@/components/ui/page-frame";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { Loading, useToast } from "@/ui";
 import { copyText, formatTime } from "@/ui/format";
 import { actionLabel } from "@/pages/ops/format";
@@ -1189,7 +1190,9 @@ export function MachinePage() {
                 </div>
               ) : (
                 <div className="w-full overflow-x-auto rounded-xl border border-border/80">
-                  <Table data-testid="ing-table" className="min-w-[640px]">
+                  <ResponsiveList
+                    table={
+                  <Table data-testid="ing-table" stackOnMobile={false} className="min-w-[640px]">
                     <TableHeader className="sticky top-0 z-20 bg-surface-2/80 backdrop-blur-xs">
                       <TableRow>
                         <TableHead className="min-w-0">域名</TableHead>
@@ -1276,6 +1279,50 @@ export function MachinePage() {
                       })}
                     </TableBody>
                   </Table>
+                    }
+                    cards={routes.map((rt) => {
+                      const presetLabel = meta?.presets?.find((p) => p.id === rt.preset)?.label ?? rt.preset;
+                      return (
+                        <ListCard key={rt.id} data-testid="ing-row">
+                          <ListCardHeader
+                            title={<span className="truncate font-medium">{rt.domain}</span>}
+                            trailing={
+                              <Badge variant={ingressStatusVariant(rt.status)} className="inline-flex items-center whitespace-nowrap shrink-0">
+                                <Hint label={rt.status}>{ingressStatusLabel(rt.status)}</Hint>
+                              </Badge>
+                            }
+                          />
+                          <ListCardMeta>
+                            <span className="font-mono shrink-0">:{rt.port}</span>
+                            <Hint label={rt.preset} className="font-mono text-xs">
+                              {presetLabel}
+                            </Hint>
+                          </ListCardMeta>
+                          {rt.dns_hint ? <p className="m-0 mt-1 text-xs text-muted-foreground truncate">{rt.dns_hint}</p> : null}
+                          {rt.reject_reason ? (
+                            <p className="m-0 mt-1 text-xs text-destructive break-words min-w-0">驳回原因：{rt.reject_reason}</p>
+                          ) : null}
+                          <ListCardActions>
+                            {rt.status === "pending_approval" && (
+                              <>
+                                <Button type="button" variant="outline" size="compact" className="inline-flex items-center whitespace-nowrap shrink-0" onClick={() => void approveRoute(rt.id)}>
+                                  批准
+                                </Button>
+                                <Button type="button" variant="outline" size="compact" className="inline-flex items-center whitespace-nowrap shrink-0" onClick={() => void rejectRoute(rt.id)}>
+                                  驳回
+                                </Button>
+                              </>
+                            )}
+                            <Hint label="移除域名">
+                              <Button type="button" variant="ghost" size="compact" className="inline-flex size-7 items-center justify-center p-0 shrink-0" onClick={() => void removeRoute(rt.id)}>
+                                <Trash2 className="size-3.5 shrink-0" />
+                              </Button>
+                            </Hint>
+                          </ListCardActions>
+                        </ListCard>
+                      );
+                    })}
+                  />
                 </div>
               )}
             </CardContent>
@@ -1304,7 +1351,9 @@ export function MachinePage() {
                 <p className="m-0 text-sm text-muted-foreground">还没有记录。打开网页终端、通过跳板 SSH，或做扩容 / 域名接入后会出现在这里。</p>
               ) : (
                 <div className="w-full overflow-x-auto rounded-xl border border-border/80">
-                  <Table data-testid="ws-audit-table" className="min-w-160">
+                  <ResponsiveList
+                    table={
+                  <Table data-testid="ws-audit-table" stackOnMobile={false} className="min-w-160">
                     <TableHeader>
                       <TableRow>
                         <TableHead>时间</TableHead>
@@ -1345,6 +1394,39 @@ export function MachinePage() {
                       })}
                     </TableBody>
                   </Table>
+                    }
+                    cards={logs.map((row) => {
+                      const via = viaLabel(row.meta);
+                      return (
+                        <ListCard key={row.id} data-testid="ws-audit-row">
+                          <ListCardHeader
+                            title={
+                              row.actor_display_name || row.actor_username ? (
+                                <Hint label={row.actor_username || row.actor_display_name} className="font-mono">
+                                  <span>{row.actor_display_name?.trim() || row.actor_username}</span>
+                                </Hint>
+                              ) : (
+                                "—"
+                              )
+                            }
+                            trailing={
+                              <Badge variant={isConnectAction(row.action) ? "ok" : "outline"}>
+                                {actionLabel(row.action)}
+                              </Badge>
+                            }
+                          />
+                          <ListCardMeta>
+                            <span className="inline-flex items-center gap-1 shrink-0">
+                              <Clock className="size-3 opacity-60 shrink-0" />
+                              {formatTime(row.created_at)}
+                            </span>
+                            <span className="inline-flex items-center gap-1 shrink-0">{via || "—"}</span>
+                            <span className="inline-flex items-center gap-1 font-mono shrink-0">{row.ip || "—"}</span>
+                          </ListCardMeta>
+                        </ListCard>
+                      );
+                    })}
+                  />
                 </div>
               )}
             </CardContent>

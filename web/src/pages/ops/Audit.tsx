@@ -4,6 +4,7 @@ import { CanAccess, useCustomMutation, useGetIdentity, useList } from "@refinede
 import { Activity, Check, Clock, Copy, Globe, Hash, Layers, RefreshCw, Shield, User } from "lucide-react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -434,8 +435,10 @@ function AuditList() {
           </Elevated>
         </div>
       ) : (
+        <ResponsiveList
+          table={
         <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-          <Table data-testid="audit-table" className="min-w-[850px]">
+          <Table data-testid="audit-table" stackOnMobile={false} className="min-w-[850px]">
             <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
               <TableRow className="border-b border-border/60 hover:bg-transparent">
                 <TableHead className="w-[120px] py-2.5">
@@ -536,6 +539,67 @@ function AuditList() {
             </TableBody>
           </Table>
         </div>
+          }
+          cards={pager.slice.map((l) => (
+            <ListCard key={l.id} data-testid="audit-row">
+              <ListCardHeader
+                title={
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <AuditActionBadge action={l.action} />
+                  </span>
+                }
+                trailing={
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                    <span className="mono font-mono text-xs text-muted-foreground">#{l.id}</span>
+                    <AuditCopyButton
+                      log={l}
+                      name={auditLogDisplayName(l, workspaces, projects)}
+                      copied={copiedId === l.id}
+                      onCopied={(id) => {
+                        setCopiedId(id);
+                        window.setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1600);
+                      }}
+                    />
+                  </span>
+                }
+              />
+              <ListCardMeta className="text-foreground">
+                <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                  <Clock className="size-3 opacity-60 shrink-0" />
+                  {fmtTime(l.created_at)}
+                </span>
+                <AuditActorHover
+                  userId={l.actor_user_id}
+                  displayName={l.actor_display_name}
+                  username={l.actor_username}
+                  logs={logs}
+                  user={actorHoverUser(users, l.actor_user_id)}
+                  workspaces={workspaces}
+                >
+                  <span data-testid="audit-actor" className="cursor-help inline-flex items-center gap-1.5 font-medium text-foreground">
+                    <User className="size-3 opacity-60 shrink-0" />
+                    {auditActorLabel(l.actor_display_name, l.actor_username, l.actor_user_id)}
+                  </span>
+                </AuditActorHover>
+                <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                  <Globe className="size-3 opacity-60 shrink-0" />
+                  {l.ip?.trim() ? l.ip : "—"}
+                </span>
+              </ListCardMeta>
+              <div className="mt-2 min-w-0 text-xs">
+                <AuditTargetCell
+                  log={l}
+                  me={me}
+                  visible={visible}
+                  logs={logs}
+                  workspaces={workspaces}
+                  projects={projects}
+                  listsReady={listsReady}
+                />
+              </div>
+            </ListCard>
+          ))}
+        />
       )}
     </PageFrame>
   );

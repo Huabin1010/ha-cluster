@@ -18,6 +18,8 @@ import { Elevated } from "@/lib/elevated";
 import { useClientPager } from "@/lib/use-client-pager";
 import { writeCurrentProject } from "@/lib/current-project";
 import { purposeMissing, type Project } from "@/pages/projects/types";
+import { useIsMd } from "@/hooks/use-media-query";
+import { ResponsiveList } from "@/components/ui/responsive-list";
 
 export function WorkspacesPage() {
   const toast = useToast();
@@ -71,6 +73,7 @@ export function WorkspacesPage() {
   const pendingResize = rows.filter((w) => w.resize_status === "pending").length;
   const pendingDestroy = rows.filter((w) => w.status === "destroy_requested").length;
   const pager = useClientPager(rows, projectFilter);
+  const isMd = useIsMd();
 
   function setProjectFilter(id: string) {
     const next = new URLSearchParams(searchParams);
@@ -89,6 +92,139 @@ export function WorkspacesPage() {
     reloadUsageRef.current?.();
     void refetch();
   }
+
+  function workspaceRow(ws: Workspace, asCard = false) {
+    return (
+      <WorkspaceRow
+        key={ws.id}
+        asCard={asCard}
+        ws={ws}
+        busyId={busyId}
+        canApprove={canApprove}
+        platformRole={me?.platform_role}
+        myRole={selected?.my_role}
+        mySshAccess={selected?.my_ssh_access}
+        projectId={projectFilter}
+        opsLocked={purposeMissing(projects.find((p) => p.id === ws.project_id)?.purpose) && projects.some((p) => p.id === ws.project_id)}
+        onBusy={setBusyId}
+        onRefresh={() => {
+          kickPoll();
+          return refetch();
+        }}
+        onToast={(m) => toast.show(m, "success")}
+        onError={(e) => showError(e)}
+      />
+    );
+  }
+
+  const listToolbar = (
+    <div className="flex flex-col gap-2.5 md:gap-3">
+      <div className="grid grid-cols-4 gap-1.5 md:gap-3">
+        {(
+          [
+            { label: "全部服务器", short: "全部", value: rows.length, unit: "台", icon: Server, iconClass: "text-primary" },
+            { label: "运行中", short: "运行", value: runningCount, unit: "台", icon: PlayCircle, iconClass: "text-emerald-500" },
+            { label: "待审批申请", short: "待审", value: pending + pendingResize, unit: "条", icon: Clock, iconClass: "text-amber-500" },
+            { label: "销毁待审", short: "销毁", value: pendingDestroy, unit: "条", icon: ShieldAlert, iconClass: "text-rose-500" },
+          ] as const
+        ).map((stat) => (
+          <Elevated
+            key={stat.short}
+            offset={1}
+            shadowLevel={1}
+            className="rounded-xl border border-border/80 bg-surface-1 p-2 md:p-3 shadow-surface-1 flex min-w-0 flex-col justify-between"
+          >
+            <span className="text-[10px] md:text-xs font-medium text-muted-foreground inline-flex items-center gap-1 md:gap-1.5 min-w-0">
+              <stat.icon className={`size-3 md:size-3.5 shrink-0 ${stat.iconClass}`} />
+              <span className="truncate md:hidden">{stat.short}</span>
+              <span className="hidden md:inline truncate">{stat.label}</span>
+            </span>
+            <div className="text-sm md:text-lg font-bold tracking-tight text-foreground font-mono mt-0.5 md:mt-1">
+              {stat.value}{" "}
+              <span className="text-[10px] md:text-xs font-normal text-muted-foreground">{stat.unit}</span>
+            </div>
+          </Elevated>
+        ))}
+      </div>
+      {selectedNeedsPurpose && (
+        <Banner kind="error">
+          <span data-testid="project-purpose-gate">当前项目还没有用途。请先到项目页补上，才能开通或操作服务器。</span>
+        </Banner>
+      )}
+      {pending > 0 && canApprove && (
+        <Banner kind="info">
+          <span data-testid="ws-pending-banner">有 {pending} 条服务器申请待审批</span>
+        </Banner>
+      )}
+      {pendingResize > 0 && canApprove && (
+        <Banner kind="info">
+          <span data-testid="ws-resize-banner">有 {pendingResize} 条扩/降配申请待审批</span>
+        </Banner>
+      )}
+      {pendingDestroy > 0 && canApprove && (
+        <Banner kind="info">
+          <span data-testid="ws-destroy-banner">有 {pendingDestroy} 条销毁申请待项目初审</span>
+        </Banner>
+      )}
+      {err && (
+        <Banner
+          kind="error"
+          className={insufficient ? "ws-insufficient border-destructive" : undefined}
+          onClose={() => showError("")}
+        >
+          <span data-testid="ws-error">{err}</span>
+        </Banner>
+      )}
+      <Elevated
+        offset={1}
+        shadowLevel={1}
+        className="rounded-xl border border-border/80 bg-surface-1 p-2.5 md:p-3 shadow-surface-1 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <span className="text-xs font-medium text-muted-foreground shrink-0 inline-flex items-center gap-1.5">
+            <FolderKanban className="size-3.5 text-primary shrink-0" />
+            项目筛选
+          </span>
+          <div className="w-full min-w-0 sm:max-w-sm">
+            <SelectBox
+              testId="ws-filter-project"
+              value={projectFilter || "__all__"}
+              onValueChange={(v) => setProjectFilter(v === "__all__" ? "" : v)}
+              placeholder="全部项目"
+              options={[
+                { value: "__all__", label: "全部项目" },
+                ...projects.map((p) => ({ value: p.id, label: `${p.name} (${p.slug})` })),
+              ]}
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:shrink-0">
+          <Button
+            type="button"
+            variant={showAbnormal ? "secondary" : "outline"}
+            size="compact"
+            data-testid="ws-show-abnormal"
+            className="h-8 px-3 text-xs gap-1.5 shrink-0"
+            onClick={() => setShowAbnormal((v) => !v)}
+          >
+            <ShieldAlert className="size-3.5 opacity-70 shrink-0" />
+            {showAbnormal ? "隐藏异常" : "含异常"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="compact"
+            data-testid="ws-refresh"
+            onClick={() => void refetch()}
+            className="h-8 px-3 text-xs gap-1.5 shrink-0"
+          >
+            <RefreshCw className="size-3.5 opacity-70 shrink-0" />
+            刷新列表
+          </Button>
+        </div>
+      </Elevated>
+    </div>
+  );
 
   return (
     <PageFrame
@@ -132,151 +268,7 @@ export function WorkspacesPage() {
             )
           }
         >
-
-          {/* 统计指标卡片条 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Elevated
-              offset={1}
-              shadowLevel={1}
-              className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col justify-between"
-            >
-              <div className="flex items-center justify-between text-muted-foreground">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Server className="size-3.5 text-primary" /> 全部服务器
-                </span>
-              </div>
-              <div className="text-lg font-bold tracking-tight text-foreground font-mono mt-1">
-                {rows.length} <span className="text-xs font-normal text-muted-foreground">台</span>
-              </div>
-            </Elevated>
-
-            <Elevated
-              offset={1}
-              shadowLevel={1}
-              className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col justify-between"
-            >
-              <div className="flex items-center justify-between text-muted-foreground">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <PlayCircle className="size-3.5 text-emerald-500" /> 运行中
-                </span>
-              </div>
-              <div className="text-lg font-bold tracking-tight text-foreground font-mono mt-1">
-                {runningCount} <span className="text-xs font-normal text-muted-foreground">台</span>
-              </div>
-            </Elevated>
-
-            <Elevated
-              offset={1}
-              shadowLevel={1}
-              className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col justify-between"
-            >
-              <div className="flex items-center justify-between text-muted-foreground">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Clock className="size-3.5 text-amber-500" /> 待审批申请
-                </span>
-              </div>
-              <div className="text-lg font-bold tracking-tight text-foreground font-mono mt-1">
-                {pending + pendingResize} <span className="text-xs font-normal text-muted-foreground">条</span>
-              </div>
-            </Elevated>
-
-            <Elevated
-              offset={1}
-              shadowLevel={1}
-              className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col justify-between"
-            >
-              <div className="flex items-center justify-between text-muted-foreground">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <ShieldAlert className="size-3.5 text-rose-500" /> 销毁待审
-                </span>
-              </div>
-              <div className="text-lg font-bold tracking-tight text-foreground font-mono mt-1">
-                {pendingDestroy} <span className="text-xs font-normal text-muted-foreground">条</span>
-              </div>
-            </Elevated>
-          </div>
-
-          {/* 审批与通知横幅 */}
-          {selectedNeedsPurpose && (
-            <Banner kind="error">
-              <span data-testid="project-purpose-gate">当前项目还没有用途。请先到项目页补上，才能开通或操作服务器。</span>
-            </Banner>
-          )}
-          {pending > 0 && canApprove && (
-            <Banner kind="info">
-              <span data-testid="ws-pending-banner">有 {pending} 条服务器申请待审批</span>
-            </Banner>
-          )}
-          {pendingResize > 0 && canApprove && (
-            <Banner kind="info">
-              <span data-testid="ws-resize-banner">有 {pendingResize} 条扩/降配申请待审批</span>
-            </Banner>
-          )}
-          {pendingDestroy > 0 && canApprove && (
-            <Banner kind="info">
-              <span data-testid="ws-destroy-banner">有 {pendingDestroy} 条销毁申请待项目初审</span>
-            </Banner>
-          )}
-          {err && (
-            <Banner
-              kind="error"
-              className={insufficient ? "ws-insufficient border-destructive" : undefined}
-              onClose={() => showError("")}
-            >
-              <span data-testid="ws-error">{err}</span>
-            </Banner>
-          )}
-
-          {/* 过滤与操作栏 */}
-          <Elevated
-            offset={1}
-            shadowLevel={1}
-            className="rounded-xl border border-border/80 bg-surface-1 p-3 shadow-surface-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <span className="text-xs font-medium text-muted-foreground shrink-0 inline-flex items-center gap-1.5">
-                <FolderKanban className="size-3.5 text-primary shrink-0" />
-                项目筛选
-              </span>
-              <div className="w-full min-w-0 sm:max-w-sm">
-                <SelectBox
-                  testId="ws-filter-project"
-                  value={projectFilter || "__all__"}
-                  onValueChange={(v) => setProjectFilter(v === "__all__" ? "" : v)}
-                  placeholder="全部项目"
-                  options={[
-                    { value: "__all__", label: "全部项目" },
-                    ...projects.map((p) => ({ value: p.id, label: `${p.name} (${p.slug})` })),
-                  ]}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:shrink-0">
-              <Button
-                type="button"
-                variant={showAbnormal ? "secondary" : "outline"}
-                size="compact"
-                data-testid="ws-show-abnormal"
-                className="h-8 px-3 text-xs gap-1.5 shrink-0"
-                onClick={() => setShowAbnormal((v) => !v)}
-              >
-                <ShieldAlert className="size-3.5 opacity-70 shrink-0" />
-                {showAbnormal ? "隐藏异常" : "含异常"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="compact"
-                data-testid="ws-refresh"
-                onClick={() => void refetch()}
-                className="h-8 px-3 text-xs gap-1.5 shrink-0"
-              >
-                <RefreshCw className="size-3.5 opacity-70 shrink-0" />
-                刷新列表
-              </Button>
-            </div>
-          </Elevated>
+          {isMd ? listToolbar : null}
         </PageHeading>
       }
       footer={
@@ -290,6 +282,7 @@ export function WorkspacesPage() {
         />
       }
     >
+      {!isMd ? <div className="mb-3">{listToolbar}</div> : null}
       {isLoading ? (
         <div className="py-12 text-center">
           <Loading label="加载服务器…" />
@@ -308,79 +301,65 @@ export function WorkspacesPage() {
               <h3 className="m-0 text-base font-semibold text-foreground">
                 {projectFilter ? "该项目下暂无服务器" : "集群中暂无服务器"}
               </h3>
-              <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed">
-                点击右上角「开通服务器」即可为项目申请独立的隔离 Linux 容器环境，获得专属 IP 与 SSH 极速跳板连接。
+              <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed break-words min-w-0">
+                点击「开通服务器」即可为项目申请独立的隔离 Linux 容器环境。
               </p>
             </div>
           </Elevated>
         </div>
       ) : (
-        <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-          <Table className="min-w-[900px]">
-            <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
-              <TableRow className="border-b border-border/60 hover:bg-transparent">
-                <TableHead className="py-2.5">
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                    <Server className="size-3.5 opacity-60 shrink-0" />
-                    服务器名称
-                  </span>
-                </TableHead>
-                <TableHead className="w-[140px] py-2.5">
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                    <HeartPulse className="size-3.5 opacity-60 shrink-0" />
-                    状态
-                  </span>
-                </TableHead>
-                <TableHead className="w-[220px] py-2.5">
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                    <Layers className="size-3.5 opacity-60 shrink-0" />
-                    配置规格
-                  </span>
-                </TableHead>
-                <TableHead className="w-[160px] py-2.5">
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                    <Cpu className="size-3.5 opacity-60 shrink-0" />
-                    宿主机节点
-                  </span>
-                </TableHead>
-                <TableHead className="w-[160px] py-2.5">
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                    <Clock className="size-3.5 opacity-60 shrink-0" />
-                    创建时间
-                  </span>
-                </TableHead>
-                <TableHead stickyEnd className="w-[320px] text-right py-2.5 pr-4">
-                  <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
-                    <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
-                    快捷操作
-                  </span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pager.slice.map((ws) => (
-                <WorkspaceRow
-                  key={ws.id}
-                  ws={ws}
-                  busyId={busyId}
-                  canApprove={canApprove}
-                  platformRole={me?.platform_role}
-                  myRole={selected?.my_role}
-                  mySshAccess={selected?.my_ssh_access}
-                  projectId={projectFilter}
-                  opsLocked={purposeMissing(projects.find((p) => p.id === ws.project_id)?.purpose) && projects.some((p) => p.id === ws.project_id)}
-                  onBusy={setBusyId}
-                  onRefresh={() => {
-                    kickPoll();
-                    return refetch();
-                  }}
-                  onToast={(m) => toast.show(m, "success")}
-                  onError={(e) => showError(e)}
-                />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <ResponsiveList
+          table={
+            <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
+              <Table stackOnMobile={false} className="min-w-[900px]">
+                <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
+                  <TableRow className="border-b border-border/60 hover:bg-transparent">
+                    <TableHead className="py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <Server className="size-3.5 opacity-60 shrink-0" />
+                        服务器名称
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[140px] py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <HeartPulse className="size-3.5 opacity-60 shrink-0" />
+                        状态
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[220px] py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <Layers className="size-3.5 opacity-60 shrink-0" />
+                        配置规格
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[160px] py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <Cpu className="size-3.5 opacity-60 shrink-0" />
+                        宿主机节点
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[160px] py-2.5">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <Clock className="size-3.5 opacity-60 shrink-0" />
+                        创建时间
+                      </span>
+                    </TableHead>
+                    <TableHead stickyEnd className="w-[320px] text-right py-2.5 pr-4">
+                      <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
+                        <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
+                        快捷操作
+                      </span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pager.slice.map((ws) => workspaceRow(ws))}
+                </TableBody>
+              </Table>
+            </div>
+          }
+          cards={pager.slice.map((ws) => workspaceRow(ws, true))}
+        />
       )}
     </PageFrame>
   );

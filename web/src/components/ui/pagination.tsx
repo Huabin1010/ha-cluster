@@ -40,7 +40,7 @@ export function Paginator({
 
   return (
     <nav
-      className={cn("flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3", className)}
+      className={cn("flex flex-row flex-wrap items-center justify-between gap-2", className)}
       aria-label="分页"
       data-testid="paginator"
     >

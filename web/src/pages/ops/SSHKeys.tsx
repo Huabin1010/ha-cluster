@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Check, Clock, Copy, Fingerprint, KeyRound, Plus, Shield, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useCreate, useDelete, useList } from "@refinedev/core";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -39,6 +40,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useClientPager } from "@/lib/use-client-pager";
+import { useIsMd } from "@/hooks/use-media-query";
 
 type SSHKey = {
   id: string;
@@ -65,6 +67,34 @@ export function SSHKeysPage() {
   const { mutate: removeKey } = useDelete();
   const keys = data?.data ?? [];
   const pager = useClientPager(keys);
+  const isMd = useIsMd();
+
+  const hintBar = (
+            <Elevated
+              offset={1}
+              shadowLevel={1}
+              className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between text-xs text-muted-foreground"
+            >
+              <div className="flex items-start gap-2 min-w-0">
+                <Shield className="size-4 text-emerald-500 shrink-0 mt-0.5" />
+                <span className="break-words min-w-0">
+                  至少需要登记一把公钥才能通过平台 Bastion 跳板机接入。公钥变动将在 30 秒内向活跃容器热同步。
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Badge variant="ok" size="compact" className="font-mono font-normal">
+                  Ed25519 推荐
+                </Badge>
+                <Badge
+                  variant="outline"
+                  size="compact"
+                  className="font-mono font-normal text-foreground bg-(--token-box-bg)"
+                >
+                  RSA ≥ 2048
+                </Badge>
+              </div>
+            </Elevated>
+  );
 
   function reset() {
     setName("");
@@ -199,31 +229,7 @@ export function SSHKeysPage() {
             }
           >
 
-            {/* 提示与指南条 */}
-            <Elevated
-              offset={1}
-              shadowLevel={1}
-              className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between text-xs text-muted-foreground"
-            >
-              <div className="flex items-start gap-2 min-w-0">
-                <Shield className="size-4 text-emerald-500 shrink-0 mt-0.5" />
-                <span className="break-words min-w-0">
-                  至少需要登记一把公钥才能通过平台 Bastion 跳板机接入。公钥变动将在 30 秒内向活跃容器热同步。
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Badge variant="ok" size="compact" className="font-mono font-normal">
-                  Ed25519 推荐
-                </Badge>
-                <Badge
-                  variant="outline"
-                  size="compact"
-                  className="font-mono font-normal text-foreground bg-(--token-box-bg)"
-                >
-                  RSA ≥ 2048
-                </Badge>
-              </div>
-            </Elevated>
+            {isMd ? hintBar : null}
           </PageHeading>
         }
         footer={
@@ -237,6 +243,7 @@ export function SSHKeysPage() {
           />
         }
       >
+        {!isMd ? <div className="mb-3">{hintBar}</div> : null}
         {isLoading ? (
           <div className="py-12 text-center">
             <Loading label="加载个人公钥…" />
@@ -260,8 +267,10 @@ export function SSHKeysPage() {
             </Elevated>
           </div>
         ) : (
+          <ResponsiveList
+            table={
           <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-            <Table className="min-w-[720px]">
+            <Table stackOnMobile={false} className="min-w-[720px]">
               <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
                 <TableRow className="border-b border-border/60 hover:bg-transparent">
                   <TableHead className="py-2.5">
@@ -352,6 +361,60 @@ export function SSHKeysPage() {
               </TableBody>
             </Table>
           </div>
+            }
+            cards={pager.slice.map((k) => (
+              <ListCard key={k.id} data-testid="keys-row">
+                <ListCardHeader
+                  leading={<KeyRound className="size-3.5 text-primary opacity-70 shrink-0" />}
+                  title={k.name || "未命名公钥"}
+                />
+                <ListCardMeta>
+                  <Hint label={k.fingerprint}>
+                    <span className="cursor-help inline-flex min-w-0 max-w-full items-center rounded-md border border-border bg-(--token-box-bg) px-1.5 py-0.5 font-mono text-xs text-foreground">
+                      <span className="truncate">{k.fingerprint.length > 24 ? `${k.fingerprint.slice(0, 24)}…` : k.fingerprint}</span>
+                    </span>
+                  </Hint>
+                  <span className="inline-flex items-center gap-1.5 shrink-0">
+                    <Clock className="size-3 opacity-50 shrink-0" />
+                    {fmtTime(k.created_at)}
+                  </span>
+                </ListCardMeta>
+                <ListCardActions>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="compact"
+                    data-testid="keys-copy"
+                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs px-2"
+                    onClick={() => void copyKey(k.id, k.public_key)}
+                  >
+                    {copiedId === k.id ? (
+                      <>
+                        <Check className="size-3.5 text-emerald-500 shrink-0" />
+                        已复制
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3.5 opacity-70 shrink-0" />
+                        复制公钥
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    data-testid="keys-remove"
+                    variant="destructive"
+                    size="compact"
+                    type="button"
+                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs px-2"
+                    onClick={() => void remove(k.id)}
+                  >
+                    <Trash2 className="size-3.5 shrink-0" />
+                    删除
+                  </Button>
+                </ListCardActions>
+              </ListCard>
+            ))}
+          />
         )}
       </PageFrame>
 

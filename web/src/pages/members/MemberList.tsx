@@ -638,7 +638,7 @@ export function MemberList({
             <ResponsiveList
               table={
                 <TableShell>
-                  <Table data-testid="member-table" className="min-w-[700px]">
+                  <Table data-testid="member-table" stackOnMobile={false} className="min-w-[700px]">
                     <TableHeader className="sticky top-0 z-20 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                       <TableRow className="border-b border-border/60 hover:bg-transparent">
                         <TableHead className="py-2.5">

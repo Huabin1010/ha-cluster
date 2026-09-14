@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Hint } from "@/components/ui/tooltip";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta } from "@/components/ui/responsive-list";
 import { ResizeDialog } from "./ResizeDialog";
 import { WorkspaceTerminalDialog } from "./WorkspaceTerminalDialog";
 import {
@@ -52,6 +53,8 @@ type Props = {
   onRefresh: () => void | Promise<unknown>;
   onToast: (msg: string) => void;
   onError: (msg: string) => void;
+  /** 窄屏卡片；桌面表格行不要传。 */
+  asCard?: boolean;
 };
 
 export function WorkspaceRow({
@@ -67,6 +70,7 @@ export function WorkspaceRow({
   onRefresh,
   onToast,
   onError,
+  asCard = false,
 }: Props) {
   const [destroyOpen, setDestroyOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -152,104 +156,93 @@ export function WorkspaceRow({
     setDestroyOpen(open);
   }
 
-  return (
-    <TableRow
-      data-testid="ws-row"
-      data-status={displayStatus}
-      aria-busy={busy || statusBusy}
+  const rowTone =
+    ws.status === "failed" || displayStatus === "destroying" ? "bg-rose-500/5 hover:bg-rose-500/10" : undefined;
+  const rowBusy = (busy || statusBusy) && "opacity-90";
+
+  const statusDot = (
+    <span
       className={cn(
-        ws.status === "failed" || displayStatus === "destroying" ? "bg-rose-500/5 hover:bg-rose-500/10" : undefined,
-        (busy || statusBusy) && "opacity-90",
+        "size-2 rounded-full shrink-0 transition-all",
+        workspaceStatusDotClass(displayStatus),
+        statusBusy && "animate-pulse",
       )}
-    >
-      <TableCell className="py-2.5 whitespace-nowrap font-medium text-foreground">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "size-2 rounded-full shrink-0 transition-all",
-              workspaceStatusDotClass(displayStatus),
-              statusBusy && "animate-pulse",
-            )}
-          />
-          <span className="truncate max-w-[180px] sm:max-w-xs">{ws.name}</span>
-          {ws.visibility === "private" ? (
-            <Hint label="私有">
-              <Lock className="size-3 text-amber-500/80 shrink-0" />
-            </Hint>
-          ) : (
-            <Hint label="共享">
-              <Globe className="size-3 text-primary/70 shrink-0" />
-            </Hint>
+    />
+  );
+
+  const visibilityIcon =
+    ws.visibility === "private" ? (
+      <Hint label="私有">
+        <Lock className="size-3 text-amber-500/80 shrink-0" />
+      </Hint>
+    ) : (
+      <Hint label="共享">
+        <Globe className="size-3 text-primary/70 shrink-0" />
+      </Hint>
+    );
+
+  const statusBadge = (
+    <Hint label={`原始代码: ${displayStatus}`} className="font-mono">
+      <span className="inline-flex">
+        <Badge variant={workspaceStatusVariant(displayStatus)} className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+          {statusBusy && <Loader2 className="size-3 shrink-0 animate-spin" />}
+          {statusLabel(displayStatus)}
+        </Badge>
+      </span>
+    </Hint>
+  );
+
+  const extraStatus = (
+    <>
+      {resizePending && (
+        <Badge variant="warn" data-testid="ws-resize-pending" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+          <Clock className="size-3 text-amber-500 shrink-0" />
+          {ws.resize_kind === "downgrade" ? "降配待审" : "升配待审"}
+        </Badge>
+      )}
+      {typeof ws.exec_ready === "boolean" && (
+        <Hint label={ws.exec_error || (ws.exec_ready ? "HTTP 执行可用" : "SSH handshake 失败")} className="font-mono">
+          <Badge
+            data-testid="ws-exec-ready"
+            variant={ws.exec_ready ? "ok" : "danger"}
+            className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+          >
+            <Terminal className="size-3 shrink-0" />
+            {ws.exec_ready ? "SSH 通" : "SSH 不通"}
+          </Badge>
+        </Hint>
+      )}
+    </>
+  );
+
+  const specLine = (
+    <span className={cn("inline-flex items-center gap-1.5 text-xs min-w-0", asCard && "max-w-full flex-wrap")}>
+      <Cpu className="size-3 text-muted-foreground opacity-70 shrink-0" />
+      <span className="font-medium text-foreground">{ws.plan}</span>
+      {spec && (
+        <span className="text-muted-foreground truncate">
+          ({formatPlanSpec(spec)}
+          {pendingResize && (
+            <>
+              <span className="mx-1">→</span>
+              <span className="text-amber-500">{formatPlanSpec(pendingResize)}</span>
+            </>
           )}
-        </div>
-      </TableCell>
-      <TableCell className="py-2.5 whitespace-nowrap">
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <Hint label={`原始代码: ${displayStatus}`} className="font-mono">
-            <span className="inline-flex">
-              <Badge variant={workspaceStatusVariant(displayStatus)} className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-                {statusBusy && <Loader2 className="size-3 shrink-0 animate-spin" />}
-                {statusLabel(displayStatus)}
-              </Badge>
-            </span>
-          </Hint>
-          {resizePending && (
-            <Badge variant="warn" data-testid="ws-resize-pending" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-              <Clock className="size-3 text-amber-500 shrink-0" />
-              {ws.resize_kind === "downgrade" ? "降配待审" : "升配待审"}
-            </Badge>
-          )}
-          {typeof ws.exec_ready === "boolean" && (
-            <Hint label={ws.exec_error || (ws.exec_ready ? "HTTP 执行可用" : "SSH handshake 失败")} className="font-mono">
-              <Badge
-                data-testid="ws-exec-ready"
-                variant={ws.exec_ready ? "ok" : "danger"}
-                className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-              >
-                <Terminal className="size-3 shrink-0" />
-                {ws.exec_ready ? "SSH 通" : "SSH 不通"}
-              </Badge>
-            </Hint>
-          )}
-        </div>
-      </TableCell>
-      <TableCell className="py-2.5 whitespace-nowrap">
-        <div className="inline-flex items-center gap-1.5 text-xs">
-          <Cpu className="size-3 text-muted-foreground opacity-70 shrink-0" />
-          <span className="font-medium text-foreground">{ws.plan}</span>
-          {spec && (
-            <span className="text-muted-foreground">
-              ({formatPlanSpec(spec)}
-              {pendingResize && (
-                <>
-                  <span className="mx-1">→</span>
-                  <span className="text-amber-500">{formatPlanSpec(pendingResize)}</span>
-                </>
-              )}
-              )
-            </span>
-          )}
-          <span className="mono font-mono text-muted-foreground">{ws.arch}</span>
-          <Hint label={ws.runtime || "container"} className="font-mono">
-            <span className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-              <Box className="size-3 shrink-0 opacity-70" />
-              {runtimeLabel(ws.runtime)}
-            </span>
-          </Hint>
-        </div>
-      </TableCell>
-      <TableCell className="py-2.5 whitespace-nowrap text-xs">
-        {ws.node_name ? (
-          <span className="font-medium text-foreground">{ws.node_name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell className="py-2.5 whitespace-nowrap text-xs text-muted-foreground">
-        {ws.created_at ? formatTime(ws.created_at) : "—"}
-      </TableCell>
-      <TableCell stickyEnd className="py-2.5 text-right w-[320px] pr-4">
-        <div className="flex items-center justify-end flex-wrap gap-1 whitespace-nowrap">
+          )
+        </span>
+      )}
+      <span className="mono font-mono text-muted-foreground shrink-0">{ws.arch}</span>
+      <Hint label={ws.runtime || "container"} className="font-mono">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+          <Box className="size-3 shrink-0 opacity-70" />
+          {runtimeLabel(ws.runtime)}
+        </span>
+      </Hint>
+    </span>
+  );
+
+  const actionButtons = (
+        <div className={cn("flex flex-wrap items-center gap-1.5", asCard ? "w-full justify-start" : "justify-end whitespace-nowrap")}>
           {isCreateRequested && canApprove && (
             <Button
               type="button"
@@ -675,6 +668,80 @@ export function WorkspaceRow({
             </>
           )}
         </div>
+  );
+
+  if (asCard) {
+    return (
+      <ListCard
+        data-testid="ws-row"
+        data-status={displayStatus}
+        aria-busy={busy || statusBusy}
+        className={cn(rowTone, rowBusy)}
+      >
+        <ListCardHeader
+          leading={statusDot}
+          title={
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+              <span className="truncate">{ws.name}</span>
+              {visibilityIcon}
+            </span>
+          }
+          trailing={statusBadge}
+        />
+        <ListCardMeta className="text-foreground">
+          {extraStatus}
+          {specLine}
+          {ws.node_name ? (
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <Cpu className="size-3 opacity-60 shrink-0" />
+              {ws.node_name}
+            </span>
+          ) : null}
+          {ws.created_at ? (
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <Clock className="size-3 opacity-60 shrink-0" />
+              {formatTime(ws.created_at)}
+            </span>
+          ) : null}
+        </ListCardMeta>
+        <ListCardActions>{actionButtons}</ListCardActions>
+      </ListCard>
+    );
+  }
+
+  return (
+    <TableRow
+      data-testid="ws-row"
+      data-status={displayStatus}
+      aria-busy={busy || statusBusy}
+      className={cn(rowTone, rowBusy)}
+    >
+      <TableCell className="py-2.5 whitespace-nowrap font-medium text-foreground">
+        <div className="flex items-center gap-2">
+          {statusDot}
+          <span className="truncate max-w-[180px] sm:max-w-xs">{ws.name}</span>
+          {visibilityIcon}
+        </div>
+      </TableCell>
+      <TableCell className="py-2.5 whitespace-nowrap">
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
+          {statusBadge}
+          {extraStatus}
+        </div>
+      </TableCell>
+      <TableCell className="py-2.5 whitespace-nowrap">{specLine}</TableCell>
+      <TableCell className="py-2.5 whitespace-nowrap text-xs">
+        {ws.node_name ? (
+          <span className="font-medium text-foreground">{ws.node_name}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="py-2.5 whitespace-nowrap text-xs text-muted-foreground">
+        {ws.created_at ? formatTime(ws.created_at) : "—"}
+      </TableCell>
+      <TableCell stickyEnd className="py-2.5 text-right w-[320px] pr-4">
+        {actionButtons}
       </TableCell>
     </TableRow>
   );

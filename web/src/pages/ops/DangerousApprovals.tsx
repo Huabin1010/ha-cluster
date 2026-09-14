@@ -7,12 +7,14 @@ import { statusLabel, Workspace } from "@/pages/workspaces/types";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardActions, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Elevated } from "@/lib/elevated";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
+import { useIsMd } from "@/hooks/use-media-query";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +36,20 @@ export function DangerousApprovalsPage() {
   const [confirmTarget, setConfirmTarget] = useState<Workspace | null>(null);
 
   const allowed = canApproveDangerousOps(me?.platform_role);
+  const isMd = useIsMd();
+
+  const warnBar = (
+            <Elevated
+              offset={1}
+              shadowLevel={1}
+              className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3.5 shadow-surface-1 flex items-start gap-2.5 text-xs text-rose-500"
+            >
+              <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+              <span className="break-words min-w-0">
+                高危防线注意：终审通过后将执行不可逆的容器与存储销毁指令。请核验所属项目以及该工作区是否仍有挂载资产未备份。
+              </span>
+            </Elevated>
+  );
 
   const load = useCallback(async () => {
     if (!allowed) return;
@@ -129,17 +145,7 @@ export function DangerousApprovalsPage() {
             }
           >
 
-            {/* 警示条 */}
-            <Elevated
-              offset={1}
-              shadowLevel={1}
-              className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3.5 shadow-surface-1 flex items-start gap-2.5 text-xs text-rose-500"
-            >
-              <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-              <span className="break-words min-w-0">
-                高危防线注意：终审通过后将执行不可逆的容器与存储销毁指令。请核验所属项目以及该工作区是否仍有挂载资产未备份。
-              </span>
-            </Elevated>
+            {isMd ? warnBar : null}
 
             {err && (
               <Alert variant="destructive">
@@ -149,6 +155,7 @@ export function DangerousApprovalsPage() {
           </PageHeading>
         }
       >
+        {!isMd ? <div className="mb-3">{warnBar}</div> : null}
         {loading ? (
           <div className="py-12 text-center">
             <Loading label="加载危险待审队列…" />
@@ -172,8 +179,10 @@ export function DangerousApprovalsPage() {
             </Elevated>
           </div>
         ) : (
+          <ResponsiveList
+            table={
           <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-            <Table data-testid="dangerous-approvals-table" className="min-w-[760px]">
+            <Table data-testid="dangerous-approvals-table" stackOnMobile={false} className="min-w-[760px]">
               <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
                 <TableRow className="border-b border-border/60 hover:bg-transparent">
                   <TableHead className="py-2.5">
@@ -244,6 +253,44 @@ export function DangerousApprovalsPage() {
               </TableBody>
             </Table>
           </div>
+            }
+            cards={rows.map((w) => (
+              <ListCard key={w.id} data-testid="dangerous-approval-row" className="hover:bg-rose-500/5">
+                <ListCardHeader
+                  leading={<span className="size-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)] shrink-0" />}
+                  title={w.name}
+                  trailing={
+                    <Badge variant="warn" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                      <Clock className="size-3 text-amber-500 shrink-0" />
+                      {statusLabel(w.status)}
+                    </Badge>
+                  }
+                />
+                <ListCardMeta>
+                  <Hint label={w.project_id}>
+                    <span className="cursor-help inline-flex items-center gap-1 font-mono">
+                      <FolderKanban className="size-3 opacity-60 shrink-0" />
+                      {w.project_id.length > 12 ? `${w.project_id.slice(0, 12)}…` : w.project_id}
+                    </span>
+                  </Hint>
+                </ListCardMeta>
+                <ListCardActions>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="compact"
+                    data-testid="dangerous-approve-open"
+                    disabled={busyId === w.id}
+                    className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs px-2.5"
+                    onClick={() => setConfirmTarget(w)}
+                  >
+                    <Trash2 className="size-3.5 shrink-0" />
+                    平台终审销毁
+                  </Button>
+                </ListCardActions>
+              </ListCard>
+            ))}
+          />
         )}
       </PageFrame>
 

@@ -150,7 +150,7 @@ export function CreateForm({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger ?? (
-          <Button type="button" data-testid="ws-create">
+          <Button type="button" data-testid="ws-create" className="shrink-0 whitespace-nowrap">
             <Plus className="h-4 w-4" />
             {canApprove ? "开通服务器" : "申请服务器"}
           </Button>

@@ -54,7 +54,8 @@ import { Field } from "@/components/ui/field";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Hint } from "@/components/ui/tooltip";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ResponsiveList } from "@/components/ui/responsive-list";
 import { Elevated } from "@/lib/elevated";
 import { Empty, Loading } from "@/ui";
 import { spring } from "@/lib/springs";
@@ -346,6 +347,32 @@ export function ProjectDetailPage() {
   const cpuPct = calculatePercentage(usage?.cpu_milli, project.budget_cpu_milli);
   const memPct = calculatePercentage(usage?.mem_bytes, project.budget_mem_bytes);
   const diskPct = calculatePercentage(usage?.disk_bytes, project.budget_disk_bytes);
+
+  const renderWsRow = (ws: Workspace, asCard = false) => (
+      <WorkspaceRow
+        key={ws.id}
+        asCard={asCard}
+        ws={ws}
+        busyId={busyWsId}
+        canApprove={canApprove}
+        platformRole={me?.platform_role}
+        myRole={project.my_role}
+        mySshAccess={project.my_ssh_access}
+        projectId={id}
+        opsLocked={needsPurpose}
+        onBusy={setBusyWsId}
+        onRefresh={() => {
+          wsPollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
+          void loadUsage();
+          return refetchWs();
+        }}
+        onToast={(m) => {
+          setWsToast(m);
+          setTimeout(() => setWsToast(null), 3000);
+        }}
+        onError={(e) => setWsErr(e)}
+      />
+  );
 
   const navTabs = [
     { key: "overview", label: "项目概览", icon: LayoutDashboard, route: `/projects/${id}`, testId: "project-tab-overview" },
@@ -825,13 +852,13 @@ export function ProjectDetailPage() {
       {/* 视图二：工作区服务器 (Workspaces) */}
       {activeSection === "workspaces" && (
         <div className="flex flex-col min-h-0 flex-1 overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-1 pb-3 shrink-0">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-3 shrink-0">
+            <div className="min-w-0">
               <h3 className="m-0 text-base font-bold tracking-tight text-foreground flex items-center gap-2">
                 <Box className="size-4 text-primary" />
                 项目工作区服务器
               </h3>
-              <p className="m-0 mt-1 text-xs text-muted-foreground">
+              <p className="m-0 mt-1 hidden text-xs text-muted-foreground md:block">
                 当前项目内申请的隔离环境。具有对应权限的成员可通过 Bastion 跳板机进行 SSH 直连。
               </p>
             </div>
@@ -915,64 +942,48 @@ export function ProjectDetailPage() {
             </Elevated>
           ) : (
             <div className="flex flex-col min-h-0 flex-1 overflow-hidden">
-              <Elevated
-                offset={1}
-                shadowLevel={2}
-                className="rounded-xl border border-border/80 bg-surface-1 shadow-surface-2 min-h-0 flex-1 flex flex-col overflow-hidden"
-              >
-                <div className="w-full min-h-0 flex-1 overflow-auto">
-                  <Table className="min-w-[880px]">
-                    <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none sticky top-0 z-20 backdrop-blur-sm">
-                      <TableRow className="border-b border-border/60 hover:bg-transparent">
-                        <TableHead className="font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
-                          工作区名称
-                        </TableHead>
-                        <TableHead className="w-[120px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
-                          状态
-                        </TableHead>
-                        <TableHead className="w-[180px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
-                          配置规格
-                        </TableHead>
-                        <TableHead className="w-[160px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
-                          宿主机节点
-                        </TableHead>
-                        <TableHead className="w-[160px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
-                          创建时间
-                        </TableHead>
-                        <TableHead stickyEnd className="w-[200px] text-right font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5 pr-4">
-                          操作
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {wsPager.slice.map((ws) => (
-                        <WorkspaceRow
-                          key={ws.id}
-                          ws={ws}
-                          busyId={busyWsId}
-                          canApprove={canApprove}
-                          platformRole={me?.platform_role}
-                          myRole={project.my_role}
-                          mySshAccess={project.my_ssh_access}
-                          projectId={id}
-                          opsLocked={needsPurpose}
-                          onBusy={setBusyWsId}
-                          onRefresh={() => {
-                            wsPollUntilRef.current = Date.now() + WORKSPACE_POLL_AFTER_MUTATION_MS;
-                            void loadUsage();
-                            return refetchWs();
-                          }}
-                          onToast={(m) => {
-                            setWsToast(m);
-                            setTimeout(() => setWsToast(null), 3000);
-                          }}
-                          onError={(e) => setWsErr(e)}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </Elevated>
+              <div className="w-full min-h-0 flex-1 overflow-auto">
+                <ResponsiveList
+                  table={
+                    <Elevated
+                      offset={1}
+                      shadowLevel={2}
+                      className="rounded-xl border border-border/80 bg-surface-1 shadow-surface-2 overflow-hidden"
+                    >
+                      <div className="w-full overflow-x-auto">
+                        <Table stackOnMobile={false} className="min-w-[880px]">
+                          <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none sticky top-0 z-20 backdrop-blur-sm">
+                            <TableRow className="border-b border-border/60 hover:bg-transparent">
+                              <TableHead className="font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                                工作区名称
+                              </TableHead>
+                              <TableHead className="w-[120px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                                状态
+                              </TableHead>
+                              <TableHead className="w-[180px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                                配置规格
+                              </TableHead>
+                              <TableHead className="w-[160px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                                宿主机节点
+                              </TableHead>
+                              <TableHead className="w-[160px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                                创建时间
+                              </TableHead>
+                              <TableHead stickyEnd className="w-[200px] text-right font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5 pr-4">
+                                操作
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {wsPager.slice.map((ws) => renderWsRow(ws))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </Elevated>
+                  }
+                  cards={wsPager.slice.map((ws) => renderWsRow(ws, true))}
+                />
+              </div>
 
               {/* 底部固定分页器 */}
               <div className="shrink-0 pt-3 border-t border-border/60">

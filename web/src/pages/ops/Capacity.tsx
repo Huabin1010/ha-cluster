@@ -4,6 +4,7 @@ import { Cpu, Database, HardDrive, Layers, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListCard, ListCardHeader, ListCardMeta, ResponsiveList } from "@/components/ui/responsive-list";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
@@ -13,6 +14,7 @@ import { friendlyError } from "@/providers";
 import { Loading } from "@/ui";
 import { fmtBytes, fmtCPU } from "./format";
 import { useClientPager } from "@/lib/use-client-pager";
+import { useIsMd } from "@/hooks/use-media-query";
 
 type Pool = {
   id?: string;
@@ -48,6 +50,37 @@ export function CapacityPage() {
       poolCount: pools.length,
     };
   }, [pools]);
+  const isMd = useIsMd();
+
+  const metricsBar =
+    pools.length > 0 ? (
+            <div className="grid grid-cols-4 gap-1.5 md:gap-3">
+              {(
+                [
+                  { short: "池", label: "可用架构池", value: String(summary.poolCount), unit: "个", icon: Layers, iconClass: "text-primary" },
+                  { short: "CPU", label: "可分配 CPU", value: fmtCPU(summary.cpuMilli), unit: "", icon: Cpu, iconClass: "text-emerald-500" },
+                  { short: "内存", label: "剩余可用内存", value: fmtBytes(summary.memBytes), unit: "", icon: HardDrive, iconClass: "text-sky-500" },
+                  { short: "磁盘", label: "剩余可用磁盘", value: fmtBytes(summary.diskBytes), unit: "", icon: Database, iconClass: "text-purple-500" },
+                ] as const
+              ).map((stat) => (
+              <Elevated
+                key={stat.short}
+                offset={1}
+                shadowLevel={1}
+                className="rounded-xl border border-border/80 bg-surface-1 p-2 md:p-3.5 shadow-surface-1 flex min-w-0 flex-col justify-between"
+              >
+                <span className="text-[10px] md:text-xs font-medium text-muted-foreground inline-flex items-center gap-1 md:gap-1.5 min-w-0">
+                  <stat.icon className={`size-3 md:size-3.5 shrink-0 ${stat.iconClass}`} />
+                  <span className="truncate md:hidden">{stat.short}</span>
+                  <span className="hidden md:inline truncate">{stat.label}</span>
+                </span>
+                <div className="text-sm md:text-xl font-bold tracking-tight text-foreground font-mono mt-0.5 md:mt-1">
+                  {stat.value}{stat.unit ? <> <span className="text-[10px] md:text-xs font-normal text-muted-foreground">{stat.unit}</span></> : null}
+                </div>
+              </Elevated>
+              ))}
+            </div>
+    ) : null;
 
   return (
     <PageFrame
@@ -76,70 +109,7 @@ export function CapacityPage() {
           }
         >
 
-          {/* 指标汇总卡片条 */}
-          {pools.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <Layers className="size-3.5 text-primary" /> 可用架构池
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {summary.poolCount} <span className="text-xs font-normal text-muted-foreground">个</span>
-                </div>
-              </Elevated>
-
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <Cpu className="size-3.5 text-emerald-500" /> 可分配 CPU
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {fmtCPU(summary.cpuMilli)}
-                </div>
-              </Elevated>
-
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <HardDrive className="size-3.5 text-sky-500" /> 剩余可用内存
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {fmtBytes(summary.memBytes)}
-                </div>
-              </Elevated>
-
-              <Elevated
-                offset={1}
-                shadowLevel={1}
-                className="rounded-xl border border-border/80 bg-surface-1 p-3.5 shadow-surface-1 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium flex items-center gap-1.5">
-                    <Database className="size-3.5 text-purple-500" /> 剩余可用磁盘
-                  </span>
-                </div>
-                <div className="text-xl font-bold tracking-tight text-foreground font-mono mt-1">
-                  {fmtBytes(summary.diskBytes)}
-                </div>
-              </Elevated>
-            </div>
-          )}
+          {isMd ? metricsBar : null}
 
           {error && (
             <Alert variant="destructive">
@@ -159,6 +129,7 @@ export function CapacityPage() {
         />
       }
     >
+      {!isMd && metricsBar ? <div className="mb-3">{metricsBar}</div> : null}
       {isLoading ? (
         <div className="py-12 text-center">
           <Loading label="计算集群容量池…" />
@@ -182,8 +153,10 @@ export function CapacityPage() {
           </Elevated>
         </div>
       ) : (
+        <ResponsiveList
+          table={
         <div className="w-full overflow-x-auto rounded-xl border border-border/80 bg-surface-1 shadow-surface-1">
-          <Table data-testid="capacity-table" className="min-w-[700px]">
+          <Table data-testid="capacity-table" stackOnMobile={false} className="min-w-[700px]">
             <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
               <TableRow className="border-b border-border/60 hover:bg-transparent">
                 <TableHead className="w-[180px] py-2.5">
@@ -238,6 +211,30 @@ export function CapacityPage() {
             </TableBody>
           </Table>
         </div>
+          }
+          cards={pager.slice.map((p) => (
+            <ListCard key={p.arch} data-testid="capacity-row">
+              <ListCardHeader
+                leading={<span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] shrink-0" />}
+                title={<Badge variant="outline" className="font-mono text-xs px-2 py-0.5">{p.arch}</Badge>}
+              />
+              <ListCardMeta className="text-foreground">
+                <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                  <Cpu className="size-3 opacity-60 shrink-0" />
+                  {fmtCPU(p.cpu_milli_free)}
+                </span>
+                <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                  <HardDrive className="size-3 opacity-60 shrink-0" />
+                  {fmtBytes(p.mem_bytes_free)}
+                </span>
+                <span className="inline-flex items-center gap-1 shrink-0 font-mono">
+                  <Database className="size-3 opacity-60 shrink-0" />
+                  {fmtBytes(p.disk_bytes_free)}
+                </span>
+              </ListCardMeta>
+            </ListCard>
+          ))}
+        />
       )}
     </PageFrame>
   );
