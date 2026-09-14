@@ -91,6 +91,40 @@ func RunCommand(ctx context.Context, user, host string, port int, signer ssh.Sig
 	}
 }
 
+// ProbeHandshake dials SSH and completes the handshake, then closes. No command is run.
+func ProbeHandshake(ctx context.Context, user, host string, port int, signer ssh.Signer, timeout time.Duration) error {
+	if signer == nil {
+		return fmt.Errorf("web terminal key not ready")
+	}
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cfg := &ssh.ClientConfig{
+		User:            user,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         timeout,
+	}
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	d := net.Dialer{Timeout: timeout}
+	raw, err := d.DialContext(runCtx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("ssh dial %s: %w", addr, err)
+	}
+	_ = raw.SetDeadline(time.Now().Add(timeout))
+	ncc, chans, reqs, err := ssh.NewClientConn(raw, addr, cfg)
+	if err != nil {
+		_ = raw.Close()
+		return fmt.Errorf("ssh handshake %s: %w", addr, err)
+	}
+	client := ssh.NewClient(ncc, chans, reqs)
+	_ = client.Close()
+	return nil
+}
+
 func FakeRun(command string, stdin []byte) (stdout, stderr []byte, exit int) {
 	var b bytes.Buffer
 	b.WriteString(command)

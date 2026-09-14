@@ -13,8 +13,9 @@
   ├─ 是 → 本机 docker build && docker push
   └─ 否 → 仍本机构建；请用户 docker login docker.cnb.cool
            （不要改去 exec 传二进制；不要 docker info 的 IndexConfigs 判断没登录）
-GET /workspaces?project_id=     → 跳过 destroyed；同名取 updated_at 最新且 running 的 id
-POST /workspaces/{id}/exec      → {"command":"uname -a"} 探活
+GET /workspaces?project_id=     → 跳过 destroyed；同名优先 exec_ready=true 的 running id
+                                 exec_ready=true 不必再 uname；false 则 POST /start 或换一台
+POST /workspaces/{id}/exec      → 仅当 exec_ready 缺省时用 {"command":"uname -a"} 探活
   ├─ 502 EXEC_UNAVAILABLE      → POST /start，再探；仍失败换一台
   └─ 通 → exec 里 docker pull && docker run/compose up
 POST /exec                      → docker ps -a && docker logs <name>

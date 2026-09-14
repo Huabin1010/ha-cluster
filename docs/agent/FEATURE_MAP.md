@@ -213,6 +213,7 @@
 | 待审批横幅 | `ws-pending-banner` / `ws-resize-banner` / `ws-destroy-banner` |
 | 列表错误 / 容量不足 | `ws-error`（容量不足时外层还有 `ws-insufficient`） |
 | 服务器行 | `ws-row`（`data-status` 为原始状态） |
+| SSH 是否通 | `ws-exec-ready`（`running` 不等于 exec 可用） |
 | 升配待审徽章 | `ws-resize-pending` |
 | 批准 / 驳回创建 | `ws-approve` / `ws-reject`（确认 `reject-ok` / `reject-cancel`） |
 | 批准 / 驳回升配 | `ws-resize-approve` / `ws-resize-reject` |
@@ -443,7 +444,7 @@
 
 ### 子功能
 
-刷日志、平台对账 reconcile、看行。操作人悬停看最近登录、最近操作、加入的项目与名下服务器；操作对象有权限时悬停看状态/规格/最近变动，点击名称进入详情。
+刷日志、平台对账 reconcile、看行。操作人悬停看最近登录、最近操作、加入的项目与名下服务器；操作对象有权限时悬停看状态/规格/最近变动，点击名称进入详情。每行 ID 旁可复制排查信息（ID、触发时间、操作人、动作、资源、IP）。
 
 ### 快捷键
 
@@ -456,6 +457,7 @@
 | 无权限页 | `audit-forbidden` |
 | 刷新 / 对账 | `audit-refresh` / `audit-reconcile` |
 | 表 / 行 / 操作人 | `audit-table` / `audit-row` / `audit-actor` |
+| 复制排查信息 | `audit-copy` |
 | 操作人悬停卡 | `audit-actor-hover` |
 | 可点击的操作对象 | `audit-target-link` |
 | 操作对象悬停卡 | `audit-target-hover` |

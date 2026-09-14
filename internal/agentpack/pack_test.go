@@ -81,6 +81,9 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[APIRefPath], "include_destroyed") || !strings.Contains(p.Files[SkillPath], "EXEC_UNAVAILABLE") {
 		t.Fatal("pack should document hidden destroyed workspaces and EXEC_UNAVAILABLE")
 	}
+	if !strings.Contains(p.Files[SkillPath], "exec_ready") || !strings.Contains(p.Files[APIRefPath], "exec_ready") {
+		t.Fatal("pack should tell agents to prefer exec_ready=true")
+	}
 	if !strings.Contains(p.Files[SkillPath], "禁止") || !strings.Contains(p.Files[WorkflowsPath], "传二进制") {
 		t.Fatal("pack should forbid shipping binaries through exec")
 	}

@@ -58,14 +58,14 @@ func (s *Server) workspaceTerminal(w http.ResponseWriter, r *http.Request) {
 		ActorUserID: actor.ID, Action: "ssh.session.open",
 		ResourceType: "workspace", ResourceID: ws.ID.String(),
 		IP:   ip,
-		Meta: map[string]any{"via": "web-terminal", "username": actor.Username},
+		Meta: map[string]any{"via": "web-terminal", "username": actor.Username, "workspace_name": ws.Name},
 	})
 	defer func() {
 		_ = s.App.Store.AddAudit(context.Background(), models.AuditLog{
 			ActorUserID: actor.ID, Action: "ssh.session.close",
 			ResourceType: "workspace", ResourceID: ws.ID.String(),
 			IP:   ip,
-			Meta: map[string]any{"via": "web-terminal", "username": actor.Username},
+			Meta: map[string]any{"via": "web-terminal", "username": actor.Username, "workspace_name": ws.Name},
 		})
 	}()
 

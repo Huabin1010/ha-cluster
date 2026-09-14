@@ -162,7 +162,8 @@ export function auditResourceName(type?: string, id?: string, meta?: AuditMeta, 
       metaStr(meta, "username");
     if (name) return name;
   } else if (type === "workspace") {
-    const name = metaStr(meta, "workspace_name") || metaStr(meta, "name");
+    // SSH/exec meta 常带操作人 username；k8s 删除还会带对象 name。二者都不是服务器名。
+    const name = metaStr(meta, "workspace_name");
     if (name) return name;
   } else if (type === "ingress") {
     const name = metaStr(meta, "domain");
@@ -171,9 +172,62 @@ export function auditResourceName(type?: string, id?: string, meta?: AuditMeta, 
     const name = metaStr(meta, "node") || metaStr(meta, "name");
     if (name) return name;
   }
-  const fallback = metaStr(meta, "project_name") || metaStr(meta, "workspace_name") || metaStr(meta, "name");
-  if (fallback) return fallback;
+  if (type !== "workspace") {
+    const fallback = metaStr(meta, "project_name") || metaStr(meta, "workspace_name") || metaStr(meta, "name");
+    if (fallback) return fallback;
+  }
   return shortId(id);
+}
+
+/** 列表里的真实名称优先；接口回填若只是操作人 username，不当作服务器名 */
+export function auditPreferredName(
+  type?: string,
+  meta?: AuditMeta,
+  liveName?: string,
+  apiName?: string,
+): string | undefined {
+  const live = liveName?.trim();
+  if (live) return live;
+  const api = apiName?.trim();
+  if (!api) return undefined;
+  if (type === "workspace") {
+    const actorUser = metaStr(meta, "username");
+    const wsName = metaStr(meta, "workspace_name");
+    if (actorUser && api === actorUser && wsName !== api) return undefined;
+  }
+  return api;
+}
+
+export type AuditCopyFields = {
+  id: number;
+  created_at: string;
+  actor_user_id: string;
+  actor_username?: string;
+  actor_display_name?: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  ip?: string;
+  meta?: AuditMeta;
+};
+
+/** 一行审计日志的排查文本：ID、时间、操作人、动作、资源、IP */
+export function auditCopySnippet(log: AuditCopyFields, resourceName: string): string {
+  const actor = auditActorLabel(log.actor_display_name, log.actor_username, log.actor_user_id);
+  const actorLine =
+    log.actor_username && log.actor_username !== actor ? `${actor} (${log.actor_username})` : actor;
+  const lines = [
+    `ID: ${log.id}`,
+    `触发时间: ${fmtTime(log.created_at)}`,
+    `操作人: ${actorLine}`,
+    `安全动作: ${actionLabel(log.action)} (${log.action})`,
+    `资源: ${resourceTypeLabel(log.resource_type)} ${resourceName}`.trim(),
+    `资源 ID: ${log.resource_id}`,
+    `来源 IP: ${log.ip?.trim() || "—"}`,
+  ];
+  const detail = auditChangeSummary(log.action, log.meta);
+  if (detail) lines.push(`详情: ${detail}`);
+  return lines.join("\n");
 }
 
 export function auditResourceTitle(type?: string, id?: string, meta?: AuditMeta, resolved?: string): string {

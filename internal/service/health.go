@@ -73,5 +73,6 @@ func (a *App) RefreshNodeHealth(ctx context.Context) (degraded, offline int, err
 	if _, err := a.ReconcileWorkspaceHealth(ctx); err != nil {
 		return degraded, offline, err
 	}
+	a.ProbeWorkspaceExecs(ctx)
 	return degraded, offline, nil
 }

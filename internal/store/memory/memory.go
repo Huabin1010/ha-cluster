@@ -769,6 +769,21 @@ func (s *Store) UpdateWorkspaceIfStatus(_ context.Context, w *models.Workspace, 
 	return nil
 }
 
+func (s *Store) SetWorkspaceExec(_ context.Context, id uuid.UUID, ready bool, errMsg string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w, ok := s.workspaces[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	v := ready
+	w.ExecReady = &v
+	w.ExecError = errMsg
+	w.ExecCheckedAt = time.Now()
+	s.saveSnapshotLocked()
+	return nil
+}
+
 func (s *Store) AddAudit(ctx context.Context, l models.AuditLog) error {
 	if l.IP == "" {
 		l.IP = requestmeta.ClientIP(ctx)
@@ -790,7 +805,7 @@ func (s *Store) decorateAuditLocked(l models.AuditLog) models.AuditLog {
 		l.ActorUsername = u.Username
 		l.ActorDisplayName = strings.TrimSpace(u.DisplayName)
 	}
-	if name := models.AuditResourceNameFromMeta(l.Meta); name != "" {
+	if name := models.AuditResourceNameFromMeta(l.ResourceType, l.Meta); name != "" {
 		l.ResourceName = name
 		return l
 	}

@@ -107,3 +107,22 @@ func TestResolveSpecCustomAndCatalog(t *testing.T) {
 		t.Fatal("want invalid spec")
 	}
 }
+
+func TestAuditResourceNameFromMetaIgnoresActorUsernameForWorkspace(t *testing.T) {
+	meta := map[string]any{"username": "huanghuabin", "command": "uname -a"}
+	if got := AuditResourceNameFromMeta("workspace", meta); got != "" {
+		t.Fatalf("workspace name from actor username: %q", got)
+	}
+	meta["workspace_name"] = "office-box"
+	if got := AuditResourceNameFromMeta("workspace", meta); got != "office-box" {
+		t.Fatalf("workspace_name=%q", got)
+	}
+	// k8s object name must not replace the server name
+	meta["name"] = "nginx-deploy"
+	if got := AuditResourceNameFromMeta("workspace", meta); got != "office-box" {
+		t.Fatalf("k8s name leaked: %q", got)
+	}
+	if got := AuditResourceNameFromMeta("user", map[string]any{"username": "huanghuabin"}); got != "huanghuabin" {
+		t.Fatalf("user name=%q", got)
+	}
+}

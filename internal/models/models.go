@@ -211,6 +211,11 @@ type Workspace struct {
 	RuntimeRef       string    `json:"runtime_ref,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+	// ExecReady is nil until the control plane has tried SSH (exec or background probe).
+	// running 不等于 exec 可用：false 表示最近 handshake 失败。
+	ExecReady     *bool     `json:"exec_ready,omitempty"`
+	ExecError     string    `json:"exec_error,omitempty"`
+	ExecCheckedAt time.Time `json:"exec_checked_at,omitempty"`
 }
 
 type AuditLog struct {
@@ -234,18 +239,47 @@ func UserVisibleName(displayName, username string) string {
 	return strings.TrimSpace(username)
 }
 
-func AuditResourceNameFromMeta(meta map[string]any) string {
+func metaString(meta map[string]any, key string) string {
 	if meta == nil {
 		return ""
 	}
-	for _, key := range []string{"project_name", "workspace_name", "name", "target_display_name", "target_username", "username", "domain"} {
-		if s, ok := meta[key].(string); ok {
-			if name := strings.TrimSpace(s); name != "" {
-				return name
-			}
+	s, ok := meta[key].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(s)
+}
+
+func firstMetaString(meta map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if name := metaString(meta, key); name != "" {
+			return name
 		}
 	}
 	return ""
+}
+
+// AuditResourceNameFromMeta picks a display name from audit meta for the resource type.
+// SSH/exec logs often include the actor username; that must not become a workspace name.
+func AuditResourceNameFromMeta(resourceType string, meta map[string]any) string {
+	switch resourceType {
+	case "project":
+		return firstMetaString(meta, "project_name", "name")
+	case "workspace":
+		return firstMetaString(meta, "workspace_name")
+	case "user":
+		return firstMetaString(meta, "display_name", "username")
+	case "membership":
+		return firstMetaString(meta, "target_display_name", "target_username", "display_name", "username")
+	case "node":
+		return firstMetaString(meta, "node", "name")
+	case "ingress":
+		return firstMetaString(meta, "domain")
+	case "docker_registry":
+		return firstMetaString(meta, "name")
+	default:
+		return firstMetaString(meta, "project_name", "workspace_name", "name", "domain")
+	}
 }
 
 type Plan struct {

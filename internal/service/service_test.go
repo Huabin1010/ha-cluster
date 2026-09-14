@@ -778,6 +778,45 @@ func TestForceDestroyWinsOverProvisionCommitRace(t *testing.T) {
 	t.Fatalf("want destroyed after commit race, got %s", got.Status)
 }
 
+func TestAuditWorkspaceNameIgnoresActorUsername(t *testing.T) {
+	app, u := setupApp(t)
+	ctx := context.Background()
+	p, err := app.CreateProject(ctx, u.ID, "office", "office", "test purpose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "office-box", Plan: "nano", Arch: models.ArchAMD64, Actor: *u,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: u.ID, Action: "ssh.exec.deny",
+		ResourceType: "workspace", ResourceID: ws.ID.String(),
+		Meta: map[string]any{"username": u.Username, "command": "uname -a", "error": "connection reset"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	logs, err := app.Store.ListAudit(ctx, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *models.AuditLog
+	for i := range logs {
+		if logs[i].Action == "ssh.exec.deny" {
+			found = &logs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("missing ssh.exec.deny")
+	}
+	if found.ResourceName != "office-box" {
+		t.Fatalf("resource_name=%q want office-box (not actor username %q)", found.ResourceName, u.Username)
+	}
+}
+
 func containsKey(keys []string, want string) bool {
 	for _, k := range keys {
 		if k == want {

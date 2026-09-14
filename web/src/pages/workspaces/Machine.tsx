@@ -620,6 +620,18 @@ export function MachinePage() {
                     {statusLabel(ws.status)}
                   </Badge>
                 </Hint>
+                {typeof ws.exec_ready === "boolean" && (
+                  <Hint label={ws.exec_error || (ws.exec_ready ? "HTTP 执行可用" : "SSH handshake 失败")} className="font-mono">
+                    <Badge
+                      data-testid="ws-exec-ready"
+                      variant={ws.exec_ready ? "ok" : "danger"}
+                      className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Terminal className="size-3.5 shrink-0" />
+                      {ws.exec_ready ? "SSH 通" : "SSH 不通"}
+                    </Badge>
+                  </Hint>
+                )}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">

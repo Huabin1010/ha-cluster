@@ -68,6 +68,9 @@ var workspaceRuntimeSQL string
 //go:embed sql/017_project_purpose.sql
 var projectPurposeSQL string
 
+//go:embed sql/018_workspace_exec.sql
+var workspaceExecSQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -147,6 +150,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, projectPurposeSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, workspaceExecSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -745,6 +752,7 @@ func (s *Store) ExpandAllocation(ctx context.Context, id uuid.UUID, dCPU, dMem, 
 }
 
 const wsCols = `id,project_id,name,plan,arch,visibility,owner_user_id,node_id,allocation_id,status,ssh_port,host_key_fp,created_at,updated_at,cpu_milli,mem_bytes,disk_bytes,pending_cpu_milli,pending_mem_bytes,pending_disk_bytes,resize_status,resize_kind,last_activity_at,idle_suspend_hours,runtime,runtime_ref`
+const wsSelectCols = wsCols + `,exec_ready,exec_error,exec_checked_at`
 
 func (s *Store) CreateWorkspace(ctx context.Context, w *models.Workspace) error {
 	if w.Runtime == "" {
@@ -766,13 +774,25 @@ func (s *Store) CreateWorkspace(ctx context.Context, w *models.Workspace) error 
 func scanWS(row interface{ Scan(dest ...any) error }) (*models.Workspace, error) {
 	w := &models.Workspace{}
 	var lastAct sql.NullTime
+	var execReady sql.NullBool
+	var execErr string
+	var execAt sql.NullTime
 	err := row.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Plan, &w.Arch, &w.Visibility, &w.OwnerUserID, &w.NodeID, &w.AllocationID, &w.Status, &w.SSHPort, &w.HostKeyFP, &w.CreatedAt, &w.UpdatedAt,
-		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus, &w.ResizeKind, &lastAct, &w.IdleSuspendHours, &w.Runtime, &w.RuntimeRef)
+		&w.CPUMilli, &w.MemBytes, &w.DiskBytes, &w.PendingCPUMilli, &w.PendingMemBytes, &w.PendingDiskBytes, &w.ResizeStatus, &w.ResizeKind, &lastAct, &w.IdleSuspendHours, &w.Runtime, &w.RuntimeRef,
+		&execReady, &execErr, &execAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	if lastAct.Valid {
 		w.LastActivityAt = lastAct.Time
+	}
+	if execReady.Valid {
+		v := execReady.Bool
+		w.ExecReady = &v
+	}
+	w.ExecError = execErr
+	if execAt.Valid {
+		w.ExecCheckedAt = execAt.Time
 	}
 	if w.Runtime == "" {
 		w.Runtime = models.RuntimeContainer
@@ -781,11 +801,11 @@ func scanWS(row interface{ Scan(dest ...any) error }) (*models.Workspace, error)
 }
 
 func (s *Store) GetWorkspace(ctx context.Context, id uuid.UUID) (*models.Workspace, error) {
-	return scanWS(s.db.QueryRowContext(ctx, `SELECT `+wsCols+` FROM workspaces WHERE id=$1`, id))
+	return scanWS(s.db.QueryRowContext(ctx, `SELECT `+wsSelectCols+` FROM workspaces WHERE id=$1`, id))
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, projectID *uuid.UUID) ([]models.Workspace, error) {
-	q := `SELECT ` + wsCols + ` FROM workspaces`
+	q := `SELECT ` + wsSelectCols + ` FROM workspaces`
 	var rows *sql.Rows
 	var err error
 	if projectID != nil {
@@ -848,6 +868,12 @@ func (s *Store) UpdateWorkspaceIfStatus(ctx context.Context, w *models.Workspace
 	return nil
 }
 
+func (s *Store) SetWorkspaceExec(ctx context.Context, id uuid.UUID, ready bool, errMsg string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE workspaces SET exec_ready=$2, exec_error=$3, exec_checked_at=$4 WHERE id=$1`,
+		id, ready, errMsg, time.Now())
+	return err
+}
+
 func (s *Store) AddAudit(ctx context.Context, l models.AuditLog) error {
 	if l.IP == "" {
 		l.IP = requestmeta.ClientIP(ctx)
@@ -864,21 +890,49 @@ SELECT a.id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.ip, a.
   COALESCE(NULLIF(TRIM(u.display_name), ''), ''),
   a.meta,
   COALESCE(
-    NULLIF(TRIM(a.meta->>'project_name'), ''),
-    NULLIF(TRIM(a.meta->>'workspace_name'), ''),
-    NULLIF(TRIM(a.meta->>'name'), ''),
-    NULLIF(TRIM(a.meta->>'target_display_name'), ''),
-    NULLIF(TRIM(a.meta->>'target_username'), ''),
-    NULLIF(TRIM(a.meta->>'username'), ''),
-    NULLIF(TRIM(a.meta->>'domain'), ''),
     CASE a.resource_type
-      WHEN 'project' THEN NULLIF(TRIM(p.name), '')
-      WHEN 'workspace' THEN NULLIF(TRIM(w.name), '')
-      WHEN 'user' THEN COALESCE(NULLIF(TRIM(tu.display_name), ''), NULLIF(TRIM(tu.username), ''))
-      WHEN 'membership' THEN COALESCE(NULLIF(TRIM(tu.display_name), ''), NULLIF(TRIM(tu.username), ''))
-      WHEN 'node' THEN NULLIF(TRIM(n.name), '')
-      WHEN 'docker_registry' THEN NULLIF(TRIM(dr.name), '')
-      WHEN 'ingress' THEN NULLIF(TRIM(ir.domain), '')
+      WHEN 'project' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'project_name'), ''),
+        NULLIF(TRIM(a.meta->>'name'), ''),
+        NULLIF(TRIM(p.name), '')
+      )
+      WHEN 'workspace' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'workspace_name'), ''),
+        NULLIF(TRIM(w.name), '')
+      )
+      WHEN 'user' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'display_name'), ''),
+        NULLIF(TRIM(a.meta->>'username'), ''),
+        NULLIF(TRIM(tu.display_name), ''),
+        NULLIF(TRIM(tu.username), '')
+      )
+      WHEN 'membership' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'target_display_name'), ''),
+        NULLIF(TRIM(a.meta->>'target_username'), ''),
+        NULLIF(TRIM(a.meta->>'display_name'), ''),
+        NULLIF(TRIM(a.meta->>'username'), ''),
+        NULLIF(TRIM(tu.display_name), ''),
+        NULLIF(TRIM(tu.username), '')
+      )
+      WHEN 'node' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'node'), ''),
+        NULLIF(TRIM(a.meta->>'name'), ''),
+        NULLIF(TRIM(n.name), '')
+      )
+      WHEN 'docker_registry' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'name'), ''),
+        NULLIF(TRIM(dr.name), '')
+      )
+      WHEN 'ingress' THEN COALESCE(
+        NULLIF(TRIM(a.meta->>'domain'), ''),
+        NULLIF(TRIM(ir.domain), '')
+      )
+      ELSE COALESCE(
+        NULLIF(TRIM(a.meta->>'project_name'), ''),
+        NULLIF(TRIM(a.meta->>'workspace_name'), ''),
+        NULLIF(TRIM(a.meta->>'name'), ''),
+        NULLIF(TRIM(a.meta->>'domain'), '')
+      )
     END,
     ''
   )

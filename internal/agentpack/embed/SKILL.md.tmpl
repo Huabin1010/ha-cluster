@@ -65,8 +65,11 @@ Content-Type: application/json
 
 需要进机器时才 `GET /workspaces?project_id=`。列表**默认不含** `destroyed`；若仍看到，跳过。
 
-- 只操作 `running` 或 `fabric_degraded`。同名多台（一毁一活）取 `updated_at` **最新**且 `running` 的那条，**用 `id` 不用 `name`**。
-- **`status=running` 不等于 exec 现在能用。** 先短命令探活：`{"command":"uname -a"}`。HTTP 502 / `EXEC_UNAVAILABLE` / handshake `connection reset` → `POST /workspaces/{id}/start`，再探一次。仍失败换同项目另一台 `running` 的，不要对着同一台改字段重试很久。
+- 只操作 `running` 或 `fabric_degraded`。同名多台取 **`exec_ready=true`** 的那条（不要只看名字或 `updated_at`），**用 `id`**。
+- **`status=running` 不等于 exec 现在能用。** 列表上的 `exec_ready`：
+  - `true` → 直接 `docker pull` / `run`，不必再 `uname` 探活
+  - `false` → `POST /workspaces/{id}/start`，或换同项目另一台 `exec_ready=true` 的；不要对着 handshake reset 换 JSON 字段
+  - 缺省 → 短命令探一次：`{"command":"uname -a"}`。HTTP 502 / `EXEC_UNAVAILABLE` 再 start / 换台
 - 非 `running` 不要 claim 域名、不要假设 HTTP 执行可用。
 
 ## Windows 终端（Agent 必守）

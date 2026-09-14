@@ -118,20 +118,23 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 			IP: ip,
 			Meta: map[string]any{
 				"via": "http-ssh", "fake": true, "command": cmdPreview,
-				"exit_code": exit, "username": actor.Username,
+				"exit_code": exit, "username": actor.Username, "workspace_name": ws.Name,
 			},
 		})
 		writeJSON(w, http.StatusOK, execResponse(stdout, stderr, exit, "http-ssh"))
+		s.App.RecordWorkspaceExec(r.Context(), ws.ID, true, "")
 		return
 	}
 
 	tg, err := bastion.Resolve(*ws, *node, *actor, mem)
 	if err != nil {
+		s.App.RecordWorkspaceExec(r.Context(), ws.ID, false, err.Error())
 		writeErr(w, http.StatusBadGateway, wrapExecUnavailable(err))
 		return
 	}
 	pubs := s.App.WorkspaceSSHKeys(r.Context(), *ws)
 	if serr := s.App.Runtime.SyncKeys(r.Context(), ws.ID, pubs); serr != nil {
+		s.App.RecordWorkspaceExec(r.Context(), ws.ID, false, serr.Error())
 		writeErr(w, http.StatusBadGateway, wrapExecUnavailable(fmt.Errorf("同步终端密钥失败：%w", serr)))
 		return
 	}
@@ -146,19 +149,21 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 			IP: ip,
 			Meta: map[string]any{
 				"via": "http-ssh", "command": cmdPreview, "error": err.Error(),
-				"username": actor.Username, "target": tg.Host,
+				"username": actor.Username, "target": tg.Host, "workspace_name": ws.Name,
 			},
 		})
+		s.App.RecordWorkspaceExec(r.Context(), ws.ID, false, err.Error())
 		writeErr(w, http.StatusBadGateway, wrapExecUnavailable(err))
 		return
 	}
+	s.App.RecordWorkspaceExec(r.Context(), ws.ID, true, "")
 	_ = s.App.Store.AddAudit(r.Context(), models.AuditLog{
 		ActorUserID: actor.ID, Action: "ssh.exec",
 		ResourceType: "workspace", ResourceID: ws.ID.String(),
 		IP: ip,
 		Meta: map[string]any{
 			"via": "http-ssh", "command": cmdPreview, "exit_code": exit,
-			"username": actor.Username, "target": tg.Host,
+			"username": actor.Username, "target": tg.Host, "workspace_name": ws.Name,
 		},
 	})
 	writeJSON(w, http.StatusOK, execResponse(stdout, stderr, exit, "http-ssh"))

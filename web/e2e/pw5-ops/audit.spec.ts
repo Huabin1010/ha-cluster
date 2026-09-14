@@ -32,7 +32,8 @@ test.describe("PW-5 审计日志", () => {
               action: "ssh.exec",
               resource_type: "workspace",
               resource_id: "ws-demo-id",
-              resource_name: "liuhuapiaoyuan",
+              resource_name: "huanghuabin",
+              meta: { username: "huanghuabin", command: "uname -a" },
               created_at: "2026-09-12T23:26:05Z",
             },
             {
@@ -42,11 +43,31 @@ test.describe("PW-5 审计日志", () => {
               action: "ssh.exec.deny",
               resource_type: "workspace",
               resource_id: "ws-demo-id",
-              resource_name: "liuhuapiaoyuan",
+              resource_name: "huanghuabin",
+              meta: { username: "huanghuabin", command: "uname -a", error: "connection reset by peer" },
               created_at: "2026-09-12T23:25:56Z",
             },
           ],
           total: 2,
+        }),
+      });
+    });
+    await adminPage.route("**/api/workspaces*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: [
+            {
+              id: "ws-demo-id",
+              name: "办公零食柜",
+              status: "running",
+              plan: "2c2g",
+              arch: "amd64",
+              project_id: "p-demo",
+            },
+          ],
+          total: 1,
         }),
       });
     });
@@ -57,6 +78,12 @@ test.describe("PW-5 审计日志", () => {
     await expect(table).toContainText("SSH 执行命令");
     await expect(table).toContainText("SSH 执行失败");
     await expect(table).not.toContainText("ssh.exec");
+    await expect(table).toContainText("办公零食柜");
+    await expect(table.getByTestId("audit-target-link").first()).not.toContainText("huanghuabin");
+    await expect(adminPage.getByTestId("audit-copy").first()).toBeVisible();
+
+    await adminPage.getByTestId("audit-copy").first().click();
+    await expect(adminPage.getByText("已复制排查信息")).toBeVisible();
 
     await adminPage.getByTestId("audit-actor").first().hover();
     const actorHover = adminPage.getByTestId("audit-actor-hover");
@@ -67,6 +94,7 @@ test.describe("PW-5 审计日志", () => {
     const targetHover = adminPage.getByTestId("audit-target-hover");
     await expect(targetHover).toBeVisible();
     await expect(targetHover).toContainText("最近变动");
+    await expect(targetHover).toContainText("办公零食柜");
 
     await adminPage.getByTestId("audit-target-link").first().click();
     await expect(adminPage).toHaveURL(/\/workspaces\/ws-demo-id/);

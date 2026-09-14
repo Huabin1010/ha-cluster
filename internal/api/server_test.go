@@ -1465,6 +1465,10 @@ func TestWorkspaceHTTPExec(t *testing.T) {
 	if out.Exit != 0 || out.Via != "http-ssh" || !strings.Contains(out.Stdout, "uname -a") || !strings.Contains(out.Stdout, "payload") {
 		t.Fatalf("exec body %+v", out)
 	}
+	got := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String(), tok, nil)
+	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"exec_ready":true`) {
+		t.Fatalf("exec_ready after fake exec: %d %s", got.Code, got.Body.String())
+	}
 
 	roTok := registerLogin(t, h, "exec-ro", "exec-ro@x.com")
 	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", tok, map[string]string{

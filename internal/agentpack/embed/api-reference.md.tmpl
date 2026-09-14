@@ -55,8 +55,8 @@
 
 | 方法 | 路径 | 体 / 说明 |
 |---|---|---|
-| GET | `/workspaces` | `?project_id=`；**默认不含 `destroyed`**，要历史记录加 `include_destroyed=1`。同名取 `updated_at` 最新且 `running` 的 id |
-| GET | `/workspaces/{id}` | |
+| GET | `/workspaces` | `?project_id=`；**默认不含 `destroyed`**，要历史记录加 `include_destroyed=1`。同名优先 `exec_ready=true` 的 running id |
+| GET | `/workspaces/{id}` | 含 `exec_ready` / `exec_error` / `exec_checked_at`（nil 表示尚未探测） |
 | POST | `/projects/{id}/workspaces` | `{name,plan,arch,visibility,runtime?,cpu_milli?,mem_bytes?,disk_bytes?}`；默认不写或 `container`（Docker Compose）；用户要 k8s 才 `runtime=k8s`。developer 一律 `requested`（含 k8s）；owner/admin 直建 |
 | POST | `/workspaces/{id}/approve` | admin；`requested`→开通 |
 | POST | `/workspaces/{id}/reject` | `{reason?}` |

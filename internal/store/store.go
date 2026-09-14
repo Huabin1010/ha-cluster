@@ -71,6 +71,8 @@ type Store interface {
 	// fromStatus. Returns ErrConflict if the row is missing or the status changed
 	// (e.g. force-destroy during provision).
 	UpdateWorkspaceIfStatus(ctx context.Context, w *models.Workspace, fromStatus string) error
+	// SetWorkspaceExec records the last SSH probe / exec handshake. Does not bump updated_at.
+	SetWorkspaceExec(ctx context.Context, id uuid.UUID, ready bool, errMsg string) error
 
 	AddAudit(ctx context.Context, l models.AuditLog) error
 	ListAudit(ctx context.Context, limit int) ([]models.AuditLog, error)

@@ -199,6 +199,18 @@ export function WorkspaceRow({
               {ws.resize_kind === "downgrade" ? "降配待审" : "升配待审"}
             </Badge>
           )}
+          {typeof ws.exec_ready === "boolean" && (
+            <Hint label={ws.exec_error || (ws.exec_ready ? "HTTP 执行可用" : "SSH handshake 失败")} className="font-mono">
+              <Badge
+                data-testid="ws-exec-ready"
+                variant={ws.exec_ready ? "ok" : "danger"}
+                className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+              >
+                <Terminal className="size-3 shrink-0" />
+                {ws.exec_ready ? "SSH 通" : "SSH 不通"}
+              </Badge>
+            </Hint>
+          )}
         </div>
       </TableCell>
       <TableCell className="py-2.5 whitespace-nowrap">

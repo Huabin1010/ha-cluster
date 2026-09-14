@@ -3,6 +3,8 @@ import {
   actionLabel,
   auditActorLabel,
   auditChangeSummary,
+  auditCopySnippet,
+  auditPreferredName,
   auditResourceHref,
   auditResourceName,
   auditResourceTitle,
@@ -127,6 +129,52 @@ describe("audit change summary", () => {
     expect(auditResourceName("project", "7d9a6cd4-xxxx", {}, "办公室故事")).toBe("办公室故事");
     expect(auditResourceTitle("workspace", "9031b376-xxxx", { workspace_name: "开发机" })).toBe("服务器 开发机");
     expect(auditResourceTitle("user", "00000000-xxxx", { display_name: "黄华斌", username: "huanghuabin" })).toBe("用户 黄华斌");
+  });
+
+  it("does not treat actor username as a workspace name", () => {
+    expect(
+      auditResourceName("workspace", "ws-1", { username: "huanghuabin", command: "uname -a" }),
+    ).toBe("ws-1");
+    expect(
+      auditResourceName("workspace", "ws-1", { username: "huanghuabin", name: "nginx" }),
+    ).toBe("ws-1");
+    expect(
+      auditResourceName("workspace", "ws-1", { username: "huanghuabin", workspace_name: "office-box" }),
+    ).toBe("office-box");
+    expect(
+      auditResourceName("workspace", "ws-1", { username: "huanghuabin" }, "办公零食柜"),
+    ).toBe("办公零食柜");
+    expect(
+      auditPreferredName("workspace", { username: "huanghuabin" }, "", "huanghuabin"),
+    ).toBeUndefined();
+    expect(
+      auditPreferredName("workspace", { username: "huanghuabin" }, "办公零食柜", "huanghuabin"),
+    ).toBe("办公零食柜");
+  });
+
+  it("builds a copy snippet with id, time, actor and resource", () => {
+    const text = auditCopySnippet(
+      {
+        id: 120,
+        created_at: "2026-09-14T02:54:10Z",
+        actor_user_id: "u1",
+        actor_username: "huanghuabin",
+        actor_display_name: "黄华彬",
+        action: "ssh.exec.deny",
+        resource_type: "workspace",
+        resource_id: "ws-1",
+        ip: "127.0.0.1",
+        meta: { command: "uname -a", error: "connection reset by peer" },
+      },
+      "办公零食柜",
+    );
+    expect(text).toContain("ID: 120");
+    expect(text).toContain("操作人: 黄华彬 (huanghuabin)");
+    expect(text).toContain("安全动作: SSH 执行失败 (ssh.exec.deny)");
+    expect(text).toContain("资源: 服务器 办公零食柜");
+    expect(text).toContain("资源 ID: ws-1");
+    expect(text).toContain("来源 IP: 127.0.0.1");
+    expect(text).toContain("uname -a");
   });
 
   it("shows actor display name and falls back to username", () => {

@@ -6,7 +6,7 @@
 
 ## 更新已有服务（默认）
 
-本机已 login CNB（看 `~/.docker/config.json` 的 `auths` / `credsStore`，或 `docker images`；**不要**用 `docker info` IndexConfigs）→ 本机 `docker build` && `docker push`。`GET /workspaces?project_id=` 跳过 destroyed，同名取最新 `running` 的 **id**。短命令 `uname` 探活；502 `EXEC_UNAVAILABLE` 则 `POST /start` 再探。通了只 `docker pull` + `run`/`compose up` + `docker logs`。`Restarting` / `permission denied` 先 chown 数据目录。域名没有才 `POST /ingress/shared`。**禁止 exec 传二进制。**
+本机已 login CNB（看 `~/.docker/config.json` 的 `auths` / `credsStore`，或 `docker images`；**不要**用 `docker info` IndexConfigs）→ 本机 `docker build` && `docker push`。`GET /workspaces?project_id=` 跳过 destroyed，同名优先 `exec_ready=true` 的 running **id**。`exec_ready=true` 不必再 uname；`false` 则 `POST /start` 或换一台。通了只 `docker pull` + `run`/`compose up` + `docker logs`。`Restarting` / `permission denied` 先 chown 数据目录。域名没有才 `POST /ingress/shared`。**禁止 exec 传二进制。**
 
 ## 开通 2c2g（默认 Compose）
 

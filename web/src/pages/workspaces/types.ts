@@ -22,6 +22,9 @@ export type Workspace = {
   resize_kind?: string;
   runtime?: string;
   runtime_ref?: string;
+  exec_ready?: boolean;
+  exec_error?: string;
+  exec_checked_at?: string;
 };
 
 export type ProjectOption = {

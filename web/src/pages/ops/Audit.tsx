@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CanAccess, useCustomMutation, useGetIdentity, useList } from "@refinedev/core";
-import { Activity, Clock, Globe, Hash, Layers, RefreshCw, Shield, User } from "lucide-react";
+import { Activity, Check, Clock, Copy, Globe, Hash, Layers, RefreshCw, Shield, User } from "lucide-react";
+import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -14,11 +15,14 @@ import { canManageUsers } from "@/lib/permissions";
 import { ApiError, friendlyError, type AuthUser } from "@/providers";
 import { Hint } from "@/components/ui/tooltip";
 import { Loading } from "@/ui";
+import { copyText } from "@/ui/format";
 import { type Workspace } from "@/pages/workspaces/types";
 import {
   actionLabel,
   auditActorLabel,
   auditChangeSummary,
+  auditCopySnippet,
+  auditPreferredName,
   auditResourceHref,
   auditResourceName,
   canOpenAuditResource,
@@ -96,6 +100,20 @@ function actionVariant(action: string): "default" | "outline" | "ok" | "warn" | 
   return "outline";
 }
 
+function auditLogDisplayName(log: AuditLog, workspaces: Workspace[], projects: AuditHoverProject[]): string {
+  const workspace = workspaces.find((w) => w.id === log.resource_id);
+  const projectId = log.resource_type === "project" ? log.resource_id : workspace?.project_id;
+  const project = projects.find((p) => p.id === projectId);
+  const liveName =
+    log.resource_type === "workspace" ? workspace?.name : log.resource_type === "project" ? project?.name : "";
+  return auditResourceName(
+    log.resource_type,
+    log.resource_id,
+    log.meta,
+    auditPreferredName(log.resource_type, log.meta, liveName, log.resource_name),
+  );
+}
+
 function AuditTargetCell({
   log,
   me,
@@ -112,7 +130,7 @@ function AuditTargetCell({
   projects: AuditHoverProject[];
 }) {
   const change = auditChangeSummary(log.action, log.meta);
-  const name = auditResourceName(log.resource_type, log.resource_id, log.meta, log.resource_name);
+  const name = auditLogDisplayName(log, workspaces, projects);
   const href = auditResourceHref(log.resource_type, log.resource_id, log.meta);
   const canOpen = canOpenAuditResource(log.resource_type, log.resource_id, log.meta, {
     userId: me?.id,
@@ -165,8 +183,53 @@ function AuditTargetCell({
   );
 }
 
+function AuditCopyButton({
+  log,
+  name,
+  copied,
+  onCopied,
+}: {
+  log: AuditLog;
+  name: string;
+  copied: boolean;
+  onCopied: (id: number) => void;
+}) {
+  return (
+    <Hint label={copied ? "已复制" : "复制排查信息"}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="compact"
+        className="size-6 p-0 shrink-0 inline-flex items-center justify-center"
+        data-testid="audit-copy"
+        aria-label="复制排查信息"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void (async () => {
+            const ok = await copyText(auditCopySnippet(log, name));
+            if (!ok) {
+              toast.error("复制失败，请手动选中");
+              return;
+            }
+            onCopied(log.id);
+            toast.success("已复制排查信息");
+          })();
+        }}
+      >
+        {copied ? (
+          <Check className="size-3 text-emerald-500 shrink-0" />
+        ) : (
+          <Copy className="size-3 opacity-60 shrink-0" />
+        )}
+      </Button>
+    </Hint>
+  );
+}
+
 function AuditList() {
   const { data: me } = useGetIdentity<AuthUser>();
+  const [copiedId, setCopiedId] = useState<number | null>(null);
   const canReconcile = me?.platform_role === "platform_admin";
   const canListUsers = canManageUsers(me?.platform_role);
   const { data, isLoading, error, refetch } = useList<AuditLog>({
@@ -311,7 +374,7 @@ function AuditList() {
           <Table data-testid="audit-table" className="min-w-[850px]">
             <TableHeader className="bg-surface-2/60 border-b border-border/70 select-none">
               <TableRow className="border-b border-border/60 hover:bg-transparent">
-                <TableHead className="w-[80px] py-2.5">
+                <TableHead className="w-[120px] py-2.5">
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                     <Hash className="size-3.5 opacity-60 shrink-0" />
                     ID
@@ -352,8 +415,19 @@ function AuditList() {
             <TableBody>
               {pager.slice.map((l) => (
                 <TableRow key={l.id} data-testid="audit-row">
-                  <TableCell className="mono font-mono text-xs py-2.5 text-muted-foreground whitespace-nowrap">
-                    #{l.id}
+                  <TableCell className="py-2.5 whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                      <span className="mono font-mono text-xs text-muted-foreground">#{l.id}</span>
+                      <AuditCopyButton
+                        log={l}
+                        name={auditLogDisplayName(l, workspaces, projects)}
+                        copied={copiedId === l.id}
+                        onCopied={(id) => {
+                          setCopiedId(id);
+                          window.setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1600);
+                        }}
+                      />
+                    </span>
                   </TableCell>
                   <TableCell className="mono font-mono text-xs py-2.5 whitespace-nowrap text-muted-foreground">
                     {fmtTime(l.created_at)}
