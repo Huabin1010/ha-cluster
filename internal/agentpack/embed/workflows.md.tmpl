@@ -86,23 +86,45 @@ POST /workspaces/{id}/exec
 
 不要写 `base64 -d`（会 `invalid input`）。只传 KB 级文本。
 
-`timeout_sec` 默认 60，最大 300；前面网关仍可能 60s 超时，所以不要把 build 塞进一次 HTTP。只读 SSH（`ssh_mode=read_only`）会 403。**Kubernetes 工作区 exec 返回 400**，改走下一节 apply。
+`timeout_sec` 默认 60，最大 300；前面网关仍可能 60s 超时，所以不要把 build 塞进一次 HTTP。只读 SSH（`ssh_mode=read_only`）会 403。**Kubernetes 工作区 exec 返回 400**，改走下一节 apply + status。
 
-## 3b. Kubernetes：apply / kubeconfig / 资源
+## 3b. Kubernetes：apply / 状态 / kubeconfig
+
+k8s 机器 **没有 SSH**。`POST /exec` 一定 400。**不要**把 kubeconfig 写到同一节点上的 Docker 机器（即使它 `exec_ready=true`）再跑 `kubectl` / python 探活——审计会看起来像「apply 在 A、探活全在 B」。
 
 ```
 POST /workspaces/{id}/k8s/apply
-  {"yaml":"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 1\n"}
-GET  /workspaces/{id}/k8s/resources
-GET  /workspaces/{id}/kubeconfig          → {kubeconfig}
+  {"yaml":"apiVersion: apps/v1\nkind: Deployment\n..."}
+GET  /workspaces/{id}/k8s/status          ← 看滚动更新是否真正起 Pod
+GET  /workspaces/{id}/k8s/resources       ← 扁平列表（含 ready / labels）
+GET  /workspaces/{id}/kubeconfig          → {kubeconfig}  仅当用户要在本机 kubectl
 DELETE /workspaces/{id}/k8s/resources?kind=Deployment&name=web
 ```
 
-清单会被强制改写到工作区 Namespace；`ClusterRole` / `Node` 等集群级对象会被拒。viewer 只能 GET resources。需要域名再走现有 Ingress API。
+`GET /k8s/status` 顶层就是快照，不要再包一层 `data`：
+
+- `summary`：deployments / ready_deployments / pods / running_pods / pending_pods / failed_pods / warnings
+- `quota`：`project-quota` 的 hard / used（`requests.cpu` `requests.memory` `pods`）
+- `deployments[]`：`replicas` `ready_replicas` `updated_replicas` `rolling` `strategy` `max_unavailable` `max_surge` `labels`（含 `release`）`missing_requests`
+- `replica_sets[]`：两代同时 desired>0 就是正在 RollingUpdate
+- `pods[]`：`phase` `ready` `restarts` `labels` `reason` `message`
+- `events[]` / `warnings[]`：FailedCreate、配额拦截会写在这里
+- `resources[]`：与 `GET /k8s/resources` 相同的扁平对象
+
+apply 之后立刻打 status。若 `warnings` 含 `project-quota` / `exceeded quota` / `missing_requests`：补容器 `resources.requests.cpu` 与 `resources.requests.memory` 再 apply，不要换机器重试。示例：
+
+```
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+```
+
+清单会被强制改写到工作区 Namespace；`ClusterRole` / `Node` 等集群级对象会被拒。viewer 只能 GET resources / status。需要域名再走现有 Ingress API。
 
 开通和 apply 时会把平台 **auto_inject** 的 Docker 仓库（线上 CNB 登录）写成 Secret `ha-registry`，并挂到 Namespace 的 default ServiceAccount；Deployment 也会自动补 `imagePullSecrets`。不要在清单里再写一遍 docker login。
 
-若 `GET kubeconfig` 里 `server` 是 `https://k8s.invalid`，或 apply 返回 **503 `K8S_UNAVAILABLE`**，说明控制面没有真实 k3s，不要反复换字段重试。`fabric_degraded` 时仍应先 apply（JSON `{yaml}`），不要对 k8s 工作区 `POST /start`（那会去找不存在的 Incus 实例）。
+若 `GET kubeconfig` 里 `server` 是 `https://k8s.invalid`，或 apply 返回 **503 `K8S_UNAVAILABLE`**，说明控制面没有真实 k3s，不要反复换字段重试。本机若到不了虚网 apiserver，也**不要**改去 Docker 机器上打 6443——继续用 `GET /k8s/status`。`fabric_degraded` 时仍应先 apply（JSON `{yaml}`），不要对 k8s 工作区 `POST /start`（那会去找不存在的 Incus 实例）。
 
 `GET /workspaces/{id}/connection` 含 `exec_example`。`ssh_access` 不是 `granted`（且不是 owner/admin）时 exec 为 403。让用户：
 

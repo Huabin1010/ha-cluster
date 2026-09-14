@@ -111,6 +111,9 @@ def main():
     code, res = api("GET", f"/workspaces/{wid}/k8s/resources", token=tok)
     names = [r.get("name") for r in (res.get("data") or [])]
     ok("resources contain lab-web", code == 200 and "lab-web" in names, str(res))
+    code, st = api("GET", f"/workspaces/{wid}/k8s/status", token=tok)
+    dep_names = [d.get("name") for d in (st.get("deployments") or [])]
+    ok("status contains lab-web", code == 200 and "lab-web" in dep_names, str(st)[:240])
     code, kc = api("GET", f"/workspaces/{wid}/kubeconfig", token=tok)
     ok("kubeconfig", code == 200 and "kubeconfig" in kc, str(kc)[:120])
 

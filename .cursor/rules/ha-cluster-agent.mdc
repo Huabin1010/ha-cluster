@@ -13,4 +13,4 @@ alwaysApply: false
 
 **发版：** 本机 docker 已 login `docker.cnb.cool`（看 config.json 的 auths / credsStore，不要看 `docker info` IndexConfigs）→ 本机 build/push，exec 只 pull/run。**禁止**把二进制分片塞进 exec。**构建只能在本机运行，不允许在我们申请的机器中运行。**
 
-选机器跳过 `destroyed`，同名用 `exec_ready=true` 的 running **id**。`running` ≠ exec 通。Windows 禁止 `$pid` 当变量；JSON 写文件；写文件用 `cat > file` 不要 `base64 -d`。
+选机器跳过 `destroyed`，同名用 `exec_ready=true` 的 running **id**。`running` ≠ exec 通。Windows 禁止 `$pid` 当变量；JSON 写文件；写文件用 `cat > file` 不要 `base64 -d`。k8s 工作区不要 exec，用 `GET /k8s/status` 看副本与 Pod，不要借 Docker 机当跳板。

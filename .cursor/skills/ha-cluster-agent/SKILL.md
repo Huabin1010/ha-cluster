@@ -1,6 +1,6 @@
 ---
 name: ha-cluster-agent
-pack_version: "13"
+pack_version: "14"
 description: >-
   Operates the ha-cluster control plane as a signed-in user via REST. Use when
   creating projects, provisioning workspaces (machines), managing members or
@@ -15,7 +15,7 @@ description: >-
 
 ## 本会话只需一次
 
-本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **13**。
+本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **14**。
 
 ```bash
 curl -fsS "${HA_API_BASE:-https://cl.qzsyzn.com/api}/agent-pack/version"
@@ -53,6 +53,8 @@ curl -fsS -H "Authorization: Bearer $HA_AGENT_TOKEN" "${HA_API_BASE:-https://cl.
 创建项目必须带简洁 `purpose`（2–80 字）。旧项目为空时先 `PATCH /projects/{id}` `{purpose}`，否则 `409 PURPOSE_REQUIRED`。
 
 选机器：`GET /workspaces` **默认不含 destroyed**；同名取 `exec_ready=true` 且 `running` 的 **id**（不要只看 `updated_at`）。`exec_ready=false` 先 `POST /start` 或换一台；字段缺省才短命令探一次。`running` ≠ exec 通。
+
+k8s 工作区 `POST /exec` 会 400。apply 之后用 `GET /workspaces/{id}/k8s/status` 看副本、Pod 阶段、release 标签、配额告警。容器必须写 `resources.requests.cpu/memory`，否则会被 `project-quota` 拦住。**禁止**把 kubeconfig 写进另一台 Docker 机器再 exec kubectl / python 探活。
 
 公共域 `*.apps` 出厂带平台通配符 HTTPS。`platform_admin` 看 `GET /admin/tls-certs`，立即签发 `POST /admin/tls-certs/{id}/issue`。
 

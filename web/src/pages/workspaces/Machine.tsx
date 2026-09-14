@@ -979,7 +979,7 @@ export function MachinePage() {
               <CardTitle>SSH 连接</CardTitle>
               <CardDescription>
                 {isK8sRuntime(ws.runtime)
-                  ? "Kubernetes 工作区不提供 SSH / 网页终端，请到 Kubernetes 页 apply 清单或下载 kubeconfig。"
+                  ? "Kubernetes 工作区不提供 SSH / 网页终端，请到 Kubernetes 页 apply 清单，并用状态面板查看 Pod / 滚动更新。"
                   : "有权限时可直接在网页打开终端；也可以导入本机公钥后用本地 SSH / scp。"}
               </CardDescription>
             </CardHeader>
@@ -987,7 +987,7 @@ export function MachinePage() {
               {isK8sRuntime(ws.runtime) && (
                 <Alert variant="info">
                   <AlertDescription>
-                    请使用「Kubernetes」页应用 YAML，或下载受限 kubeconfig。进容器请改用 apply / resources，不要走 exec。
+                    请使用「Kubernetes」页应用 YAML，并用状态接口查看 Deployment / Pod。不要走 exec，也不要借同一节点上的 Docker 机器当跳板。
                   </AlertDescription>
                 </Alert>
               )}

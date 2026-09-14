@@ -47,6 +47,7 @@ test.describe("PW-4 Kubernetes 工作区", () => {
     await page.getByTestId("ws-k8s-yaml").fill(DEMO_YAML);
     await page.getByTestId("ws-k8s-apply").click();
     await expect(page.getByTestId("ws-k8s-resources")).toContainText("e2e-web");
+    await expect(page.getByTestId("ws-k8s-status")).toBeVisible();
     await expect(page.getByTestId("ws-k8s-kubeconfig")).toBeVisible();
   });
 
@@ -72,6 +73,7 @@ test.describe("PW-4 Kubernetes 工作区", () => {
     await page.getByTestId("ws-k8s-yaml").fill(DEMO_YAML);
     await page.getByTestId("ws-k8s-apply").click();
     await expect(page.getByTestId("ws-k8s-resources")).toContainText("e2e-web");
+    await expect(page.getByTestId("ws-k8s-status")).toBeVisible();
     await expect(page.getByTestId("ws-k8s-kubeconfig")).toBeEnabled();
   });
 

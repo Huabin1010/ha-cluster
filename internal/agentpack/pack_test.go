@@ -84,6 +84,15 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[SkillPath], "exec_ready") || !strings.Contains(p.Files[APIRefPath], "exec_ready") {
 		t.Fatal("pack should tell agents to prefer exec_ready=true")
 	}
+	if !strings.Contains(p.Files[APIRefPath], "/k8s/status") || !strings.Contains(p.Files[WorkflowsPath], "/k8s/status") {
+		t.Fatal("pack should tell agents to poll k8s status instead of exec")
+	}
+	if !strings.Contains(p.Files[WorkflowsPath], "project-quota") || !strings.Contains(p.Files[SkillPath], "k8s/status") {
+		t.Fatal("pack should warn about quota requests and status API")
+	}
+	if !strings.Contains(p.Files[WorkflowsPath], "跳板") && !strings.Contains(p.Files[SkillPath], "跳板") {
+		t.Fatal("pack should forbid using a docker workspace as k8s jump host")
+	}
 	if !strings.Contains(p.Files[SkillPath], "禁止") || !strings.Contains(p.Files[WorkflowsPath], "传二进制") {
 		t.Fatal("pack should forbid shipping binaries through exec")
 	}

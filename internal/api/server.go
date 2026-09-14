@@ -194,6 +194,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/workspaces/{id}/kubeconfig", s.workspaceKubeconfig)
 		r.Post("/workspaces/{id}/k8s/apply", s.applyK8s)
 		r.Get("/workspaces/{id}/k8s/resources", s.listK8sResources)
+		r.Get("/workspaces/{id}/k8s/status", s.k8sStatus)
 		r.Delete("/workspaces/{id}/k8s/resources", s.deleteK8sResource)
 		r.Get("/workspaces/{id}/terminal", s.workspaceTerminal)
 		r.Get("/workspaces/{id}/ingress", s.listIngress)

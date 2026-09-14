@@ -22,9 +22,25 @@ import (
 var ErrUnavailable = errors.New("K8S_UNAVAILABLE")
 
 type Resource struct {
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	Kind            string            `json:"kind"`
+	Name            string            `json:"name"`
+	Namespace       string            `json:"namespace"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	Phase           string            `json:"phase,omitempty"`
+	Ready           string            `json:"ready,omitempty"`
+	Replicas        *ReplicaCounts    `json:"replicas,omitempty"`
+	Reason          string            `json:"reason,omitempty"`
+	Message         string            `json:"message,omitempty"`
+	Restarts        int               `json:"restarts,omitempty"`
+	Images          []string          `json:"images,omitempty"`
+	Strategy        string            `json:"strategy,omitempty"`
+	MaxUnavailable  string            `json:"max_unavailable,omitempty"`
+	MaxSurge        string            `json:"max_surge,omitempty"`
+	OwnerKind       string            `json:"owner_kind,omitempty"`
+	OwnerName       string            `json:"owner_name,omitempty"`
+	CreatedAt       string            `json:"created_at,omitempty"`
+	MissingRequests bool              `json:"missing_requests,omitempty"`
+	Selector        map[string]string `json:"selector,omitempty"`
 }
 
 type Cluster interface {
@@ -32,6 +48,7 @@ type Cluster interface {
 	Provision(ctx context.Context, w models.Workspace, slug string) (ns, kubeconfig string, err error)
 	Apply(ctx context.Context, ns, yamlText string) ([]Resource, error)
 	Resources(ctx context.Context, ns string) ([]Resource, error)
+	Status(ctx context.Context, ns string) (NamespaceStatus, error)
 	Delete(ctx context.Context, ns, kind, name string) error
 	DestroyNS(ctx context.Context, ns string) error
 	Kubeconfig(ns string) (string, error)
@@ -127,7 +144,8 @@ func (m *Memory) Apply(_ context.Context, ns, yamlText string) ([]Resource, erro
 	var out []Resource
 	for _, o := range objs {
 		key := strings.ToLower(o.Kind) + "/" + o.Name
-		res := Resource{Kind: o.Kind, Name: o.Name, Namespace: ns}
+		res := resourceFromObject(o)
+		res.Namespace = ns
 		m.ns[ns][key] = res
 		out = append(out, res)
 	}
@@ -141,7 +159,54 @@ func (m *Memory) Resources(_ context.Context, ns string) ([]Resource, error) {
 	for _, r := range m.ns[ns] {
 		out = append(out, r)
 	}
+	sortResources(out)
 	return out, nil
+}
+
+func (m *Memory) Status(_ context.Context, ns string) (NamespaceStatus, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st := NamespaceStatus{Namespace: ns}
+	for _, r := range m.ns[ns] {
+		st.Resources = append(st.Resources, r)
+		switch strings.ToLower(r.Kind) {
+		case "deployment":
+			desired := 0
+			if r.Replicas != nil {
+				desired = r.Replicas.Desired
+			}
+			st.Deployments = append(st.Deployments, DeploymentStatus{
+				Name: r.Name, Namespace: ns, Labels: r.Labels, Selector: r.Selector,
+				Replicas: desired, Strategy: r.Strategy, MaxUnavailable: r.MaxUnavailable,
+				MaxSurge: r.MaxSurge, Images: r.Images, MissingRequests: r.MissingRequests,
+			})
+		case "replicaset":
+			desired, ready, current := 0, 0, 0
+			if r.Replicas != nil {
+				desired, ready, current = r.Replicas.Desired, r.Replicas.Ready, r.Replicas.Current
+			}
+			st.ReplicaSets = append(st.ReplicaSets, ReplicaSetStatus{
+				Name: r.Name, Namespace: ns, Owner: r.OwnerName, Labels: r.Labels,
+				Desired: desired, Current: current, Ready: ready, Images: r.Images,
+			})
+		case "pod":
+			st.Pods = append(st.Pods, PodStatus{
+				Name: r.Name, Namespace: ns, Phase: r.Phase, Labels: r.Labels,
+				Reason: r.Reason, Message: r.Message, Restarts: r.Restarts,
+				OwnerKind: r.OwnerKind, OwnerName: r.OwnerName, Images: r.Images,
+				CreatedAt: r.CreatedAt,
+			})
+		case "service":
+			st.Services = append(st.Services, ServiceStatus{
+				Name: r.Name, Namespace: ns, Type: r.Phase, Labels: r.Labels,
+			})
+		}
+	}
+	if q := m.quotas[ns]; len(q) > 0 {
+		st.Quota = &QuotaStatus{Name: "project-quota", Hard: copyStringMap(q), Used: map[string]string{}}
+	}
+	finalizeStatus(&st)
+	return st, nil
 }
 
 func (m *Memory) Delete(_ context.Context, ns, kind, name string) error {
@@ -232,6 +297,10 @@ func (Unavailable) Apply(context.Context, string, string) ([]Resource, error) {
 
 func (Unavailable) Resources(context.Context, string) ([]Resource, error) {
 	return nil, ErrUnavailable
+}
+
+func (Unavailable) Status(context.Context, string) (NamespaceStatus, error) {
+	return NamespaceStatus{}, ErrUnavailable
 }
 
 func (Unavailable) Delete(context.Context, string, string, string) error { return ErrUnavailable }
@@ -341,35 +410,33 @@ func (k *Kubectl) Apply(ctx context.Context, ns, yamlText string) ([]Resource, e
 	return k.memory.Apply(ctx, ns, yamlText)
 }
 
+func (k *Kubectl) snapshot(ctx context.Context, ns string) (NamespaceStatus, error) {
+	out, err := k.runOut(ctx, nil, "get", "deploy,rs,svc,cm,secret,pvc,ing,po,quota", "-n", ns, "-o", "json")
+	if err != nil {
+		return NamespaceStatus{}, err
+	}
+	st := parseObjectList(ns, out)
+	if evOut, evErr := k.runOut(ctx, nil, "get", "events", "-n", ns, "-o", "json"); evErr == nil {
+		st.Events = parseEventList(evOut)
+	}
+	finalizeStatus(&st)
+	return st, nil
+}
+
 func (k *Kubectl) Resources(ctx context.Context, ns string) ([]Resource, error) {
-	out, err := k.runOut(ctx, nil, "get", "deploy,svc,cm,secret,pvc,ing,po", "-n", ns, "-o", "json")
+	st, err := k.snapshot(ctx, ns)
 	if err != nil {
 		return k.memory.Resources(ctx, ns)
 	}
-	var list struct {
-		Items []struct {
-			Kind     string `json:"kind"`
-			Metadata struct {
-				Name      string `json:"name"`
-				Namespace string `json:"namespace"`
-			} `json:"metadata"`
-		} `json:"items"`
+	return st.Resources, nil
+}
+
+func (k *Kubectl) Status(ctx context.Context, ns string) (NamespaceStatus, error) {
+	st, err := k.snapshot(ctx, ns)
+	if err != nil {
+		return k.memory.Status(ctx, ns)
 	}
-	if err := json.Unmarshal(out, &list); err != nil {
-		return k.memory.Resources(ctx, ns)
-	}
-	res := make([]Resource, 0, len(list.Items))
-	for _, it := range list.Items {
-		if it.Kind == "" || it.Metadata.Name == "" {
-			continue
-		}
-		nsName := it.Metadata.Namespace
-		if nsName == "" {
-			nsName = ns
-		}
-		res = append(res, Resource{Kind: it.Kind, Name: it.Metadata.Name, Namespace: nsName})
-	}
-	return res, nil
+	return st, nil
 }
 
 func (k *Kubectl) Delete(ctx context.Context, ns, kind, name string) error {

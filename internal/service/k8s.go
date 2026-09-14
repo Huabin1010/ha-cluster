@@ -85,20 +85,37 @@ func (a *App) ApplyK8sYAML(ctx context.Context, actor models.User, id uuid.UUID,
 	return out, nil
 }
 
-func (a *App) ListK8sResources(ctx context.Context, actor models.User, id uuid.UUID) ([]map[string]string, error) {
+func (a *App) ListK8sResources(ctx context.Context, actor models.User, id uuid.UUID) ([]hak8s.Resource, error) {
 	w, _, err := a.k8sWorkspace(ctx, actor, id, models.RoleViewer)
 	if err != nil {
 		return nil, err
+	}
+	if a.K8s == nil {
+		return nil, hak8s.ErrUnavailable
 	}
 	res, err := a.K8s.Resources(ctx, w.RuntimeRef)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]map[string]string, 0, len(res))
-	for _, r := range res {
-		out = append(out, map[string]string{"kind": r.Kind, "name": r.Name, "namespace": r.Namespace})
+	return res, nil
+}
+
+func (a *App) K8sStatus(ctx context.Context, actor models.User, id uuid.UUID) (*hak8s.NamespaceStatus, error) {
+	w, _, err := a.k8sWorkspace(ctx, actor, id, models.RoleViewer)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	if a.K8s == nil {
+		return nil, hak8s.ErrUnavailable
+	}
+	st, err := a.K8s.Status(ctx, w.RuntimeRef)
+	if err != nil {
+		return nil, err
+	}
+	if st.Namespace == "" {
+		st.Namespace = w.RuntimeRef
+	}
+	return &st, nil
 }
 
 func (a *App) DeleteK8sResource(ctx context.Context, actor models.User, id uuid.UUID, kind, name string) error {

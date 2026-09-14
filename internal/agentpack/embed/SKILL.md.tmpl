@@ -95,7 +95,7 @@ Cursor 的 PowerShell 包装层和人自己开的终端不一样：
 
 **不要** `base64 -d`（会 `invalid input`）。只传 KB 级配置/脚本。镜像和二进制走本机 `docker push`。
 
-只读 SSH 会 403。无权限则 `POST /projects/{pid}/ssh-access-request`。k8s 工作区 exec 会 400，改走 apply。
+只读 SSH 会 403。无权限则 `POST /projects/{pid}/ssh-access-request`。**k8s 工作区 `POST /exec` 会 400**：改走 apply + `GET /k8s/status`。禁止把 kubeconfig 写进另一台 Docker 机器再 exec `kubectl` / python 探活。
 
 ## 部署后立刻看日志（权限）
 
@@ -123,7 +123,7 @@ docker logs <name>
 1. **建项目**：`POST /projects` `{name,slug,purpose}`。**purpose 必填**，2–80 字；禁止空、禁止把 name/slug 原样当用途。然后转让 owner → 拉成员 → 授 SSH
 2. **申请机器**（developer）→ owner/admin 审批 → 等到 `running`（默认 `container`）
 3. **更新已有服务**：走上面的发版决策树，再 `POST /workspaces/{id}/ingress/shared`（若域名已在就不要重领）
-4. **仅当用户要 k8s**：创建时才加 `runtime=k8s`（审批与 Docker 相同）。控制面未接集群会 **503 `K8S_UNAVAILABLE`**，`kubeconfig` 的 `server` 不能是 `https://k8s.invalid`——这两种都不要换字段重试。k8s 工作区不要 exec。
+4. **仅当用户要 k8s**：创建时才加 `runtime=k8s`（审批与 Docker 相同）。控制面未接集群会 **503 `K8S_UNAVAILABLE`**，`kubeconfig` 的 `server` 不能是 `https://k8s.invalid`——这两种都不要换字段重试。k8s 工作区不要 exec。apply 之后用 `GET /workspaces/{id}/k8s/status` 看副本、Pod 阶段、release 标签、配额告警；容器必须写 `resources.requests.cpu/memory`。
 5. **暴露 HTTP**：服务起来后再 `POST /workspaces/{id}/ingress/shared`。第二端口要 `confirm_second_port: true`。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。
 6. **邀请同事**：`POST /projects/{id}/invitations`
 7. **HTTPS 证书**（仅 `platform_admin`）：`GET /admin/tls-certs`；`POST /admin/tls-certs/{id}/issue`
@@ -136,6 +136,7 @@ docker logs <name>
 - **创建项目必须带 `purpose`**（2–80 字）。缺了会 400。
 - **旧项目若 `purpose` 为空**：先 `PATCH /projects/{id}` `{purpose}`，否则开通 / 加人 / SSH / exec 会 `409 PURPOSE_REQUIRED`。
 - **默认 `runtime=container`**；只有用户明确要 k8s 才设 `runtime=k8s`。
+- **k8s 探活只打本工作区的 status 接口。** 不要借 `exec_ready=true` 的 Docker 机器当跳板。
 - 磁盘不能缩。`arch` 只接受 `amd64` / `arm64` / `any`（`x86_64` → `amd64`）。
 - 重复加人返回 409，不要当成功。
 - 平台接口都在 `/admin/...`，普通用户 403 是正常的。

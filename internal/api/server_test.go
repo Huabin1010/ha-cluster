@@ -1624,6 +1624,10 @@ func TestK8sWorkspaceApplyKubeconfigAndViewer(t *testing.T) {
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Deployment") {
 		t.Fatalf("list %d %s", rr.Code, rr.Body.String())
 	}
+	st := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/k8s/status", ownerTok, nil)
+	if st.Code != http.StatusOK || !strings.Contains(st.Body.String(), `"namespace"`) || !strings.Contains(st.Body.String(), "project-quota") {
+		t.Fatalf("status %d %s", st.Code, st.Body.String())
+	}
 	rr = doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String()+"/kubeconfig", ownerTok, nil)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), ws.RuntimeRef) {
 		t.Fatalf("kubeconfig %d %s", rr.Code, rr.Body.String())

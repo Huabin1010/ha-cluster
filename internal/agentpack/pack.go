@@ -30,9 +30,9 @@ const (
 	VersionPath   = ".cursor/skills/ha-cluster-agent/VERSION"
 
 	// Version is a monotonic integer. Bump when pack files change so Agents can self-update.
-	Version    = "13"
+	Version    = "14"
 	ReleasedAt = "2026-09-14"
-	Notes      = "工作区带 exec_ready；列表优先挑 SSH 通的机器"
+	Notes      = "k8s 工作区用 GET /k8s/status 看副本与 Pod，禁止借 Docker 机 exec"
 )
 
 type Vars struct {

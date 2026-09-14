@@ -194,6 +194,8 @@ def main() -> int:
     code, res = bob.req("GET", f"/workspaces/{wid}/k8s/resources")
     names = [r.get("name") for r in ((res or {}).get("data") or [])]
     expect(results, "developer 能看资源列表", code == 200 and "story-web" in names, str(res)[:240])
+    code, st = bob.req("GET", f"/workspaces/{wid}/k8s/status")
+    expect(results, "developer 能看 k8s status", code == 200 and isinstance(st, dict) and "summary" in (st or {}), str(st)[:240])
 
     code, kc = alice.req("GET", f"/workspaces/{wid}/kubeconfig")
     expect(results, "owner 下载 kubeconfig", code == 200 and "kubeconfig" in (kc or {}), str(kc)[:80])

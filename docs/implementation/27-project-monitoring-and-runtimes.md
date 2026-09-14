@@ -204,6 +204,12 @@ Launch 时控制面自动：
 
 用户不感知 Namespace 名称规则；控制台显示「集群环境已就绪」。
 
+探活不要 SSH / `exec`（k8s 工作区会 400），也不要把 kubeconfig 写到同节点 Docker 机器再打 apiserver。平台提供：
+
+- `GET /workspaces/{id}/k8s/status`：Deployment 副本与滚动策略、ReplicaSet 代际、Pod 阶段/标签、ResourceQuota used/hard、Warning 事件。Agent 与控制台都走这条。
+- `GET /workspaces/{id}/k8s/resources`：扁平列表（含 `ready` / `labels` / `replicas`）。
+- 容器必须声明 `resources.requests.cpu` 与 `resources.requests.memory`，否则会被 `project-quota` 拦住、新 Pod 起不来。
+
 ### 4.4 注入失败策略
 
 - SSH / docker 启动失败 → `WSFailed`，释放或保留 Allocation 按策略；审计 `workspace.launch.failed`。

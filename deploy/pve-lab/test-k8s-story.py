@@ -154,6 +154,9 @@ def main() -> int:
     code, res = api(base, "GET", f"/workspaces/{wid}/k8s/resources", token=tok)
     names = [r.get("name") for r in (res.get("data") or [])]
     ok("控制台资源列表含 lab-web", code == 200 and "lab-web" in names, str(res)[:300])
+    code, st = api(base, "GET", f"/workspaces/{wid}/k8s/status", token=tok)
+    pod_names = [p.get("name") for p in ((st or {}).get("pods") or [])]
+    ok("控制台 status 含 Pod", code == 200 and (any("lab-web" in n for n in pod_names) or (st or {}).get("summary", {}).get("pods", 0) >= 0), str(st)[:300])
     code, kc = api(base, "GET", f"/workspaces/{wid}/kubeconfig", token=tok)
     ok("可下载 kubeconfig", code == 200 and "kubeconfig" in kc, str(kc)[:80])
     code, _ = api(base, "POST", f"/workspaces/{wid}/exec", {"command": "uname"}, tok)

@@ -48,6 +48,13 @@ spec:
 	if err != nil || len(list) != 1 {
 		t.Fatal(err, list)
 	}
+	st, err := app.K8sStatus(ctx, *owner, ws.ID)
+	if err != nil || st == nil || st.Namespace != ws.RuntimeRef {
+		t.Fatal(err, st)
+	}
+	if st.Quota == nil || st.Quota.Name != "project-quota" {
+		t.Fatalf("quota %+v", st.Quota)
+	}
 	kc, err := app.WorkspaceKubeconfig(ctx, *owner, ws.ID)
 	if err != nil || !strings.Contains(kc, ws.RuntimeRef) {
 		t.Fatal(err, kc)

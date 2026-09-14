@@ -24,7 +24,7 @@ alwaysApply: true
 
 **发版：** 本机 `~/.docker/config.json` 的 `auths` / `credsStore` 有 `docker.cnb.cool`（或本地已有该仓库镜像）→ 本机 `docker build` / `docker push`，`exec` 只 `pull` + `run`。不要用 `docker info` 的 IndexConfigs 判断没登录。**禁止**把二进制 base64 分片塞进 `exec`。
 
-**选机器：** `GET /workspaces` 默认不含 `destroyed`；同名取 `exec_ready=true` 且 `running` 的 **id**。`exec_ready=false` 先 `POST /start` 或换一台。`running` 不等于 exec 通。
+**选机器：** `GET /workspaces` 默认不含 `destroyed`；同名取 `exec_ready=true` 且 `running` 的 **id**。`exec_ready=false` 先 `POST /start` 或换一台。`running` 不等于 exec 通。k8s 工作区不要 exec，用 `GET /k8s/status`。
 
 **Windows：** 禁止 `$pid` 当变量；JSON 写文件后 `--data-binary @file`；不要多行 `python -c`。
 
