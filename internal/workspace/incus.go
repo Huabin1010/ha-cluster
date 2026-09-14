@@ -158,6 +158,12 @@ func (r *IncusRuntime) Launch(ctx context.Context, w models.Workspace, node mode
 		_ = r.Destroy(context.Background(), w.ID)
 		return Instance{}, fmt.Errorf("install docker compose: %w", err)
 	}
+	// docker/fuse offline apt -f can remove openssh-server after the first
+	// ensureSSH. Re-check before returning a "running" workspace.
+	if err := r.ensureSSH(ctx, name); err != nil {
+		_ = r.Destroy(context.Background(), w.ID)
+		return Instance{}, fmt.Errorf("workspace ssh after runtime packages: %w", err)
+	}
 	if len(lc.DockerRegistries) > 0 {
 		if err := r.injectDockerRegistries(ctx, name, lc.DockerRegistries); err != nil {
 			_ = r.Destroy(context.Background(), w.ID)
@@ -326,6 +332,14 @@ func workspaceDebsDir() string {
 	return "/var/lib/ha-cluster/workspace-debs"
 }
 
+// holdOpenSSHAndFixBroken repairs broken deps from offline docker/fuse debs
+// without uninstalling sshd. snacks-1 lost openssh-server to apt-get -f
+// against /tmp/ha-fuse-debs after Launch had already started sshd.
+func holdOpenSSHAndFixBroken(archivesDir string) string {
+	return "apt-mark hold openssh-server openssh-sftp-server >/dev/null 2>&1 || true; " +
+		"apt-get -f install -y -qq --no-remove -o Dir::Cache::archives=" + archivesDir
+}
+
 func (r *IncusRuntime) installWorkspaceDocker(ctx context.Context, name string) error {
 	if _, err := r.cmd(ctx, "exec", name, "--", "/usr/bin/docker", "--version").CombinedOutput(); err == nil {
 		_ = r.ensureFuseOverlayfs(ctx, name)
@@ -368,7 +382,7 @@ func (r *IncusRuntime) installWorkspaceDocker(ctx context.Context, name string) 
 	script := "export DEBIAN_FRONTEND=noninteractive; " +
 		"tar -xf /tmp/ha-docker-debs.tar -C /tmp/ha-docker-debs; " +
 		"dpkg -i /tmp/ha-docker-debs/*.deb 2>/dev/null || true; " +
-		"apt-get -f install -y -qq -o Dir::Cache::archives=/tmp/ha-docker-debs; " +
+		holdOpenSSHAndFixBroken("/tmp/ha-docker-debs") + "; " +
 		"rm -f /tmp/ha-docker-debs.tar; " +
 		"systemctl enable --now docker || service docker start || true"
 	if out, err := r.cmd(ctx, "exec", name, "--env", "DEBIAN_FRONTEND=noninteractive", "--", "bash", "-lc", script).CombinedOutput(); err != nil {
@@ -430,7 +444,7 @@ func (r *IncusRuntime) ensureFuseOverlayfs(ctx context.Context, name string) err
 	script := "export DEBIAN_FRONTEND=noninteractive; " +
 		"tar -xf /tmp/ha-fuse-debs.tar -C /tmp/ha-fuse-debs; " +
 		"dpkg -i /tmp/ha-fuse-debs/*.deb 2>/dev/null || true; " +
-		"apt-get -f install -y -qq -o Dir::Cache::archives=/tmp/ha-fuse-debs >/dev/null 2>&1 || true; " +
+		holdOpenSSHAndFixBroken("/tmp/ha-fuse-debs") + " >/dev/null 2>&1 || true; " +
 		"rm -rf /tmp/ha-fuse-debs /tmp/ha-fuse-debs.tar; " +
 		"command -v fuse-overlayfs"
 	if out, err := r.cmd(ctx, "exec", name, "--env", "DEBIAN_FRONTEND=noninteractive", "--", "bash", "-lc", script).CombinedOutput(); err != nil {
@@ -578,6 +592,7 @@ if ! command -v sshd >/dev/null 2>&1 && [ ! -x /usr/sbin/sshd ]; then
   export DEBIAN_FRONTEND=noninteractive
   (apt-get update -qq && apt-get install -y -qq openssh-server) >/tmp/ha-ssh-apt.log 2>&1 || true
 fi
+apt-mark hold openssh-server openssh-sftp-server >/dev/null 2>&1 || true
 for i in $(seq 1 45); do
   if listening; then exit 0; fi
   if systemctl is-system-running >/dev/null 2>&1; then break; fi

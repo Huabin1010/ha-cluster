@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,23 @@ import (
 
 	"ha-cluster/internal/models"
 )
+
+func TestHoldOpenSSHAndFixBroken(t *testing.T) {
+	got := holdOpenSSHAndFixBroken("/tmp/ha-fuse-debs")
+	for _, want := range []string{
+		"apt-mark hold openssh-server openssh-sftp-server",
+		"--no-remove",
+		"Dir::Cache::archives=/tmp/ha-fuse-debs",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("offline apt helper missing %q\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "apt-get -f install") && strings.Contains(got, "--no-remove") {
+		return
+	}
+	t.Fatalf("expected apt-get -f --no-remove, got:\n%s", got)
+}
 
 func TestAllocateHostPort(t *testing.T) {
 	port, err := allocateHostPort(32100, 32110)
