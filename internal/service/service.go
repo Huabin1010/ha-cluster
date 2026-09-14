@@ -674,6 +674,7 @@ func (a *App) RequestDestroyWorkspace(ctx context.Context, actor models.User, id
 	case models.WSDestroyRequested, models.WSDestroyPendingPlatform, models.WSDestroying, models.WSDestroyed:
 		return store.Wrap(store.ErrConflict, "该工作区已在销毁流程中")
 	}
+	fromStatus := w.Status
 	if authz.CanApproveDangerousOps(actor) {
 		return a.executeDestroy(ctx, actor, w)
 	}
@@ -686,7 +687,7 @@ func (a *App) RequestDestroyWorkspace(ctx context.Context, actor models.User, id
 		_ = a.Store.AddAudit(ctx, models.AuditLog{
 			ActorUserID: actor.ID, Action: "workspace.destroy.request",
 			ResourceType: "workspace", ResourceID: id.String(),
-			Meta: map[string]any{"skip_project_review": true},
+			Meta: map[string]any{"skip_project_review": true, "from_status": fromStatus},
 		})
 		_ = a.Store.AddAudit(ctx, models.AuditLog{
 			ActorUserID: actor.ID, Action: "workspace.destroy.approve_project",
@@ -700,7 +701,11 @@ func (a *App) RequestDestroyWorkspace(ctx context.Context, actor models.User, id
 	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
 		return err
 	}
-	_ = a.Store.AddAudit(ctx, models.AuditLog{ActorUserID: actor.ID, Action: "workspace.destroy.request", ResourceType: "workspace", ResourceID: id.String()})
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: "workspace.destroy.request",
+		ResourceType: "workspace", ResourceID: id.String(),
+		Meta: map[string]any{"from_status": fromStatus},
+	})
 	return nil
 }
 
@@ -749,6 +754,71 @@ func (a *App) ApproveDestroyPlatform(ctx context.Context, actor models.User, id 
 		return store.ErrInvalidInput
 	}
 	return a.executeDestroy(ctx, actor, w)
+}
+
+// RejectDestroyProject turns down a project-level destroy request and restores the instance.
+func (a *App) RejectDestroyProject(ctx context.Context, actor models.User, id uuid.UUID, reason string) error {
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := a.RequireMembership(ctx, actor, w.ProjectID, models.RoleAdmin); err != nil {
+		return err
+	}
+	if w.Status != models.WSDestroyRequested {
+		return store.ErrInvalidInput
+	}
+	return a.restoreAfterDestroyReject(ctx, actor, w, reason, "workspace.destroy.reject_project")
+}
+
+// RejectDestroyPlatform turns down a platform destroy review and keeps the instance.
+func (a *App) RejectDestroyPlatform(ctx context.Context, actor models.User, id uuid.UUID, reason string) error {
+	if !authz.CanApproveDangerousOps(actor) {
+		return store.ErrForbidden
+	}
+	w, err := a.Store.GetWorkspace(ctx, id)
+	if err != nil {
+		return err
+	}
+	if w.Status != models.WSDestroyPendingPlatform {
+		return store.ErrInvalidInput
+	}
+	return a.restoreAfterDestroyReject(ctx, actor, w, reason, "workspace.destroy.reject_platform")
+}
+
+func (a *App) restoreAfterDestroyReject(ctx context.Context, actor models.User, w *models.Workspace, reason, action string) error {
+	from := models.RestoreStatusAfterDestroyReject("")
+	if logs, err := a.Store.ListAuditByResource(ctx, w.ID.String(), 80); err == nil {
+		for _, l := range logs {
+			if l.Action == "workspace.destroy.request" {
+				from = models.RestoreStatusAfterDestroyReject(auditMetaString(l.Meta, "from_status"))
+				break
+			}
+		}
+	}
+	w.Status = from
+	w.UpdatedAt = time.Now()
+	if err := a.Store.UpdateWorkspace(ctx, w); err != nil {
+		return err
+	}
+	meta := map[string]any{"restored_status": from}
+	if r := strings.TrimSpace(reason); r != "" {
+		meta["reason"] = r
+	}
+	_ = a.Store.AddAudit(ctx, models.AuditLog{
+		ActorUserID: actor.ID, Action: action,
+		ResourceType: "workspace", ResourceID: w.ID.String(),
+		Meta: meta,
+	})
+	return nil
+}
+
+func auditMetaString(meta map[string]any, key string) string {
+	if meta == nil {
+		return ""
+	}
+	s, _ := meta[key].(string)
+	return strings.TrimSpace(s)
 }
 
 func (a *App) executeDestroy(ctx context.Context, actor models.User, w *models.Workspace) error {

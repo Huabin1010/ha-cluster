@@ -218,6 +218,29 @@ type Workspace struct {
 	ExecCheckedAt time.Time `json:"exec_checked_at,omitempty"`
 }
 
+// DangerousDestroyItem is a workspace waiting for platform destroy review,
+// enriched with project and applicant names for the 危险待审 queue.
+type DangerousDestroyItem struct {
+	Workspace
+	ProjectName          string    `json:"project_name,omitempty"`
+	ProjectSlug          string    `json:"project_slug,omitempty"`
+	ApplicantUserID      uuid.UUID `json:"applicant_user_id,omitempty"`
+	ApplicantUsername    string    `json:"applicant_username,omitempty"`
+	ApplicantDisplayName string    `json:"applicant_display_name,omitempty"`
+	RequestedAt          time.Time `json:"requested_at,omitempty"`
+}
+
+// RestoreStatusAfterDestroyReject returns the operational status to restore
+// when a destroy request is rejected. Unknown/empty values fall back to running.
+func RestoreStatusAfterDestroyReject(from string) string {
+	switch from {
+	case WSRunning, WSStopped, WSDegraded, WSSuspended, WSNodeLost, WSFailed:
+		return from
+	default:
+		return WSRunning
+	}
+}
+
 type AuditLog struct {
 	ID               int64          `json:"id"`
 	ActorUserID      uuid.UUID      `json:"actor_user_id"`

@@ -630,6 +630,82 @@ func TestRequestDestroySkipsApprovalsForAdmins(t *testing.T) {
 	}
 }
 
+func TestDangerousDestroyQueueAndReject(t *testing.T) {
+	app, plat := setupApp(t)
+	ctx := context.Background()
+
+	p, err := app.CreateProject(ctx, plat.ID, "办公室故事", "office-story", "test purpose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "blog 1", Plan: "nano", Arch: models.ArchAMD64, Actor: *plat,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev, err := app.Register(ctx, "bobdest", "bobdest@example.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev.DisplayName = "鲍勃"
+	if err := app.Store.UpdateUser(ctx, dev); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Store.AddMembership(ctx, models.Membership{ProjectID: p.ID, UserID: dev.ID, Role: models.RoleDeveloper}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RequestDestroyWorkspace(ctx, *dev, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := app.Store.GetWorkspace(ctx, ws.ID)
+	if got.Status != models.WSDestroyRequested {
+		t.Fatalf("want destroy_requested, got %s", got.Status)
+	}
+	if err := app.RejectDestroyProject(ctx, *plat, ws.ID, "先留着"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = app.Store.GetWorkspace(ctx, ws.ID)
+	if got.Status != models.WSRunning {
+		t.Fatalf("project reject should restore running, got %s", got.Status)
+	}
+
+	if err := app.RequestDestroyWorkspace(ctx, *dev, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ApproveDestroyProject(ctx, *plat, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	items, err := app.ListDangerousDestroyPending(ctx, *plat)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("queue: %v %#v", err, items)
+	}
+	item := items[0]
+	if item.Name != "blog 1" || item.ProjectName != "办公室故事" {
+		t.Fatalf("project name missing: %+v", item)
+	}
+	if item.ApplicantUsername != "bobdest" {
+		t.Fatalf("applicant username: %+v", item)
+	}
+	if item.ApplicantDisplayName != "鲍勃" {
+		t.Fatalf("applicant display: %+v", item)
+	}
+	if err := app.RejectDestroyPlatform(ctx, *dev, ws.ID, ""); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("developer must not platform-reject: %v", err)
+	}
+	if err := app.RejectDestroyPlatform(ctx, *plat, ws.ID, "项目还要用"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = app.Store.GetWorkspace(ctx, ws.ID)
+	if got.Status != models.WSRunning {
+		t.Fatalf("platform reject should restore running, got %s", got.Status)
+	}
+	items, err = app.ListDangerousDestroyPending(ctx, *plat)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("queue should be empty: %v %#v", err, items)
+	}
+}
+
 func TestForceDestroyWinsOverLateProvision(t *testing.T) {
 	assertForceDestroyBeatsLaunch(t, false)
 }

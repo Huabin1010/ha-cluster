@@ -223,6 +223,7 @@
 | 启动 / 停止 | `ws-start` / `ws-stop` |
 | 取消申请 | `ws-cancel-request` |
 | 销毁 / 项目初审销毁 | `ws-destroy` / `ws-destroy-approve-project` |
+| 项目驳回销毁 / 平台驳回终审 | `ws-destroy-reject-project` / `ws-destroy-reject-platform` |
 | 平台强毁（破窗） | `ws-destroy-force` |
 | 去申请 SSH | `ws-request-ssh` |
 | 网页终端 | `ws-web-terminal` |
@@ -485,7 +486,7 @@
 
 ### 子功能
 
-查看待平台终审的销毁；打开确认后批准。**窄屏**为卡片（`dangerous-approval-row`）。
+查看待平台终审的销毁；列表展示**项目名称**与**申请人**。可打开确认后**通过销毁**，或**驳回**并保留实例。**窄屏**为卡片（`dangerous-approval-row`）。
 
 ### 快捷键
 
@@ -496,10 +497,13 @@
 | 用户看到的 | testid |
 |---|---|
 | 表 / 行 | `dangerous-approvals-table` / `dangerous-approval-row` |
-| 打开终审 | `dangerous-approve-open` |
-| 取消 / 确认终审 | `dangerous-cancel` / `dangerous-confirm` |
+| 打开通过销毁 | `dangerous-approve-open` |
+| 取消 / 确认销毁 | `dangerous-cancel` / `dangerous-confirm` |
+| 打开驳回 | `dangerous-reject-open` |
+| 驳回原因 | `dangerous-reject-reason` |
+| 取消 / 确认驳回 | `dangerous-reject-cancel` / `dangerous-reject-confirm` |
 
-角色门：终审后端 `platform_admin`（或已委派的危险操作权）。项目 admin 只能初审（服务器行 `ws-destroy-approve-project`）。
+角色门：终审后端 `platform_admin`（或已委派的危险操作权）。项目 admin 只能初审（服务器行 `ws-destroy-approve-project` / `ws-destroy-reject-project`）。
 
 ---
 

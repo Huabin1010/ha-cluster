@@ -73,6 +73,18 @@ func TestProvisioningLiveAndWorkspaceClosed(t *testing.T) {
 	}
 }
 
+func TestRestoreStatusAfterDestroyReject(t *testing.T) {
+	if RestoreStatusAfterDestroyReject(WSStopped) != WSStopped {
+		t.Fatal("stopped should restore")
+	}
+	if RestoreStatusAfterDestroyReject("") != WSRunning {
+		t.Fatal("empty should fall back to running")
+	}
+	if RestoreStatusAfterDestroyReject(WSDestroyPendingPlatform) != WSRunning {
+		t.Fatal("destroy statuses should not restore as themselves")
+	}
+}
+
 func TestNormalizeRuntimeAndNodeSupportsK8s(t *testing.T) {
 	if NormalizeRuntime("") != RuntimeContainer || NormalizeRuntime("incus") != RuntimeContainer {
 		t.Fatal("container aliases")

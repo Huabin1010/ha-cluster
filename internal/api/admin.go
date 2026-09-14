@@ -142,6 +142,23 @@ func (s *Server) approveDestroyProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved_project"})
 }
 
+func (s *Server) rejectDestroyProject(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = decodeJSON(r, &body)
+	if err := s.App.RejectDestroyProject(r.Context(), *userFrom(r), id, body.Reason); err != nil {
+		writeAPIErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "destroy_rejected"})
+}
+
 func (s *Server) approveDestroyPlatform(w http.ResponseWriter, r *http.Request) {
 	if !authz.CanApproveDangerousOps(*userFrom(r)) {
 		writeErr(w, http.StatusForbidden, store.ErrForbidden)
@@ -157,6 +174,27 @@ func (s *Server) approveDestroyPlatform(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": models.WSDestroyed})
+}
+
+func (s *Server) rejectDestroyPlatform(w http.ResponseWriter, r *http.Request) {
+	if !authz.CanApproveDangerousOps(*userFrom(r)) {
+		writeErr(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = decodeJSON(r, &body)
+	if err := s.App.RejectDestroyPlatform(r.Context(), *userFrom(r), id, body.Reason); err != nil {
+		writeAPIErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "destroy_rejected"})
 }
 
 func (s *Server) listDangerousApprovals(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock, Box } from "lucide-react";
+import { Check, Copy, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock, Box, Ban } from "lucide-react";
 import { api, friendlyError } from "@/providers";
 import { formatTime, copyText } from "@/ui/format";
 import { canSSH } from "@/lib/permissions";
@@ -74,6 +74,7 @@ export function WorkspaceRow({
 }: Props) {
   const [destroyOpen, setDestroyOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [destroyRejectOpen, setDestroyRejectOpen] = useState(false);
   const [copiedExec, setCopiedExec] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [manualExec, setManualExec] = useState("");
@@ -127,6 +128,7 @@ export function WorkspaceRow({
       kind !== "destroy" &&
       kind !== "destroy-force" &&
       kind !== "destroy-approve" &&
+      kind !== "destroy-reject" &&
       kind !== "cancel-request" &&
       kind !== "reject"
     ) {
@@ -444,24 +446,39 @@ export function WorkspaceRow({
             </>
           )}
           {destroyRequested && canApprove && (
-            <Button
-              type="button"
-              variant="destructive"
-              size="compact"
-              data-testid="ws-destroy-approve-project"
-              disabled={busy}
-              loading={pendingAction === "destroy-approve"}
-              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
-              onClick={() =>
-                run(async () => {
-                  await api(`/workspaces/${ws.id}/destroy-request/approve`, { method: "POST", body: "{}" });
-                  onToast("已通过项目初审，等待平台终审");
-                }, "destroy-approve")
-              }
-            >
-              <Trash2 className="size-3.5 shrink-0" />
-              销毁初审
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="compact"
+                data-testid="ws-destroy-reject-project"
+                disabled={busy}
+                loading={pendingAction === "destroy-reject"}
+                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                onClick={() => setDestroyRejectOpen(true)}
+              >
+                <Ban className="size-3.5 shrink-0" />
+                驳回销毁
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="compact"
+                data-testid="ws-destroy-approve-project"
+                disabled={busy}
+                loading={pendingAction === "destroy-approve"}
+                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                onClick={() =>
+                  run(async () => {
+                    await api(`/workspaces/${ws.id}/destroy-request/approve`, { method: "POST", body: "{}" });
+                    onToast("已通过项目初审，等待平台终审");
+                  }, "destroy-approve")
+                }
+              >
+                <Trash2 className="size-3.5 shrink-0" />
+                销毁初审
+              </Button>
+            </>
           )}
           {canRequestDestroy && displayStatus !== "destroying" && (
             <Button
@@ -520,6 +537,52 @@ export function WorkspaceRow({
                 </AlertDialogContent>
               </AlertDialog>
           )}
+          <AlertDialog
+            open={destroyRejectOpen}
+            onOpenChange={(open) => {
+              if (!open && pendingAction) return;
+              setDestroyRejectOpen(open);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{destroyAwaitPlatform ? "驳回平台终审" : "驳回销毁申请"}</AlertDialogTitle>
+              </AlertDialogHeader>
+              <AlertDialogBody>
+                <AlertDialogDescription>
+                  驳回后工作区「{ws.name}」将保留，不会销毁。
+                </AlertDialogDescription>
+              </AlertDialogBody>
+              <AlertDialogFooter>
+                <AlertDialogCancel data-testid="ws-destroy-reject-cancel" disabled={busy}>取消</AlertDialogCancel>
+                <AlertDialogAction
+                  data-testid="ws-destroy-reject-ok"
+                  loading={pendingAction === "destroy-reject"}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void run(async () => {
+                      if (destroyAwaitPlatform) {
+                        await api(`/admin/dangerous-approvals/${ws.id}/reject`, {
+                          method: "POST",
+                          body: JSON.stringify({ reason: "rejected" }),
+                        });
+                        onToast("已驳回终审，工作区已保留");
+                      } else {
+                        await api(`/workspaces/${ws.id}/destroy-request/reject`, {
+                          method: "POST",
+                          body: JSON.stringify({ reason: "rejected" }),
+                        });
+                        onToast("已驳回销毁申请");
+                      }
+                      setDestroyRejectOpen(false);
+                    }, "destroy-reject");
+                  }}
+                >
+                  确定驳回
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {displayStatus === "destroying" && !destroyOpen && (
             <span className="inline-flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 whitespace-nowrap shrink-0">
               <Loader2 className="size-3.5 shrink-0 animate-spin" />
@@ -527,24 +590,39 @@ export function WorkspaceRow({
             </span>
           )}
           {destroyAwaitPlatform && isPlatformAdmin && displayStatus !== "destroying" && (
-            <Button
-              type="button"
-              variant="destructive"
-              size="compact"
-              data-testid="ws-destroy-force"
-              disabled={busy}
-              loading={pendingAction === "destroy-force"}
-              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
-              onClick={() =>
-                run(async () => {
-                  await api(`/admin/dangerous-approvals/${ws.id}/approve`, { method: "POST", body: "{}" });
-                  onToast("平台终审通过，已销毁");
-                }, "destroy-force")
-              }
-            >
-              <Trash2 className="size-3.5 shrink-0" />
-              平台终审
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="compact"
+                data-testid="ws-destroy-reject-platform"
+                disabled={busy}
+                loading={pendingAction === "destroy-reject"}
+                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                onClick={() => setDestroyRejectOpen(true)}
+              >
+                <Ban className="size-3.5 shrink-0" />
+                驳回终审
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="compact"
+                data-testid="ws-destroy-force"
+                disabled={busy}
+                loading={pendingAction === "destroy-force"}
+                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                onClick={() =>
+                  run(async () => {
+                    await api(`/admin/dangerous-approvals/${ws.id}/approve`, { method: "POST", body: "{}" });
+                    onToast("平台终审通过，已销毁");
+                  }, "destroy-force")
+                }
+              >
+                <Trash2 className="size-3.5 shrink-0" />
+                平台终审
+              </Button>
+            </>
           )}
           {k8s && (
             <Button variant="outline" size="compact" asChild className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs">

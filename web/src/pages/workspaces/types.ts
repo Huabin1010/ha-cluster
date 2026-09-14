@@ -27,6 +27,15 @@ export type Workspace = {
   exec_checked_at?: string;
 };
 
+export type DangerousDestroyItem = Workspace & {
+  project_name?: string;
+  project_slug?: string;
+  applicant_user_id?: string;
+  applicant_username?: string;
+  applicant_display_name?: string;
+  requested_at?: string;
+};
+
 export type ProjectOption = {
   id: string;
   name: string;

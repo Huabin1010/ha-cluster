@@ -251,6 +251,14 @@ export const api = {
     return request("/admin/dangerous-approvals/" + id + "/approve", { method: "POST", body: "{}" }, token);
   },
 
+  async rejectDestroyPlatform(token: string, id: string, reason = "") {
+    return request(
+      "/admin/dangerous-approvals/" + id + "/reject",
+      { method: "POST", body: JSON.stringify({ reason }) },
+      token,
+    );
+  },
+
   /** Full destroy approval chain (project owner + platform admin tokens). */
   async destroyWorkspace(ownerToken: string, id: string, platformAdminToken?: string) {
     await request("/workspaces/" + id + "/destroy-request", { method: "POST", body: "{}" }, ownerToken);

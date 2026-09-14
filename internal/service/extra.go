@@ -581,7 +581,7 @@ func (a *App) syncProjectWorkspaceKeys(ctx context.Context, projectID uuid.UUID)
 	return nil
 }
 
-func (a *App) ListDangerousDestroyPending(ctx context.Context, actor models.User) ([]models.Workspace, error) {
+func (a *App) ListDangerousDestroyPending(ctx context.Context, actor models.User) ([]models.DangerousDestroyItem, error) {
 	if !authz.CanApproveDangerousOps(actor) {
 		return nil, store.ErrForbidden
 	}
@@ -589,13 +589,50 @@ func (a *App) ListDangerousDestroyPending(ctx context.Context, actor models.User
 	if err != nil {
 		return nil, err
 	}
-	var out []models.Workspace
+	projects := map[uuid.UUID]*models.Project{}
+	out := make([]models.DangerousDestroyItem, 0)
 	for _, w := range wss {
-		if w.Status == models.WSDestroyPendingPlatform {
-			out = append(out, w)
+		if w.Status != models.WSDestroyPendingPlatform {
+			continue
 		}
+		item := models.DangerousDestroyItem{Workspace: w}
+		p := projects[w.ProjectID]
+		if p == nil {
+			if got, err := a.Store.GetProject(ctx, w.ProjectID); err == nil {
+				projects[w.ProjectID] = got
+				p = got
+			}
+		}
+		if p != nil {
+			item.ProjectName = p.Name
+			item.ProjectSlug = p.Slug
+		}
+		a.attachDestroyApplicant(ctx, &item)
+		out = append(out, item)
 	}
 	return out, nil
+}
+
+func (a *App) attachDestroyApplicant(ctx context.Context, item *models.DangerousDestroyItem) {
+	if logs, err := a.Store.ListAuditByResource(ctx, item.ID.String(), 80); err == nil {
+		for _, l := range logs {
+			if l.Action == "workspace.destroy.request" {
+				item.ApplicantUserID = l.ActorUserID
+				item.ApplicantUsername = l.ActorUsername
+				item.ApplicantDisplayName = l.ActorDisplayName
+				item.RequestedAt = l.CreatedAt
+				return
+			}
+		}
+	}
+	if item.OwnerUserID == uuid.Nil {
+		return
+	}
+	if u, err := a.Store.GetUserByID(ctx, item.OwnerUserID); err == nil && u != nil {
+		item.ApplicantUserID = u.ID
+		item.ApplicantUsername = u.Username
+		item.ApplicantDisplayName = u.DisplayName
+	}
 }
 
 func (a *App) SyncUserKeys(ctx context.Context, userID uuid.UUID) error {

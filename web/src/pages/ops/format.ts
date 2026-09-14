@@ -28,6 +28,8 @@ export const ACTION_LABEL: Record<string, string> = {
   "workspace.resize.reject": "驳回扩容",
   "workspace.destroy.request": "申请销毁服务器",
   "workspace.destroy.approve_project": "项目通过销毁",
+  "workspace.destroy.reject_project": "项目驳回销毁",
+  "workspace.destroy.reject_platform": "平台驳回销毁",
   "workspace.destroy": "销毁服务器",
   "workspace.idle_suspend": "闲置挂起服务器",
   "workspace.start": "启动服务器",
@@ -340,6 +342,18 @@ export function auditResourceTitle(type?: string, id?: string, meta?: AuditMeta,
 
 export function auditActorLabel(displayName?: string, username?: string, id?: string): string {
   return displayName?.trim() || username?.trim() || shortId(id);
+}
+
+export function destroyProjectLabel(item: { project_name?: string; project_id?: string }): string {
+  return item.project_name?.trim() || shortId(item.project_id);
+}
+
+export function destroyApplicantLabel(item: {
+  applicant_display_name?: string;
+  applicant_username?: string;
+  applicant_user_id?: string;
+}): string {
+  return auditActorLabel(item.applicant_display_name, item.applicant_username, item.applicant_user_id);
 }
 
 export type AuditResourceLinkCtx = {

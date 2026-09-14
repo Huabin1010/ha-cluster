@@ -8,6 +8,8 @@ import {
   auditPreferredName,
   auditResourceExists,
   auditResourceHref,
+  destroyApplicantLabel,
+  destroyProjectLabel,
   auditResourceName,
   auditResourceProbe,
   auditResourceTitle,
@@ -53,6 +55,8 @@ describe("audit labels", () => {
     expect(actionLabel("workspace.approve")).toBe("批准服务器");
     expect(actionLabel("workspace.resize.request")).toBe("申请扩容");
     expect(actionLabel("workspace.resize.approve")).toBe("批准扩容");
+    expect(actionLabel("workspace.destroy.reject_project")).toBe("项目驳回销毁");
+    expect(actionLabel("workspace.destroy.reject_platform")).toBe("平台驳回销毁");
     expect(actionLabel("invite.create")).toBe("创建邀请");
     expect(actionLabel("membership.update")).toBe("更新成员权限");
     expect(actionLabel("ssh_access.grant")).toBe("授予 SSH 权限");
@@ -200,6 +204,21 @@ describe("audit change summary", () => {
     expect(auditActorLabel("黄华斌", "huanghuabin", "uid")).toBe("黄华斌");
     expect(auditActorLabel("  ", "admin", "uid")).toBe("admin");
     expect(auditActorLabel("", "", "00000000-1111-2222-3333-444444444444")).toBe("00000000…");
+  });
+
+  it("shows destroy queue project and applicant names instead of raw ids", () => {
+    expect(destroyProjectLabel({ project_name: "办公室故事", project_id: "959f3e96-ece0-4aaa-bbbb-cccccccccccc" })).toBe(
+      "办公室故事",
+    );
+    expect(destroyProjectLabel({ project_id: "959f3e96-ece0-4aaa-bbbb-cccccccccccc" })).toBe("959f3e96…");
+    expect(
+      destroyApplicantLabel({
+        applicant_display_name: "鲍勃",
+        applicant_username: "bobdest",
+        applicant_user_id: "uid",
+      }),
+    ).toBe("鲍勃");
+    expect(destroyApplicantLabel({ applicant_username: "bobdest" })).toBe("bobdest");
   });
 
   it("shows ssh.exec command and deny error", () => {
