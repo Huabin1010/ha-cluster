@@ -185,7 +185,7 @@
 
 ### 子功能
 
-- 项目内列表右上角「新建工作区」同样是 `ws-create`（自定义 trigger，不要漏 testid）；筛到未填用途的项目时变成 `project-purpose-fill`
+- 项目内列表右上角「开通服务器 / 申请服务器」同样是 `ws-create`（自定义 trigger，不要漏 testid）；筛到未填用途的项目时变成 `project-purpose-fill`
 - 按项目筛选、含异常、刷新
 - 未填用途的项目：列表出现 `project-purpose-gate`，行内启停/终端/升配禁用，销毁仍可做
 - **开通 / 销毁 / 审批过程会自动轮询**（约 3s）：`provisioning`「开通中」、`destroying`、待审批不必点「刷新列表」等稳态

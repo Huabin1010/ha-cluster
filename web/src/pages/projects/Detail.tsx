@@ -170,6 +170,8 @@ export function ProjectDetailPage() {
   const runningWsCount = workspaces.filter((w) => w.status === "running").length;
   const needsPurpose = purposeMissing(project?.purpose);
   const canFillPurpose = canManageProject(project?.my_role, me?.platform_role, project?.owner_id, me?.id);
+  const canApprove = canApproveRole(project?.my_role, me?.platform_role);
+  const createWsLabel = canApprove ? "开通服务器" : "申请服务器";
 
   const tabsRef = useRef<HTMLDivElement>(null);
   const tabsHover = useFluidHover(tabsRef, { axis: "x" });
@@ -856,7 +858,7 @@ export function ProjectDetailPage() {
                   className="h-8 px-3 text-xs font-medium gap-1.5 shrink-0"
                 >
                   <Plus className="size-3.5" />
-                  新建工作区
+                  {createWsLabel}
                 </Button>
               ) : (
                 <CreateForm
@@ -868,12 +870,12 @@ export function ProjectDetailPage() {
                     void loadUsage();
                   }}
                   onError={(msg) => setWsErr(msg)}
-                  canApprove={canApproveRole(project.my_role, me?.platform_role)}
+                  canApprove={canApprove}
                   platformRole={me?.platform_role}
                   trigger={
                     <Button size="compact" data-testid="ws-create" className="h-8 px-3 text-xs font-medium gap-1.5 shrink-0">
                       <Plus className="size-3.5" />
-                      新建工作区
+                      {createWsLabel}
                     </Button>
                   }
                 />
@@ -907,8 +909,8 @@ export function ProjectDetailPage() {
               className="rounded-2xl border border-border/80 bg-surface-1 p-10 shadow-surface-2 text-center my-auto"
             >
               <Empty
-                text="当前项目还没有创建工作区服务器"
-                description="点击右上角「新建工作区」按钮，即可为本项目申请隔离的容器实例。"
+                text="当前项目还没有服务器"
+                description={`点击右上角「${createWsLabel}」按钮，即可为本项目申请隔离的容器实例。`}
               />
             </Elevated>
           ) : (
@@ -948,7 +950,7 @@ export function ProjectDetailPage() {
                           key={ws.id}
                           ws={ws}
                           busyId={busyWsId}
-                          canApprove={canApproveRole(project.my_role, me?.platform_role)}
+                          canApprove={canApprove}
                           platformRole={me?.platform_role}
                           myRole={project.my_role}
                           mySshAccess={project.my_ssh_access}
