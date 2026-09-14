@@ -8,7 +8,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
 import { Elevated } from "@/lib/elevated";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/ui";
 import { Hint } from "@/components/ui/tooltip";
 import { canApproveRole, type Workspace } from "./types";
@@ -60,6 +62,23 @@ spec:
               memory: 128Mi
 `;
 
+function LoadingRow({ colSpan, label }: { colSpan: number; label: string }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={colSpan}>
+        <div
+          className="inline-flex items-center gap-2 py-2 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          <Spinner className="size-3.5 shrink-0" />
+          <span>{label}</span>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export function K8sPanel({
   ws,
   myRole,
@@ -75,11 +94,14 @@ export function K8sPanel({
   const [yaml, setYaml] = useState(SAMPLE_YAML);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<K8sNamespaceStatus>(emptyK8sStatus(ws.runtime_ref || ""));
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [statusReady, setStatusReady] = useState(false);
   const [listErr, setListErr] = useState("");
   const canApply = !opsLocked && (canApproveRole(myRole, platformRole) || myRole === "developer" || myRole === "owner" || myRole === "admin");
   const running = ws.status === "running" || ws.status === "fabric_degraded";
 
   const loadStatus = useCallback(async () => {
+    setStatusLoading(true);
     setListErr("");
     try {
       const json = await api<K8sNamespaceStatus>(`/workspaces/${ws.id}/k8s/status`);
@@ -98,6 +120,9 @@ export function K8sPanel({
     } catch (e) {
       setListErr(friendlyError(e));
       setStatus(emptyK8sStatus(ws.runtime_ref || ""));
+    } finally {
+      setStatusLoading(false);
+      setStatusReady(true);
     }
   }, [ws.id, ws.runtime_ref]);
 
@@ -196,10 +221,10 @@ export function K8sPanel({
               data-testid="ws-k8s-refresh"
               className="inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
               onClick={() => void loadStatus()}
-              disabled={!running}
+              disabled={!running || statusLoading}
             >
-              <RefreshCw className="size-3.5 shrink-0" />
-              刷新状态
+              <RefreshCw className={cn("size-3.5 shrink-0", statusLoading && "animate-spin")} />
+              {statusLoading ? "获取中…" : "刷新状态"}
             </Button>
             <Button
               type="button"
@@ -241,6 +266,17 @@ export function K8sPanel({
           )}
 
           <div className="grid gap-3" data-testid="ws-k8s-status">
+            {statusLoading && !statusReady && (
+              <div
+                data-testid="ws-k8s-loading"
+                className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                role="status"
+                aria-live="polite"
+              >
+                <Spinner className="size-3.5 shrink-0" />
+                <span>正在获取集群状态…</span>
+              </div>
+            )}
             {status.warnings.length > 0 && (
               <Alert variant="destructive" data-testid="ws-k8s-warnings">
                 <AlertTriangle className="size-4 shrink-0" />
@@ -262,30 +298,32 @@ export function K8sPanel({
               </Alert>
             )}
 
-            <div className="flex flex-wrap items-center gap-2">
-              {healthy ? (
-                <Badge variant="ok" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-                  <CheckCircle2 className="size-3 shrink-0" />
-                  运行正常
+            {statusReady ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {healthy ? (
+                  <Badge variant="ok" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                    <CheckCircle2 className="size-3 shrink-0" />
+                    运行正常
+                  </Badge>
+                ) : null}
+                <Badge variant="secondary" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                  Deployment {status.summary.ready_deployments}/{status.summary.deployments}
                 </Badge>
-              ) : null}
-              <Badge variant="secondary" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-                Deployment {status.summary.ready_deployments}/{status.summary.deployments}
-              </Badge>
-              <Badge variant="secondary" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-                Pod {status.summary.running_pods}/{status.summary.pods}
-              </Badge>
-              {status.summary.pending_pods > 0 && (
-                <Badge variant="warn" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-                  等待 {status.summary.pending_pods}
+                <Badge variant="secondary" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                  Pod {status.summary.running_pods}/{status.summary.pods}
                 </Badge>
-              )}
-              {status.summary.failed_pods > 0 && (
-                <Badge variant="danger" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-                  失败 {status.summary.failed_pods}
-                </Badge>
-              )}
-            </div>
+                {status.summary.pending_pods > 0 && (
+                  <Badge variant="warn" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                    等待 {status.summary.pending_pods}
+                  </Badge>
+                )}
+                {status.summary.failed_pods > 0 && (
+                  <Badge variant="danger" className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
+                    失败 {status.summary.failed_pods}
+                  </Badge>
+                )}
+              </div>
+            ) : null}
 
             {quotaText ? (
               <div
@@ -393,7 +431,9 @@ export function K8sPanel({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {status.pods.length === 0 ? (
+                  {statusLoading && status.pods.length === 0 ? (
+                    <LoadingRow colSpan={4} label="正在获取 Pod 状态…" />
+                  ) : status.pods.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-sm text-muted-foreground">
                         还没有 Pod。apply 之后点「刷新状态」查看轮替。
@@ -491,7 +531,9 @@ export function K8sPanel({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {status.resources.length === 0 ? (
+                {statusLoading && status.resources.length === 0 ? (
+                  <LoadingRow colSpan={5} label="正在获取已应用资源…" />
+                ) : status.resources.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-sm text-muted-foreground">
                       还没有已应用的资源。

@@ -192,7 +192,7 @@
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
 - 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行
 - 机器详情：网页终端、HTTP 执行 curl、Ingress（含推荐 CNB 镜像仓库）、审计历史
-- **运行环境**：开通默认 **Docker + SSH（Compose 部署）**；用户需要时才选 Kubernetes。详情页粘贴 YAML apply、看 Deployment/Pod/配额状态、下载 kubeconfig（viewer 只读资源与状态）。**审批与 Docker 相同**：developer 提交后待审；owner / admin / `platform_admin` 直建，不必再审。k8s 机器不能 exec，也不要借 Docker 机跑 kubectl。
+- **运行环境**：开通默认 **Docker + SSH（Compose 部署）**；用户需要时才选 Kubernetes。详情页粘贴 YAML apply、看 Deployment/Pod/配额状态（拉取中显示加载，不要把空表当成无资源）、下载 kubeconfig（viewer 只读资源与状态）。**审批与 Docker 相同**：developer 提交后待审；owner / admin / `platform_admin` 直建，不必再审。k8s 机器不能 exec，也不要借 Docker 机跑 kubectl。
 
 ### 快捷键
 
@@ -238,6 +238,7 @@
 | 概览 / 连接 / Kubernetes / 域名 / 历史（桌面） | `ws-nav-overview` / `ws-nav-connect` / `ws-nav-k8s` / `ws-nav-ingress` / `ws-nav-history` |
 | 同上（窄屏） | `ws-tab-overview` / `ws-tab-connect` / `ws-tab-k8s` / `ws-tab-ingress` / `ws-tab-history` |
 | 应用 YAML / 文本框 / 下载 kubeconfig / 刷新状态 / 资源表 | `ws-k8s-apply` / `ws-k8s-yaml` / `ws-k8s-kubeconfig` / `ws-k8s-refresh` / `ws-k8s-resources` |
+| 集群状态加载中 | `ws-k8s-loading` |
 | 集群状态 / 配额 / 告警 / 历史 / Deployment / Pod | `ws-k8s-status` / `ws-k8s-quota` / `ws-k8s-warnings` / `ws-k8s-history` / `ws-k8s-deployments` / `ws-k8s-pods` |
 | 窄屏 Tab 条 | `ws-mobile-tabs` |
 | 概览指标 | `ws-overview-stats` |
