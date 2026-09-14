@@ -12,14 +12,20 @@ alwaysApply: true
 - 用户：`{{USERNAME}}`（`{{USER_ID}}`）
 - 平台角色：`{{PLATFORM_ROLE}}`
 - 鉴权：每个请求头 `Authorization: Bearer {{TOKEN}}`
-- 传输：**只用 curl**（Windows 可用 `curl.exe`）。禁止 Cursor fetch / WebFetch / mcp_web_fetch / 浏览器工具。
+- 传输：**只用 curl**（Windows 用 `curl.exe`）。禁止 Cursor fetch / WebFetch / mcp_web_fetch / 浏览器工具。
 
 口头词：「机器 / 服务器」= Workspace；「开通」= 创建工作区。
 
-每次开干前先核对 skill 版本：`curl -fsS {{API_BASE}}/agent-pack/version`，与 `.cursor/skills/ha-cluster-agent/VERSION`（当前 {{PACK_VERSION}}）比较。服务端更大则重新 `curl -fsSL '{{PACK_URL}}'` 覆盖 files。
+本会话核对一次 skill 版本：`curl -fsS {{API_BASE}}/agent-pack/version`，与 `.cursor/skills/ha-cluster-agent/VERSION`（当前 {{PACK_VERSION}}）比较。服务端更大则重新 `curl -fsSL '{{PACK_URL}}'` 覆盖 files。已确认过的 `/me` 不要每个任务再打。
 
-先 `curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me` 确认自己是谁，再动手。403 表示当前用户没有这项权限，不要改用别人的账号。
+403 表示当前用户没有这项权限，不要改用别人的账号。
 
-完整操作步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`，接口表读 `api-reference.md`。默认开 Docker+SSH 机器并用 Compose 部署；用户明确要 Kubernetes 才 `runtime=k8s`（审批与 Docker 相同：developer 待审，owner/admin 直建）。旧项目 `purpose` 为空须先 `PATCH` 补用途，否则 `409 PURPOSE_REQUIRED`。推镜像 / 部署优先 CNB（`docker.cnb.cool`）。公共域 HTTPS 由平台自动续期，见 workflows。
+完整步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`。默认开 Docker+SSH 并用 Compose 部署；用户明确要 Kubernetes 才 `runtime=k8s`。旧项目 `purpose` 为空须先 `PATCH`，否则 `409 PURPOSE_REQUIRED`。推镜像优先 CNB（`docker.cnb.cool`）。
 
-**构建只能在本机运行，不允许在我们申请的机器中运行。** 禁止对工作区 `POST /exec` 或网页终端里跑 `docker build` / `docker compose build` / `npm run build` / `go build` 等。本机编好、推到 CNB 后，机器里只 `docker pull` + `compose up`（或 k8s apply）。
+**发版：** 本机 `~/.docker/config.json` 的 `auths` / `credsStore` 有 `docker.cnb.cool`（或本地已有该仓库镜像）→ 本机 `docker build` / `docker push`，`exec` 只 `pull` + `run`。不要用 `docker info` 的 IndexConfigs 判断没登录。**禁止**把二进制 base64 分片塞进 `exec`。
+
+**选机器：** `GET /workspaces` 默认不含 `destroyed`；同名取 `updated_at` 最新且 `running` 的 **id**。`running` 不等于 exec 通；502 `EXEC_UNAVAILABLE` 先 `POST /start` 再探活。
+
+**Windows：** 禁止 `$pid` 当变量；JSON 写文件后 `--data-binary @file`；不要多行 `python -c`。
+
+**构建只能在本机运行，不允许在我们申请的机器中运行。** stdin_b64 已被平台解码，写文件用 `cat > file`，不要 `base64 -d`。

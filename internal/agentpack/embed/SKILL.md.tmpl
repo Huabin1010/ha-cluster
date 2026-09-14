@@ -13,23 +13,26 @@ description: >-
 
 你就是用户 **{{USERNAME}}**。用下面的凭证调用 API，完成控制台里这个人能做的一切。
 
-**只用 curl。** 不要用 Cursor 的 fetch、WebFetch、`mcp_web_fetch`、浏览器访问。Windows 用 `curl.exe` 即可。
+**只用 curl。** 不要用 Cursor 的 fetch、WebFetch、`mcp_web_fetch`、浏览器访问。Windows 用 `curl.exe`。
 
-## 先检查 skill 版本（每次开干前）
+## 本会话只需一次（不要每次任务都走长仪式）
 
-本地版本在 `.cursor/skills/ha-cluster-agent/VERSION`（本文件 `pack_version` 同源），当前是 **{{PACK_VERSION}}**（{{PACK_RELEASED_AT}}：{{PACK_NOTES}}）。
+同一段对话里做一次即可，之后按用户这句话直接动手：
 
-```bash
-curl -fsS {{API_BASE}}/agent-pack/version
-```
+1. `curl -fsS {{API_BASE}}/agent-pack/version` — 服务端 `version` **大于** 本地 `.cursor/skills/ha-cluster-agent/VERSION`（当前 **{{PACK_VERSION}}**）才重拉 pack。
+2. `curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me` — 已确认过身份就跳过。
 
-返回 `{version, released_at, notes}`。`version` 是递增整数。若服务端 **大于** 本地：
+**不要**为了「加登录然后更新」先连打 `GET /projects`、`GET /workspaces`、`GET /ingress/meta`、`GET /registries/preferred`、再 `POST /exec` 探活。人在控制台一眼能看到的状态，不要用 5–8 次 curl 再证明一遍。
+
+撞到 `409 PURPOSE_REQUIRED` 再 `PATCH /projects/{id}` `{purpose}`，不要预先给所有旧项目补用途。
+
+用户说「平台更新了 / 升级 skill」时再核对 version。落后则：
 
 ```bash
 curl -fsSL '{{PACK_URL}}'
 ```
 
-按 JSON `files` **覆盖写入**本工作区（含本 skill / rule / VERSION），然后重新读 SKILL.md，再用同一 `Bearer` 继续。不要问密码。用户说「平台更新了 / 升级 skill」时也走这一步。
+按 JSON `files` **覆盖写入**本工作区，重新读 SKILL.md，同一 `Bearer` 继续。不要问密码。
 
 ## 凭证（每次请求都带）
 
@@ -39,56 +42,98 @@ Authorization: Bearer {{TOKEN}}
 Content-Type: application/json
 ```
 
-```bash
-curl -fsS -H "Authorization: Bearer {{TOKEN}}" {{API_BASE}}/me
-```
-
-列表接口返回 `{ "data": [...], "total": N }`。错误返回 `{ "error": "..." }`，HTTP：400 参数 / 401 令牌 / 403 权限 / 404 不存在 / 409 冲突（含 `INSUFFICIENT_CAPACITY`、`PURPOSE_REQUIRED`、`SECOND_PORT_CONFIRM_REQUIRED`）。
+列表 `{ "data": [...], "total": N }`。错误 `{ "error": "...", "hint": "..." }`。HTTP：400 参数 / 401 令牌 / 403 权限 / 404 不存在 / 409 冲突（`INSUFFICIENT_CAPACITY`、`PURPOSE_REQUIRED`、`SECOND_PORT_CONFIRM_REQUIRED`）/ 502 `EXEC_UNAVAILABLE` / 503 `K8S_UNAVAILABLE`。优先看 `error` 码和 `hint`，不要只对着 `invalid input` 换字段重试。
 
 不要把 `{{TOKEN}}` 写进公开 git remote、截图或群聊。需要轮换时让用户在控制台点「轮换密钥」。
 
-## 先摸清身份
+## 发版决策树（硬规则）
 
-1. `GET /me` → `id` / `username` / `platform_role` / `email`
-2. `GET /projects` → 可见项目（非成员的项目不会出现）。`purpose` 为空的旧项目须先 `PATCH` 补用途，否则后续操作 `409 PURPOSE_REQUIRED`
-3. `GET /plans` → 套餐（常用 `2c2g`）
-4. `GET /me/ssh-keys` → 至少一把公钥才能走 Bastion
+用户说「更新 / 部署 / 加功能上线」时走这张图，**禁止**把二进制拆进 `exec`。
 
-`platform_role`：
+1. **先看操作者本机是否已能推 CNB**（下面任一即为「有」）：
+   - `~/.docker/config.json`（Windows `%USERPROFILE%\.docker\config.json`）的 `auths` 含 `docker.cnb.cool`
+   - 或存在 `credsStore` / `credHelpers`（凭据在 Docker Desktop 钥匙串里，`auths` 值可以是 `{}`）
+   - 或 `docker images` 里已有 `docker.cnb.cool/...` 仓库
+   - **不要**用 `docker info` 的 `RegistryConfig.IndexConfigs` 判断——那里通常只有 `docker.io`，**看不到 credsStore 里的 CNB**
+2. **有本机 CNB 登录** → 本机 `docker build` + `docker push docker.cnb.cool/<组织>/<仓库>:<标签>`。`exec` **只** `docker pull` + `docker run` / `compose up` + `docker logs`。
+3. **没有** → 仍在**本机**构建；请用户对本机 `docker login docker.cnb.cool`，或改用已经在 CNB 上的镜像。机器里若已注入凭据，也只用于 **pull**，不是让你改去 exec 传文件。
+4. **禁止**：`exec` 里 `docker build` / `compose build` / `npm run build` / `go build`；把可执行文件、镜像 tar、6MB+ 产物 **base64 分片**塞进 `stdin_b64`。
 
-| 值 | 能做 |
-|---|---|
-| `platform_user`（默认） | 自己的项目 / 机器 / 公钥 |
-| `platform_ops` | 另加节点、容量、审计、危险待审维护 |
-| `platform_admin` | 另加用户、join token、镜像仓库、域名后缀、HTTPS 证书签发/续期、强制销毁 |
+`GET /registries/preferred` 只在不确定仓库名时才打。默认 CNB：`docker.cnb.cool/<组织>/<仓库>:<标签>`，不要默认 Docker Hub。
 
-项目角色：`owner` / `admin` / `developer` / `viewer`。viewer **不能**申请机器。销毁机器必须项目初审 + 平台终审。
+## 选机器（用 id，不用重名）
+
+需要进机器时才 `GET /workspaces?project_id=`。列表**默认不含** `destroyed`；若仍看到，跳过。
+
+- 只操作 `running` 或 `fabric_degraded`。同名多台（一毁一活）取 `updated_at` **最新**且 `running` 的那条，**用 `id` 不用 `name`**。
+- **`status=running` 不等于 exec 现在能用。** 先短命令探活：`{"command":"uname -a"}`。HTTP 502 / `EXEC_UNAVAILABLE` / handshake `connection reset` → `POST /workspaces/{id}/start`，再探一次。仍失败换同项目另一台 `running` 的，不要对着同一台改字段重试很久。
+- 非 `running` 不要 claim 域名、不要假设 HTTP 执行可用。
+
+## Windows 终端（Agent 必守）
+
+Cursor 的 PowerShell 包装层和人自己开的终端不一样：
+
+- **禁止用 `$pid` 当变量名**（只读进程号）。写成 `$pid = "..."` 会把 URL 打成 `/projects/12345/...`。项目/机器 ID 用 `$proj` / `$ws` / `$projectId`。
+- JSON body **先写文件**再 `curl.exe --data-binary "@path"`。不要在命令行里嵌 JSON、`$()`、多行 Python。
+- **禁止多行 `python -c` / ScriptBlock**（会 `Command failed to spawn: Aborted`）。短逻辑落到 `tmp/*.py` 再 `python tmp\file.py`。
+- 长任务容易 Aborted；**短 curl 才稳**。`exec` 只跑秒级命令，不要把 build 塞进一次 HTTP。
+- 控制台可能是 GBK，JSON 里的中文会乱码。**看 HTTP 状态码**判断成败，不要因为屏幕乱码以为 `PATCH purpose` 失败了。
+- 用 `curl.exe`，不要用 PowerShell 的 `curl` 别名。
+
+## 进机器 / 写文件
+
+`POST /workspaces/{id}/exec`。返回 `{exit_code,stdout,stderr}`——**命令失败时 HTTP 仍是 200，看 `exit_code`**。网关约 60s 可能 504，即使 `timeout_sec=300`；所以 exec 只做短命令。
+
+平台已把 `stdin_b64` **解码后**写入进程 stdin。写小文件：
+
+```
+{"command":"cat > /tmp/note.txt","stdin_b64":"<BASE64>"}
+```
+
+**不要** `base64 -d`（会 `invalid input`）。只传 KB 级配置/脚本。镜像和二进制走本机 `docker push`。
+
+只读 SSH 会 403。无权限则 `POST /projects/{pid}/ssh-access-request`。k8s 工作区 exec 会 400，改走 apply。
+
+## 部署后立刻看日志（权限）
+
+`docker run` / `compose up` 之后立刻：
+
+```
+docker ps -a
+docker logs <name>
+```
+
+容器 `Restarting` 或日志 `permission denied`：平台常见把数据目录 bind 到 `/root/...`，镜像若是 `USER app` 会写不进。先 `chown` 宿主机数据目录到容器 uid，或不要用非 root 用户写 bind mount。不要只看 `Up` 就去领域名。
+
+## 身份与角色（需要时再查）
+
+`platform_role`：`platform_user`（自己的项目/机器）/ `platform_ops`（另加节点、容量、审计）/ `platform_admin`（另加用户、join token、仓库、域名、证书、强制销毁）。
+
+项目角色：`owner` / `admin` / `developer` / `viewer`。viewer **不能**申请机器。销毁必须项目初审 + 平台终审。
+
+**默认开 Docker + SSH 机器，用 Compose 部署。** 创建时不写 `runtime` 或写 `runtime=container`。用户没提 Kubernetes / k3s / kubectl / Namespace 时，不要改开 k8s。
 
 ## 做事顺序
 
 按用户目标选一条，细节见 [workflows.md](workflows.md)，字段见 [api-reference.md](api-reference.md)。
 
-**默认开 Docker + SSH 机器，用 Compose 部署。** 创建时不写 `runtime` 或写 `runtime=container`。用户没提 Kubernetes / k3s / kubectl / Namespace 时，不要改开 k8s。
-
-1. **建项目**：`POST /projects` `{name,slug,purpose}`。**purpose 必填**，2–80 字，一句话说清这个项目是干什么的；禁止空、禁止把 name/slug 原样当用途。然后转让 owner → 拉成员 → 授 SSH
+1. **建项目**：`POST /projects` `{name,slug,purpose}`。**purpose 必填**，2–80 字；禁止空、禁止把 name/slug 原样当用途。然后转让 owner → 拉成员 → 授 SSH
 2. **申请机器**（developer）→ owner/admin 审批 → 等到 `running`（默认 `container`）
-3. **进机器部署（默认）**：本机编好并推 CNB 后，`POST /workspaces/{id}/exec` 只做 `docker pull` / `docker compose up`（HTTPS + Bearer）。不要本机 `ssh` / ssh-config / 8099。控制台网页终端走 JWT+WS。
-4. **仅当用户要 k8s**：创建时才加 `runtime=k8s`（**审批与 Docker 相同**：developer 等 owner/admin `POST /workspaces/{id}/approve`；owner/admin 直建）。创建前控制面必须已接真实集群，否则 **503 `K8S_UNAVAILABLE`**，不要留下半残工作区。等 `running`（或虚网降级仍可 apply）→ `POST /workspaces/{id}/k8s/apply` **必须** `{yaml}`。平台会把控制台「自动注入」的镜像仓库（含 CNB）写成 Secret `ha-registry` 并挂到 default ServiceAccount，**清单不必写 docker login / imagePullSecrets**。`GET /workspaces/{id}/kubeconfig` 的 `server` 不能是 `https://k8s.invalid`。看资源 `GET /workspaces/{id}/k8s/resources`。k8s 工作区的 exec 会 400，不要再试 SSH。
-5. **暴露 HTTP**：工作区内自己起服务 → `POST /workspaces/{id}/ingress/shared`（公共域已带平台通配符 HTTPS）
-6. **推镜像 / 部署**：优先推到 **CNB** `docker.cnb.cool/<组织>/<仓库>:<标签>`，不要默认 Docker Hub。`GET /registries/preferred` 可核对推荐仓库。**构建在本机**完成后 push；机器里只 pull + `compose up`。用户点名 k8s 再 apply。
-7. **邀请同事**：`POST /projects/{id}/invitations`（按邮箱；accept 必须邮箱匹配）
-8. **HTTPS 证书**（仅 `platform_admin`）：`GET /admin/tls-certs` 看状态；`POST /admin/tls-certs/{id}/issue` 立即签发/续期。到期前 30 天会自动续。
+3. **更新已有服务**：走上面的发版决策树，再 `POST /workspaces/{id}/ingress/shared`（若域名已在就不要重领）
+4. **仅当用户要 k8s**：创建时才加 `runtime=k8s`（审批与 Docker 相同）。控制面未接集群会 **503 `K8S_UNAVAILABLE`**，`kubeconfig` 的 `server` 不能是 `https://k8s.invalid`——这两种都不要换字段重试。k8s 工作区不要 exec。
+5. **暴露 HTTP**：服务起来后再 `POST /workspaces/{id}/ingress/shared`。第二端口要 `confirm_second_port: true`。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。
+6. **邀请同事**：`POST /projects/{id}/invitations`
+7. **HTTPS 证书**（仅 `platform_admin`）：`GET /admin/tls-certs`；`POST /admin/tls-certs/{id}/issue`
 
 ## 硬约束
 
-- **构建只能在本机运行，不允许在我们申请的机器中运行。** 禁止 `POST /exec` / 网页终端里 `docker build`、`docker compose build`、`npm run build`、`go build` 以及同类编译。本机构建并 `docker push` 到 CNB 后，机器只 pull 再跑。
-- 不要编造项目/机器 ID，先 list 再操作。
-- **创建项目必须带 `purpose`**（2–80 字，简洁说明用途）。缺了会 400。
-- **旧项目若 `purpose` 为空**：先 `PATCH /projects/{id}` `{purpose}`，否则开通机器 / 加人 / SSH / exec 会 `409 PURPOSE_REQUIRED`。
-- **默认 `runtime=container`（Docker Compose）**；只有用户明确要 k8s 才设 `runtime=k8s`。
-- 不要对非 `running` 的机器 claim 域名或假设 HTTP 执行可用。
-- 第二端口必须 `confirm_second_port: true`，否则 409。
-- 磁盘不能缩。`arch` 只接受 `amd64` / `arm64` / `any`（`x86_64` 会归一成 `amd64`）。
+- **构建只能在本机运行，不允许在我们申请的机器中运行。** 本机构建并 `docker push` 到 CNB 后，机器只 pull 再跑。
+- **禁止用 exec 当传文件/构建通道。**
+- 不要编造项目/机器 ID，先 list 再操作；同名机器用最新 `running` 的 **id**。
+- **创建项目必须带 `purpose`**（2–80 字）。缺了会 400。
+- **旧项目若 `purpose` 为空**：先 `PATCH /projects/{id}` `{purpose}`，否则开通 / 加人 / SSH / exec 会 `409 PURPOSE_REQUIRED`。
+- **默认 `runtime=container`**；只有用户明确要 k8s 才设 `runtime=k8s`。
+- 磁盘不能缩。`arch` 只接受 `amd64` / `arm64` / `any`（`x86_64` → `amd64`）。
 - 重复加人返回 409，不要当成功。
 - 平台接口都在 `/admin/...`，普通用户 403 是正常的。
 

@@ -64,7 +64,7 @@
 
 ### Agent 接入（复制给 Cursor）
 
-侧栏导航和底栏用户区之间。「复制专属链接」把一段 **agent-friendly** 说明写入剪贴板：要求 **只用 curl**（禁止 Cursor fetch / WebFetch）执行 `curl -fsSL /api/agent-pack/{haagt_…}`。对方 Agent 无需登录，按返回的 `files` 写入 `.cursor/rules/ha-cluster-agent.mdc` 与 `.cursor/skills/ha-cluster-agent/`（含 `VERSION`），之后继续用 curl + 同一 token 作为 `Authorization: Bearer` 代替用户操作。Agent 每次开干前应 `GET /agent-pack/version`，若服务端 `version` 更大则重新 curl pack 覆盖 files。轮换后旧链接 404。
+侧栏导航和底栏用户区之间。「复制专属链接」把一段 **agent-friendly** 说明写入剪贴板：要求 **只用 curl**（禁止 Cursor fetch / WebFetch）执行 `curl -fsSL /api/agent-pack/{haagt_…}`。对方 Agent 无需登录，按返回的 `files` 写入 `.cursor/rules/ha-cluster-agent.mdc` 与 `.cursor/skills/ha-cluster-agent/`（含 `VERSION`），之后继续用 curl + 同一 token 作为 `Authorization: Bearer` 代替用户操作。同一会话先 `GET /agent-pack/version` 一次，服务端更大则重拉 pack；不要每个任务都把项目/机器/入口探活走一遍。发版：本机已 login CNB 则本机 push，禁止 exec 传二进制。轮换后旧链接 404。
 
 相关 E2E：`web/e2e/pw1-auth-shell/`。
 

@@ -9,4 +9,8 @@ alwaysApply: false
 
 在本仓库改 API / 工作流说明时，改 `internal/agentpack/embed/`，并同步 `.cursor/skills/ha-cluster-agent/`（含 `VERSION`）。
 
-口头词：「机器 / 服务器」= Workspace。开干前 `curl /agent-pack/version` 对照本地 VERSION；落后则重拉 pack。先 `curl /me` 再操作。403 是权限不足，不要换别人的号。细节见 skill `ha-cluster-agent`。**只用 curl，禁止 Cursor fetch / WebFetch。** **构建只能在本机运行，不允许在我们申请的机器中运行。**
+口头词：「机器 / 服务器」= Workspace。本会话 `curl /agent-pack/version` 对照本地 VERSION；落后则重拉 pack。`GET /me` 确认一次即可，不要每个任务都走长仪式。403 是权限不足，不要换别人的号。细节见 skill `ha-cluster-agent`。**只用 curl，禁止 Cursor fetch / WebFetch。**
+
+**发版：** 本机 docker 已 login `docker.cnb.cool`（看 config.json 的 auths / credsStore，不要看 `docker info` IndexConfigs）→ 本机 build/push，exec 只 pull/run。**禁止**把二进制分片塞进 exec。**构建只能在本机运行，不允许在我们申请的机器中运行。**
+
+选机器跳过 `destroyed`，同名用最新 `running` 的 id。`running` ≠ exec 通。Windows 禁止 `$pid` 当变量；JSON 写文件；写文件用 `cat > file` 不要 `base64 -d`。

@@ -66,7 +66,7 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(stdin) > maxExecStdinBytes {
-			writeErr(w, http.StatusBadRequest, errors.New("stdin 过大"))
+			writeErr(w, http.StatusBadRequest, errors.New("stdin 过大：不要用 exec 传二进制，本机 docker push 到 CNB"))
 			return
 		}
 	}
@@ -127,12 +127,12 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	tg, err := bastion.Resolve(*ws, *node, *actor, mem)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err)
+		writeErr(w, http.StatusBadGateway, wrapExecUnavailable(err))
 		return
 	}
 	pubs := s.App.WorkspaceSSHKeys(r.Context(), *ws)
 	if serr := s.App.Runtime.SyncKeys(r.Context(), ws.ID, pubs); serr != nil {
-		writeErr(w, http.StatusBadGateway, fmt.Errorf("同步终端密钥失败：%w", serr))
+		writeErr(w, http.StatusBadGateway, wrapExecUnavailable(fmt.Errorf("同步终端密钥失败：%w", serr)))
 		return
 	}
 
@@ -149,7 +149,7 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 				"username": actor.Username, "target": tg.Host,
 			},
 		})
-		writeErr(w, http.StatusBadGateway, fmt.Errorf("SSH 执行失败：%w", err))
+		writeErr(w, http.StatusBadGateway, wrapExecUnavailable(err))
 		return
 	}
 	_ = s.App.Store.AddAudit(r.Context(), models.AuditLog{
@@ -162,6 +162,15 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	writeJSON(w, http.StatusOK, execResponse(stdout, stderr, exit, "http-ssh"))
+}
+
+var errExecUnavailable = errors.New("EXEC_UNAVAILABLE")
+
+func wrapExecUnavailable(err error) error {
+	if err == nil {
+		return errExecUnavailable
+	}
+	return fmt.Errorf("%w: %s", errExecUnavailable, err.Error())
 }
 
 func execResponse(stdout, stderr []byte, exit int, via string) map[string]any {

@@ -2,17 +2,19 @@
 
 默认基址 `https://cl.qzsyzn.com/api`。个性化 pack 以用户 token 为准。
 
-公开：`GET /healthz`、`POST /auth/login`、`GET /agent-pack/version`（`{version,released_at,notes}`，与本地 VERSION 比较）、`GET /agent-pack/{haagt_…}`（`?format=md`）。
+公开：`GET /healthz`、`POST /auth/login`、`GET /agent-pack/version`（`{version,released_at,notes}`，本会话比一次）、`GET /agent-pack/{haagt_…}`（`?format=md`）。
+
+错误 `{error,hint?}`。常见码：`PURPOSE_REQUIRED`、`SECOND_PORT_CONFIRM_REQUIRED`、`INSUFFICIENT_CAPACITY`、`EXEC_UNAVAILABLE`、`K8S_UNAVAILABLE`。
 
 我：`GET /me`、`/me/ssh-keys`、`GET|POST /me/agent-pack`（`{rotate}`）。
 
 项目：`GET|POST /projects`（创建必须 `{name,slug,purpose}`，purpose 2–80 字说明用途）、`GET|PATCH|DELETE /projects/{id}`（旧项目 purpose 为空时 PATCH 必须带 purpose，否则 409 `PURPOSE_REQUIRED`）、`/usage`、`/members`、`/invitations`、`/transfer-ownership`、`/ssh-access-request`。
 
-机器：`GET /workspaces`、`POST /projects/{id}/workspaces`（默认 `container`/Compose；用户要 k8s 才 `runtime=k8s`；developer 含 k8s 一律待审，owner/admin 直建）、`approve|reject|stop|start|resize|destroy-request`、`/connection`、`POST /workspaces/{id}/exec`（Docker+SSH；**禁止在机器里构建**，`docker build` / `npm run build` / `go build` 只允许本机）、`GET /workspaces/{id}/kubeconfig`、`POST /workspaces/{id}/k8s/apply` `{yaml}`、`GET|DELETE /workspaces/{id}/k8s/resources`、`/ingress`、`/ingress/shared`。
+机器：`GET /workspaces`（默认不含 `destroyed`，`?include_destroyed=1` 才返回；同名取最新 running 的 id）、`POST /projects/{id}/workspaces`（默认 `container`/Compose；用户要 k8s 才 `runtime=k8s`；developer 含 k8s 一律待审，owner/admin 直建）、`approve|reject|stop|start|resize|destroy-request`、`/connection`、`POST /workspaces/{id}/exec`（Docker+SSH；stdin_b64 已解码，写文件用 `cat > file`；SSH 不通 502 `EXEC_UNAVAILABLE`；**禁止在机器里构建**，也禁止用 exec 传二进制）、`GET /workspaces/{id}/kubeconfig`、`POST /workspaces/{id}/k8s/apply` `{yaml}`、`GET|DELETE /workspaces/{id}/k8s/resources`、`/ingress`、`/ingress/shared`。
 
-入口：`GET /ingress/meta`（含 `preferred_registry`）、`POST|DELETE /ingress/{id}`。公共域已挂平台通配符 HTTPS。
+入口：`GET /ingress/meta`（含 `preferred_registry`；领域名时才打）、`POST|DELETE /ingress/{id}`。公共域已挂平台通配符 HTTPS。
 
-镜像：`GET /registries/preferred` → CNB `docker.cnb.cool`（推送/部署优先）。平台仓库配置仍是 `/admin/docker-registries`。
+镜像：`GET /registries/preferred` → CNB `docker.cnb.cool`（推送/部署优先；不确定仓库名才打）。平台仓库配置仍是 `/admin/docker-registries`。
 
 平台：`/admin/join-tokens`、`/admin/docker-registries`、`/admin/ingress-domains`、`/admin/tls-certs`（`GET` 状态；`POST …/issue` 签发/续期；`PATCH …` `{auto_renew}`；到期前 30 天自动续）、`/admin/dangerous-approvals`、`/nodes`、`/capacity`、`/users`、`/audit-logs`。
 

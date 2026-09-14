@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"ha-cluster/internal/agentpack"
 	"ha-cluster/internal/models"
 	"ha-cluster/internal/service"
+	"ha-cluster/internal/store"
 	"ha-cluster/internal/store/memory"
 	"ha-cluster/internal/workspace"
 )
@@ -1689,5 +1691,97 @@ func TestTLSCertsIssueAndList(t *testing.T) {
 	}
 	if strings.Contains(issued.Body.String(), "BEGIN ") {
 		t.Fatal("pem leaked")
+	}
+}
+
+func TestWriteErrHints(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writeErr(rr, http.StatusBadRequest, store.ErrPurposeRequired)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("purpose code %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"error":"PURPOSE_REQUIRED"`) || !strings.Contains(rr.Body.String(), "PATCH /projects") {
+		t.Fatalf("purpose body %s", rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	writeErr(rr, http.StatusBadGateway, wrapExecUnavailable(errors.New("ssh: handshake failed")))
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("exec code %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"error":"EXEC_UNAVAILABLE"`) || !strings.Contains(rr.Body.String(), "handshake") {
+		t.Fatalf("exec body %s", rr.Body.String())
+	}
+}
+
+func TestListWorkspacesHidesDestroyedByDefault(t *testing.T) {
+	t.Setenv("HA_BASTION_HOST", "bastion.mnnumath.vip")
+	t.Setenv("HA_BASTION_PORT", "8099")
+	t.Setenv("HA_BASTION_DIRECT", "0")
+	t.Setenv("HA_AGENT_VIA_LAN", "0")
+	t.Setenv("HA_PROVISION_SYNC", "1")
+	t.Setenv("HA_K8S_MEMORY", "1")
+	t.Setenv("HA_KUBECONFIG", "")
+	st := memory.New()
+	app := service.New(st, workspace.NewMemoryRuntime(), []byte("unit-test-secret-key-32b!!"))
+	const Gi = 1024 * 1024 * 1024
+	_ = st.UpsertNode(t.Context(), &models.Node{
+		ID: uuid.New(), Name: "pc1", Arch: models.ArchAMD64, Role: "worker", Power: "mains",
+		AllocatableCPU: 8000, AllocatableMem: 2 * Gi, AllocatableDisk: 200 * Gi,
+		Ready: true, FabricIP: "10.88.0.10", LanIP: "192.168.1.82", Tags: []string{"k3s"},
+	})
+	h := New(app)
+	tok := registerLogin(t, h, "list-hide", "list-hide@x.com")
+	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "list-hide", "slug": "list-hide", "purpose": "test purpose"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+
+	createWS := func(name string) models.Workspace {
+		t.Helper()
+		out := doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/workspaces", tok, map[string]string{
+			"name": name, "plan": "nano", "arch": "amd64",
+		})
+		if out.Code != http.StatusCreated {
+			t.Fatal(out.Body.String())
+		}
+		var ws models.Workspace
+		_ = json.Unmarshal(out.Body.Bytes(), &ws)
+		if ws.Status == models.WSRequested {
+			out = doJSON(t, h, http.MethodPost, "/workspaces/"+ws.ID.String()+"/approve", tok, map[string]string{})
+			if out.Code != http.StatusOK {
+				t.Fatal(out.Body.String())
+			}
+			_ = json.Unmarshal(out.Body.Bytes(), &ws)
+		}
+		return ws
+	}
+	live := createWS("todo-live")
+	dead := createWS("todo-dead")
+	got, err := st.GetWorkspace(t.Context(), dead.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = models.WSDestroyed
+	if err := st.UpdateWorkspace(t.Context(), got); err != nil {
+		t.Fatal(err)
+	}
+
+	listed := doJSON(t, h, http.MethodGet, "/workspaces?project_id="+p.ID.String(), tok, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("list %d %s", listed.Code, listed.Body.String())
+	}
+	if strings.Contains(listed.Body.String(), dead.ID.String()) {
+		t.Fatalf("default list should hide destroyed: %s", listed.Body.String())
+	}
+	if !strings.Contains(listed.Body.String(), live.ID.String()) {
+		t.Fatalf("default list should keep running: %s", listed.Body.String())
+	}
+
+	all := doJSON(t, h, http.MethodGet, "/workspaces?project_id="+p.ID.String()+"&include_destroyed=1", tok, nil)
+	if all.Code != http.StatusOK || !strings.Contains(all.Body.String(), dead.ID.String()) {
+		t.Fatalf("include_destroyed should return destroyed: %d %s", all.Code, all.Body.String())
 	}
 }

@@ -1,6 +1,28 @@
 # 工作流（用 {{USERNAME}} 的身份）
 
-基址 `{{API_BASE}}`，头 `Authorization: Bearer {{TOKEN}}`。**只用 curl**，禁止 Cursor fetch / WebFetch。
+基址 `{{API_BASE}}`，头 `Authorization: Bearer {{TOKEN}}`。**只用 curl**，禁止 Cursor fetch / WebFetch。Windows 用 `curl.exe`，JSON 写文件后 `--data-binary @file`，**禁止 `$pid` 当变量名**。
+
+本会话：`GET /agent-pack/version` 一次、`GET /me` 一次。不要每个任务都把项目/机器/入口/仓库/exec 探活走一遍。
+
+## 0. 更新已有服务（默认这条）
+
+用户说「加功能 / 更新 / 重新上线」时：
+
+```
+本机已 login CNB？  （看 ~/.docker/config.json 的 auths / credsStore，或 docker images）
+  ├─ 是 → 本机 docker build && docker push
+  └─ 否 → 仍本机构建；请用户 docker login docker.cnb.cool
+           （不要改去 exec 传二进制；不要 docker info 的 IndexConfigs 判断没登录）
+GET /workspaces?project_id=     → 跳过 destroyed；同名取 updated_at 最新且 running 的 id
+POST /workspaces/{id}/exec      → {"command":"uname -a"} 探活
+  ├─ 502 EXEC_UNAVAILABLE      → POST /start，再探；仍失败换一台
+  └─ 通 → exec 里 docker pull && docker run/compose up
+POST /exec                      → docker ps -a && docker logs <name>
+  └─ Restarting / permission denied → chown 数据目录后再起
+域名还没有才 POST /ingress/shared
+```
+
+**构建只能在本机运行。** `exec` 只做 pull / run / logs / 短排障。
 
 ## 1. 开通一台 2c2g（默认 Compose）
 
@@ -10,16 +32,16 @@
 GET /projects                          → 记下 project_id；若 purpose 为空，先 PATCH 补上再动手
 POST /projects
   {"name":"办公零食","slug":"office-snacks","purpose":"办公室零食柜与内部协作"}
-PATCH /projects/{pid}                  → 仅当旧项目 purpose 为空：{"purpose":"一句话用途"}；看到 409 PURPOSE_REQUIRED 就停
-GET /projects/{pid}/members            → 看自己的 role / ssh_access
-POST /projects/{pid}/workspaces
+PATCH /projects/{id}                   → 仅当旧项目 purpose 为空：{"purpose":"一句话用途"}；看到 409 PURPOSE_REQUIRED 就停。变量名用 $proj，禁止 $pid
+GET /projects/{id}/members             → 看自己的 role / ssh_access
+POST /projects/{id}/workspaces
   {"name":"dev-1","plan":"2c2g","arch":"amd64","visibility":"shared","runtime":"container"}
 ```
 
 仅当用户明确要 Kubernetes（需节点带 `k3s` / `k8s` / `both` 标签，否则 `409 INSUFFICIENT_CAPACITY`）。**审批链与 Docker 相同，不是免审。**
 
 ```
-POST /projects/{pid}/workspaces
+POST /projects/{id}/workspaces
   {"name":"k8s-1","plan":"nano","arch":"amd64","visibility":"shared","runtime":"k8s"}
 ```
 
@@ -39,6 +61,8 @@ POST /workspaces/{id}/stop
 POST /workspaces/{id}/start
 ```
 
+`running` 但 exec 502 时，先 `start` 再探活，不要认定机器坏了就换字段重试。
+
 ## 3. 进机器（只走 HTTP 执行）
 
 **不要本机 `ssh`、不要 `ssh-config`、不要 8099。** 进机器只有：
@@ -48,18 +72,20 @@ POST /workspaces/{id}/exec
   {"command":"uname -a && whoami && pwd"}
 ```
 
-返回 `{exit_code, stdout, stderr, via:"http-ssh"}`。命令失败时 HTTP 仍是 200，看 `exit_code`。
+返回 `{exit_code, stdout, stderr, via:"http-ssh"}`。命令失败时 HTTP 仍是 200，看 `exit_code`。HTTP 502 且 `error=EXEC_UNAVAILABLE`：SSH 不通（handshake / connection reset），不是 JSON 填错。
 
-**构建只能在本机运行，不允许在我们申请的机器中运行。** `exec` 只做运行与排障（`docker pull`、`docker compose up`、看日志）。禁止在机器里 `docker build` / `docker compose build` / `npm run build` / `go build`。
+**构建只能在本机运行，不允许在我们申请的机器中运行。** `exec` 只做运行与排障（`docker pull`、`docker compose up`、`docker logs`）。禁止在机器里 `docker build` / `docker compose build` / `npm run build` / `go build`。**禁止**把可执行文件 base64 分片塞进 exec（nginx 约 60s 会 504，Agent 终端长脚本会 Aborted）。
 
-写文件用 stdin（base64）：
+写小文件：平台已把 `stdin_b64` **解码后**写入 stdin，用 `cat` 接收原文：
 
 ```
 POST /workspaces/{id}/exec
-  {"command":"base64 -d > /tmp/note.txt && cat /tmp/note.txt","stdin_b64":"<BASE64>"}
+  {"command":"cat > /tmp/note.txt","stdin_b64":"<BASE64>"}
 ```
 
-`timeout_sec` 默认 60，最大 300。只读 SSH（`ssh_mode=read_only`）会 403。**Kubernetes 工作区 exec 返回 400**，改走下一节 apply。
+不要写 `base64 -d`（会 `invalid input`）。只传 KB 级文本。
+
+`timeout_sec` 默认 60，最大 300；前面网关仍可能 60s 超时，所以不要把 build 塞进一次 HTTP。只读 SSH（`ssh_mode=read_only`）会 403。**Kubernetes 工作区 exec 返回 400**，改走下一节 apply。
 
 ## 3b. Kubernetes：apply / kubeconfig / 资源
 
@@ -116,26 +142,18 @@ POST /projects/{pid}/transfer-ownership
 ## 5. 公共域 `*.apps`
 
 ```
-GET /ingress/meta                      → shared_zones / zones，记下 zone_id
+GET /ingress/meta                      → shared_zones / zones，记下 zone_id（领域名时才打）
 POST /workspaces/{id}/ingress/shared
   {"zone_id":"...","mode":"random","port":8088}
 POST /workspaces/{id}/ingress/shared
   {"zone_id":"...","mode":"custom","prefix":"myapp","port":8090,"confirm_second_port":true}
 ```
 
-同一主机第二端口必须确认。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。特殊自有域走 `POST /workspaces/{id}/ingress`，要审批。
+同一主机第二端口必须确认。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。特殊自有域走 `POST /workspaces/{id}/ingress`，要审批。非 `running` 不能 claim。
 
 ## 6. 推镜像 / 部署（默认 Compose + CNB）
 
-**构建只能在本机运行，不允许在我们申请的机器中运行。** 本机 `docker build` / 编译 → `docker push` 到 CNB。机器里只 `docker pull` + `docker compose up`（不要 `compose build`）。**只有用户点名 k8s** 才 `runtime=k8s` + `k8s/apply`。镜像**优先 CNB**，不要默认 Docker Hub。
-
-```
-GET /registries/preferred
-# {name:"CNB", server:"docker.cnb.cool", console:"https://cnb.cool",
-#  image_example:"docker.cnb.cool/<组织>/<仓库>:<标签>"}
-```
-
-本机：
+按第 0 节决策树。本机：
 
 ```
 docker build -t docker.cnb.cool/<组织>/<仓库>:<标签> .
@@ -147,11 +165,15 @@ docker push docker.cnb.cool/<组织>/<仓库>:<标签>
 ```
 docker pull docker.cnb.cool/<组织>/<仓库>:<标签>
 docker compose up -d
+docker ps -a && docker logs <name>
 ```
 
+数据目录若挂到 `/root/...` 且镜像是非 root `USER`，先 `chown` 再跑，否则会 `permission denied` + `Restarting`。
+
 - 控制台 https://cnb.cool 建仓库后，镜像路径就是 `docker.cnb.cool/…`。
-- 平台若已把 CNB 凭据自动注入工作区，容器内可直接 **pull**；push 在本机做。否则先让用户在 CNB 建访问令牌，或请 `platform_admin` 在「镜像仓库」添加 `docker.cnb.cool` 并开启自动注入。
-- 部署跑起来后再按上一节领取 `*.apps` 域名。
+- 不确定仓库名才 `GET /registries/preferred`。
+- 平台若已把 CNB 凭据自动注入工作区，容器内可直接 **pull**；push 在本机做。
+- 部署跑起来并 `docker logs` 正常后再按上一节领取 `*.apps` 域名。
 
 ## 7. 升配 / 销毁
 

@@ -325,6 +325,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeErr(w http.ResponseWriter, code int, err error) {
 	msg := err.Error()
+	hint := ""
 	if errors.Is(err, store.ErrNoCapacity) {
 		code = http.StatusConflict
 		msg = "INSUFFICIENT_CAPACITY"
@@ -339,19 +340,36 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 	} else if errors.Is(err, store.ErrPurposeRequired) {
 		code = http.StatusConflict
 		msg = "PURPOSE_REQUIRED"
+		hint = `PATCH /projects/{id} {"purpose":"一句话用途（2–80字）"} 后再试`
 	} else if errors.Is(err, store.ErrSecondPort) {
 		code = http.StatusConflict
 		msg = err.Error()
+		hint = "同一主机第二端口须 confirm_second_port: true"
 	} else if errors.Is(err, store.ErrDiskShrink) || errors.Is(err, store.ErrNotExpansion) {
 		code = http.StatusBadRequest
 		msg = err.Error()
+	} else if errors.Is(err, errExecUnavailable) {
+		code = http.StatusBadGateway
+		msg = "EXEC_UNAVAILABLE"
+		hint = "status=running 不等于 SSH 通。POST /workspaces/{id}/start 后用短命令探活；仍失败换一台。"
+		if detail := strings.TrimPrefix(err.Error(), "EXEC_UNAVAILABLE: "); detail != "" && detail != err.Error() {
+			hint += " 原因：" + detail
+		} else if err.Error() != "EXEC_UNAVAILABLE" {
+			hint += " 原因：" + err.Error()
+		}
 	} else if errors.Is(err, store.ErrInvalidInput) {
 		code = http.StatusBadRequest
+		hint = "检查 JSON 字段、必填项（如 purpose）和 URL 里的 id（Windows 不要用 $pid 当变量）"
 	} else if errors.Is(err, hak8s.ErrUnavailable) {
 		code = http.StatusServiceUnavailable
 		msg = "K8S_UNAVAILABLE"
+		hint = "控制面没有真实 k3s。不要换 YAML 字段重试。kubeconfig 若是 https://k8s.invalid 也是同一原因。"
 	}
-	writeJSON(w, code, map[string]string{"error": msg})
+	body := map[string]string{"error": msg}
+	if hint != "" {
+		body["hint"] = hint
+	}
+	writeJSON(w, code, body)
 }
 
 func decodeJSON(r *http.Request, v any) error {
@@ -754,6 +772,15 @@ func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	}
 	if items == nil {
 		items = []models.Workspace{}
+	}
+	if r.URL.Query().Get("include_destroyed") != "1" {
+		alive := make([]models.Workspace, 0, len(items))
+		for _, ws := range items {
+			if ws.Status != models.WSDestroyed {
+				alive = append(alive, ws)
+			}
+		}
+		items = alive
 	}
 	s.attachWorkspaceNodeNames(r.Context(), items)
 	listEnvelope(w, items, len(items))

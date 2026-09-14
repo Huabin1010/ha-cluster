@@ -2,6 +2,8 @@
 
 `{{API_BASE}}`。未标「公开」的都要 `Authorization: Bearer {{TOKEN}}`。
 
+错误体 `{ "error": "<码或短句>", "hint": "<怎么修>" }`。`hint` 可能缺省。常见码：`PURPOSE_REQUIRED`（先 PATCH 项目 purpose）、`SECOND_PORT_CONFIRM_REQUIRED`（第二端口加 `confirm_second_port:true`）、`INSUFFICIENT_CAPACITY`、`EXEC_UNAVAILABLE`（running 不等于 SSH 通，可 POST /start）、`K8S_UNAVAILABLE`。不要对着光秃的 `invalid input` 换字段空转。
+
 ## 公开
 
 | 方法 | 路径 | 说明 |
@@ -11,7 +13,7 @@
 | POST | `/auth/login` | `{username,password}` → `{token,refresh_token,user}` |
 | POST | `/auth/refresh` | `{refresh_token}` |
 | POST | `/auth/logout` | `{refresh_token}` |
-| GET | `/agent-pack/version` | `{version,released_at,notes}`；与本地 VERSION 比较，更大则重拉 pack |
+| GET | `/agent-pack/version` | `{version,released_at,notes}`；本会话比一次，更大则重拉 pack |
 | GET | `/agent-pack/{token}` | 本 pack；`?format=md` 为 Markdown |
 
 登录 JWT 约 15 分钟；**本 Agent 令牌长期有效**，不要混用短 JWT。
@@ -20,7 +22,7 @@
 
 | 方法 | 路径 | 体 / 说明 |
 |---|---|---|
-| GET | `/me` | 当前用户 |
+| GET | `/me` | 当前用户；本会话确认一次即可 |
 | GET | `/me/ssh-keys` | 列表 |
 | POST | `/me/ssh-keys` | `{name,public_key}` → 201/409 |
 | DELETE | `/me/ssh-keys/{id}` | 204 |
@@ -53,19 +55,19 @@
 
 | 方法 | 路径 | 体 / 说明 |
 |---|---|---|
-| GET | `/workspaces` | `?project_id=` |
+| GET | `/workspaces` | `?project_id=`；**默认不含 `destroyed`**，要历史记录加 `include_destroyed=1`。同名取 `updated_at` 最新且 `running` 的 id |
 | GET | `/workspaces/{id}` | |
 | POST | `/projects/{id}/workspaces` | `{name,plan,arch,visibility,runtime?,cpu_milli?,mem_bytes?,disk_bytes?}`；默认不写或 `container`（Docker Compose）；用户要 k8s 才 `runtime=k8s`。developer 一律 `requested`（含 k8s）；owner/admin 直建 |
 | POST | `/workspaces/{id}/approve` | admin；`requested`→开通 |
 | POST | `/workspaces/{id}/reject` | `{reason?}` |
-| POST | `/workspaces/{id}/stop` `/start` | |
+| POST | `/workspaces/{id}/stop` `/start` | `running` 但 exec 502 时可先 start 再探活 |
 | POST | `/workspaces/{id}/resize` | `{cpu_milli,mem_bytes,disk_bytes}` |
 | POST | `/workspaces/{id}/resize/approve` `/reject` | |
 | POST | `/workspaces/{id}/destroy-request` | |
 | POST | `/workspaces/{id}/destroy-request/approve` | 项目初审 |
 | DELETE | `/workspaces/{id}` | 普通用户=申请销毁 |
 | GET | `/workspaces/{id}/connection` | 含 `exec_example`（进机器用 exec，不要 ssh-config） |
-| POST | `/workspaces/{id}/exec` | `{command, stdin_b64?, timeout_sec?}` → `{exit_code,stdout,stderr,via}`；权限同 SSH。**禁止在机器里构建**（`docker build` / `npm run build` / `go build` 等只允许本机） |
+| POST | `/workspaces/{id}/exec` | `{command, stdin_b64?, timeout_sec?}` → `{exit_code,stdout,stderr,via}`。**stdin_b64 已被解码**，写文件用 `cat > file` 不要 `base64 -d`。命令失败 HTTP 仍 200，看 `exit_code`。SSH 不通 502 `EXEC_UNAVAILABLE`。**禁止在机器里构建**；**禁止**用 exec 传二进制 |
 | GET | `/workspaces/{id}/ssh-target` | |
 | GET | `/workspaces/{id}/terminal` | WebSocket；可 `?access_token=` |
 | GET | `/workspaces/{id}/audit` | |
@@ -76,14 +78,14 @@
 
 `plan` 常用：`nano` `small` `2c2g` `medium` `large` `xlarge`。`arch`：`amd64` `arm64` `any`（`x86_64`/`aarch64` 会归一）。`visibility`：`shared` `private`。
 
-状态人话：`requested` 待审批 / `provisioning` 开通中 / `running` 运行中 / `stopped` 已停止 / `failed` 失败 / `destroy_requested` 待项目审销毁 / `destroy_pending_platform` 待平台终审。
+状态人话：`requested` 待审批 / `provisioning` 开通中 / `running` 运行中 / `stopped` 已停止 / `failed` 失败 / `destroy_requested` 待项目审销毁 / `destroy_pending_platform` 待平台终审。`running` ≠ exec 已通。
 
 ## 入口
 
 | 方法 | 路径 | 体 / 说明 |
 |---|---|---|
-| GET | `/ingress/meta` | zones、`fabric_dns`、presets、`preferred_registry` |
-| GET | `/registries/preferred` | 推荐镜像仓库（CNB / `docker.cnb.cool`） |
+| GET | `/ingress/meta` | zones、`fabric_dns`、presets、`preferred_registry`；领域名时才打 |
+| GET | `/registries/preferred` | 推荐镜像仓库（CNB / `docker.cnb.cool`）；不确定仓库名时才打 |
 | GET | `/workspaces/{id}/ingress` | |
 | POST | `/workspaces/{id}/ingress/shared` | `{zone_id,mode:random\|custom,prefix?,port,confirm_second_port?}` |
 | POST | `/workspaces/{id}/ingress` | 自有域，多需审批 |

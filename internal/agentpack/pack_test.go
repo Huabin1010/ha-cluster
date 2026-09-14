@@ -66,6 +66,24 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[RulePath], "构建只能在本机运行") || !strings.Contains(p.Files[SkillPath], "不允许在我们申请的机器中运行") {
 		t.Fatal("pack should forbid builds on workspaces")
 	}
+	if strings.Contains(p.Files[WorkflowsPath], "base64 -d >") {
+		t.Fatal("write-file example must not use base64 -d; stdin_b64 is already decoded")
+	}
+	if !strings.Contains(p.Files[WorkflowsPath], `cat > /tmp/note.txt`) {
+		t.Fatal("write-file example should cat stdin to the file")
+	}
+	if !strings.Contains(p.Files[SkillPath], "credsStore") || !strings.Contains(p.Files[SkillPath], "IndexConfigs") {
+		t.Fatal("skill should detect CNB via config.json / credsStore, not docker info IndexConfigs")
+	}
+	if !strings.Contains(p.Files[SkillPath], "$pid") || !strings.Contains(p.Files[RulePath], "$pid") {
+		t.Fatal("pack should warn Windows agents not to use $pid")
+	}
+	if !strings.Contains(p.Files[APIRefPath], "include_destroyed") || !strings.Contains(p.Files[SkillPath], "EXEC_UNAVAILABLE") {
+		t.Fatal("pack should document hidden destroyed workspaces and EXEC_UNAVAILABLE")
+	}
+	if !strings.Contains(p.Files[SkillPath], "禁止") || !strings.Contains(p.Files[WorkflowsPath], "传二进制") {
+		t.Fatal("pack should forbid shipping binaries through exec")
+	}
 	md := Markdown(p)
 	if !strings.Contains(md, SkillPath) || !strings.Contains(md, "HA_CLUSTER_AGENT_PACK v"+Version) {
 		t.Fatal(md[:200])
