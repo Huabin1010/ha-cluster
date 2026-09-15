@@ -5,6 +5,23 @@ import (
 	"testing"
 )
 
+func TestNormalizeProjectName(t *testing.T) {
+	ok, good := NormalizeProjectName("  Office  Snacks  ")
+	if !good || ok != "Office Snacks" {
+		t.Fatalf("got %q %v", ok, good)
+	}
+	for _, name := range []string{"demo", "My-App", "Tom's Lab", "Dr. Foo", "office_snacks"} {
+		if got, valid := NormalizeProjectName(name); !valid || got != name {
+			t.Fatalf("%q: got %q %v", name, got, valid)
+		}
+	}
+	for _, bad := range []string{"", "办公零食", "Office零食", "123", "-lead", "零食柜"} {
+		if _, valid := NormalizeProjectName(bad); valid {
+			t.Fatalf("want reject %q", bad)
+		}
+	}
+}
+
 func TestNormalizeProjectPurpose(t *testing.T) {
 	ok, good := NormalizeProjectPurpose("  办公零食柜  ")
 	if !good || ok != "办公零食柜" {

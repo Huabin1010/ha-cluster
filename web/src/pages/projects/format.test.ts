@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { formatBytes, formatBudget, formatCpuMilli } from "./format";
-import { canManageProject, isValidPurpose, purposeMissing, isValidSlug, suggestSlugFromName } from "./types";
+import {
+  canManageProject,
+  isValidProjectName,
+  isValidPurpose,
+  purposeMissing,
+  isValidSlug,
+  suggestSlugFromName,
+} from "./types";
 
 describe("project slug", () => {
   it("accepts lowercase alnum hyphen", () => {
@@ -21,6 +28,16 @@ describe("project slug", () => {
   it("suggests slug from name", () => {
     expect(suggestSlugFromName("演示项目 Demo App!")).toBe("demo-app");
     expect(suggestSlugFromName("  My App  ")).toBe("my-app");
+  });
+
+  it("requires english project names", () => {
+    expect(isValidProjectName("Office Snacks")).toBe(true);
+    expect(isValidProjectName("  My-App  ")).toBe(true);
+    expect(isValidProjectName("Tom's Lab")).toBe(true);
+    expect(isValidProjectName("办公零食")).toBe(false);
+    expect(isValidProjectName("Office零食")).toBe(false);
+    expect(isValidProjectName("123")).toBe(false);
+    expect(isValidProjectName("")).toBe(false);
   });
 
   it("owner can manage project", () => {

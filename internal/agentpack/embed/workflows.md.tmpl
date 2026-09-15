@@ -31,8 +31,8 @@ POST /exec                      → docker ps -a && docker logs <name>
 
 ```
 GET /projects                          → 记下 project_id；若 purpose 为空，先 PATCH 补上再动手
-POST /projects
-  {"name":"办公零食","slug":"office-snacks","purpose":"办公室零食柜与内部协作"}
+POST /projects                         → name 必须英文；purpose 可中文。中文名称会 400
+  {"name":"Office Snacks","slug":"office-snacks","purpose":"办公室零食柜与内部协作"}
 PATCH /projects/{id}                   → 仅当旧项目 purpose 为空：{"purpose":"一句话用途"}；看到 409 PURPOSE_REQUIRED 就停。变量名用 $proj，禁止 $pid
 GET /projects/{id}/members             → 看自己的 role / ssh_access
 POST /projects/{id}/workspaces

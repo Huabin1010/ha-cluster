@@ -381,7 +381,7 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 	} else if errors.Is(err, store.ErrPurposeRequired) {
 		code = http.StatusConflict
 		msg = "PURPOSE_REQUIRED"
-		hint = "请先在项目设置中填写用途后再继续。"
+		hint = "请先 PATCH /projects/{id} 填写 purpose，或在项目设置中补上用途后再继续。"
 	} else if errors.Is(err, store.ErrSecondPort) {
 		code = http.StatusConflict
 		msg = err.Error()

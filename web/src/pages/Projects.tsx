@@ -153,7 +153,7 @@ export function ProjectsPage() {
                 {rows.length} 个环境
               </Badge>
             }
-            description="协作与资源边界。每个项目须写清用途。登录后先选项目，项目内可申请隔离服务器，管理员批准后获得 SSH 连接。"
+            description="协作与资源边界。项目名称请用英文，用途用一句话说清（可中文）。登录后先选项目，项目内可申请隔离服务器，管理员批准后获得 SSH 连接。"
             actions={
               <>
                 <Button

@@ -39,9 +39,9 @@ func (a *App) PatchProject(ctx context.Context, actor models.User, id uuid.UUID,
 		return nil, store.ErrPurposeRequired
 	}
 	if in.Name != nil {
-		name := strings.TrimSpace(*in.Name)
-		if name == "" || len(name) > 128 {
-			return nil, store.ErrInvalidInput
+		name, ok := models.NormalizeProjectName(*in.Name)
+		if !ok {
+			return nil, store.Wrap(store.ErrInvalidInput, projectNameHint)
 		}
 		p.Name = name
 	}

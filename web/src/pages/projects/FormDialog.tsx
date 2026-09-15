@@ -12,7 +12,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { isValidPurpose, isValidSlug, PURPOSE_MAX, suggestSlugFromName } from "./types";
+import {
+  isValidProjectName,
+  isValidPurpose,
+  isValidSlug,
+  normalizeProjectName,
+  PROJECT_NAME_MAX,
+  PURPOSE_MAX,
+  suggestSlugFromName,
+} from "./types";
 
 type Props = {
   open: boolean;
@@ -56,11 +64,15 @@ export function ProjectFormDialog({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLocalErr("");
-    const n = name.trim();
+    const n = normalizeProjectName(name);
     const s = slug.trim().toLowerCase();
     const p = purpose.trim().replace(/\s+/g, " ");
     if (!n) {
       setLocalErr("请填写项目名称");
+      return;
+    }
+    if (!isValidProjectName(n)) {
+      setLocalErr("项目名称须为英文（字母、数字、空格或短横线，如 Office Snacks）");
       return;
     }
     if (!isValidSlug(s)) {
@@ -84,8 +96,8 @@ export function ProjectFormDialog({
           <DialogTitle>{create ? "创建项目" : "编辑项目"}</DialogTitle>
           <DialogDescription>
             {create
-              ? "填写名称、slug 与用途。用途一句话说清这个项目是干什么的。"
-              : "修改显示名称、slug 或用途。slug 须全局唯一。"}
+              ? "名称请用英文。用途一句话说清这个项目是干什么的，中文也可以。"
+              : "修改显示名称、slug 或用途。名称须为英文；slug 须全局唯一。"}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -100,9 +112,13 @@ export function ProjectFormDialog({
                 data-testid="project-name"
                 value={name}
                 onChange={(e) => onNameChange(e.target.value)}
-                placeholder="办公零食"
+                placeholder="Office Snacks"
+                maxLength={PROJECT_NAME_MAX}
                 required
               />
+              <p className="text-xs text-muted-foreground break-words min-w-0">
+                须为英文：字母、数字、空格或短横线。
+              </p>
             </Field>
             <Field label="slug">
               <Input
@@ -125,7 +141,7 @@ export function ProjectFormDialog({
                 required
               />
               <p className="text-xs text-muted-foreground break-words min-w-0">
-                必填，2–80 字。一句话说清这个项目是干什么的，不要只重复名称。
+                必填，2–80 字，中文也可以。一句话说清这个项目是干什么的，不要只重复名称。
               </p>
             </Field>
             {err && (

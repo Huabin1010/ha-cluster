@@ -21,6 +21,19 @@ export type ProjectUsage = {
   disk_bytes: number;
 };
 
+/** 显示名：英文开头，仅字母、数字、空格、短横线、下划线、点、撇号 */
+export const PROJECT_NAME_RE = /^[A-Za-z][A-Za-z0-9 ._'-]*$/;
+export const PROJECT_NAME_MAX = 128;
+
+export function normalizeProjectName(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ");
+}
+
+export function isValidProjectName(raw: string): boolean {
+  const n = normalizeProjectName(raw);
+  return PROJECT_NAME_RE.test(n) && n.length <= PROJECT_NAME_MAX;
+}
+
 /** slug: 小写字母、数字、短横线（不可首尾短横线、不可连续短横线） */
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

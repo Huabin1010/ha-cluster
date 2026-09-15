@@ -34,7 +34,7 @@
 | 方法 | 路径 | 体 / 说明 |
 |---|---|---|
 | GET | `/projects` | 仅成员可见 |
-| POST | `/projects` | `{name,slug,purpose}` slug=`[a-z0-9]+(-[a-z0-9]+)*`；**purpose 必填** 2–80 字，一句话说清项目干什么，不要复述 name/slug |
+| POST | `/projects` | `{name,slug,purpose}` **name 须英文**（`[A-Za-z][A-Za-z0-9 ._'-]*`，如 `Office Snacks`）；slug=`[a-z0-9]+(-[a-z0-9]+)*`；**purpose 必填** 2–80 字可中文，一句话说清项目干什么，不要复述 name/slug |
 | GET | `/projects/{id}` | |
 | PATCH | `/projects/{id}` | `{name?,slug?,purpose?,budget_cpu_milli?,budget_mem_bytes?,budget_disk_bytes?}`；旧项目 `purpose` 为空时，必须先带 `purpose`，否则 409 `PURPOSE_REQUIRED` |
 | DELETE | `/projects/{id}` | owner |

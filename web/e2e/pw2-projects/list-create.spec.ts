@@ -116,7 +116,7 @@ test.describe("PW-2 项目列表与创建", () => {
     const { page } = await pageAs("owner");
     await page.goto("/projects");
 
-    const longName = "超长项目名称演示测试-" + uniq("long-name");
+    const longName = "Very Long Project Name Demo " + uniq("long-name");
     const slug = uniq("slug");
 
     await openCreateDialog(page, "project-create-open");
@@ -164,6 +164,23 @@ test.describe("PW-2 项目列表与创建", () => {
     const purposeIn = page.getByTestId("project-purpose");
     const valid = await purposeIn.evaluate((el: HTMLInputElement) => el.checkValidity());
     expect(valid).toBe(false);
+    expect(page.url()).toContain("/projects");
+    await expect(page.getByTestId("project-create-form")).toBeVisible();
+  });
+
+  test("PW2-18 @pw2 名称必须英文", async ({ pageAs }) => {
+    const { page } = await pageAs("owner");
+    await page.goto("/projects");
+
+    await openCreateDialog(page, "project-create-open");
+    await page.getByTestId("project-name").fill("办公零食");
+    await page.getByTestId("project-slug").fill(uniq("zhname"));
+    await page.getByTestId("project-purpose").fill("办公室零食柜与内部协作");
+    await page.getByTestId("project-create").click();
+
+    const err = page.getByTestId("project-error");
+    await expect(err).toBeVisible();
+    await expect(err).toContainText("英文");
     expect(page.url()).toContain("/projects");
     await expect(page.getByTestId("project-create-form")).toBeVisible();
   });

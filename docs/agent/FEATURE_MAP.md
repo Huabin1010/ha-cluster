@@ -115,7 +115,7 @@
 
 ### 子功能
 
-- 列表：创建（**用途必填**）、编辑、删除、复制 ID；「用途」列一句话说清这个项目是干什么的
+- 列表：创建（**名称须英文**：字母、数字、空格或短横线，如 `Office Snacks`；**用途必填** 2–80 字，可中文）、编辑、删除、复制 ID；「用途」列一句话说清这个项目是干什么的
 - **窄屏**：列表为卡片（testid 仍是 `project-row`）
 - **旧项目未填用途会冻结**：不能开通机器、加人、SSH、改预算；红条 `project-purpose-gate`，负责人点 `project-purpose-fill` 补上后才能继续
 - 详情 Tab：项目概览 / 工作区服务器 / 成员与权限 / 设置与预算
@@ -171,6 +171,8 @@
 | 空列表 | `empty-state` | 通用空态 |
 
 角色门：非成员项目 404；改预算 / 删项目需 owner；viewer 不能申请机器。未填用途时除查看、补用途、删除项目 / 销毁机器外一律 `409 PURPOSE_REQUIRED`。
+
+Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `invalid input: 项目名称须为英文…`）；`purpose` 可中文。示例：`{"name":"Office Snacks","slug":"office-snacks","purpose":"办公室零食柜与内部协作"}`。不要把中文写进 `name`。
 
 相关 E2E：`web/e2e/pw2-projects/`。
 

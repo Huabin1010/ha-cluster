@@ -96,6 +96,7 @@ type SSHKey struct {
 }
 
 const (
+	ProjectNameMaxRunes    = 128
 	ProjectPurposeMinRunes = 2
 	ProjectPurposeMaxRunes = 80
 )
@@ -113,6 +114,30 @@ type Project struct {
 	CreatedAt       time.Time `json:"created_at"`
 	MyRole          string    `json:"my_role,omitempty"`
 	MySSHAccess     string    `json:"my_ssh_access,omitempty"`
+}
+
+// NormalizeProjectName trims and collapses whitespace. Names must be English
+// (letters, digits, spaces, hyphen, underscore, apostrophe, or dot) and start with a letter.
+func NormalizeProjectName(raw string) (string, bool) {
+	s := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if s == "" || utf8.RuneCountInString(s) > ProjectNameMaxRunes {
+		return "", false
+	}
+	for i, r := range s {
+		if i == 0 {
+			if r < 'A' || (r > 'Z' && r < 'a') || r > 'z' {
+				return "", false
+			}
+			continue
+		}
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case r == ' ' || r == '.' || r == '_' || r == '-' || r == '\'':
+		default:
+			return "", false
+		}
+	}
+	return s, true
 }
 
 // NormalizeProjectPurpose trims and collapses whitespace. Empty is invalid.

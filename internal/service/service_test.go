@@ -634,7 +634,7 @@ func TestDangerousDestroyQueueAndReject(t *testing.T) {
 	app, plat := setupApp(t)
 	ctx := context.Background()
 
-	p, err := app.CreateProject(ctx, plat.ID, "办公室故事", "office-story", "test purpose")
+	p, err := app.CreateProject(ctx, plat.ID, "Office Story", "office-story", "test purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -681,7 +681,7 @@ func TestDangerousDestroyQueueAndReject(t *testing.T) {
 		t.Fatalf("queue: %v %#v", err, items)
 	}
 	item := items[0]
-	if item.Name != "blog 1" || item.ProjectName != "办公室故事" {
+	if item.Name != "blog 1" || item.ProjectName != "Office Story" {
 		t.Fatalf("project name missing: %+v", item)
 	}
 	if item.ApplicantUsername != "bobdest" {

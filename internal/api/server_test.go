@@ -136,7 +136,7 @@ func TestAuditActorUsernameAndIP(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("patch display_name %d %s", rr.Code, rr.Body.String())
 	}
-	rr = doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "办公室故事", "slug": "office-story", "purpose": "test purpose"})
+	rr = doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "Office Story", "slug": "office-story", "purpose": "test purpose"})
 	if rr.Code != http.StatusCreated {
 		t.Fatal(rr.Body.String())
 	}
@@ -157,7 +157,7 @@ func TestAuditActorUsernameAndIP(t *testing.T) {
 	if created == nil {
 		t.Fatalf("no project.create in %#v", out.Data)
 	}
-	if created.ResourceName != "办公室故事" {
+	if created.ResourceName != "Office Story" {
 		t.Fatalf("project resource_name=%q", created.ResourceName)
 	}
 	if created.ActorDisplayName != "审计管理员" {
@@ -706,6 +706,14 @@ func TestProjectCreateUsageAndBudget(t *testing.T) {
 	missing := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "No Purpose", "slug": "no-purpose"})
 	if missing.Code != http.StatusBadRequest {
 		t.Fatalf("missing purpose want 400 got %d %s", missing.Code, missing.Body.String())
+	}
+
+	zhName := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "办公零食", "slug": "office-zh", "purpose": "办公室零食柜"})
+	if zhName.Code != http.StatusBadRequest {
+		t.Fatalf("chinese name want 400 got %d %s", zhName.Code, zhName.Body.String())
+	}
+	if !strings.Contains(zhName.Body.String(), "英文") {
+		t.Fatalf("chinese name error should mention 英文: %s", zhName.Body.String())
 	}
 
 	rr := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "Demo", "slug": "demo-u2", "purpose": "test purpose"})

@@ -75,7 +75,7 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     // ==========================================
     // 阶段三：项目生命周期与配额管控
     // ==========================================
-    const projName = `演示项目_${ts.toString().slice(-6)}`;
+    const projName = `Demo Project ${ts.toString().slice(-6)}`;
     const projSlug = `proj-${ts.toString().slice(-6)}`;
 
     await openCreateDialog(ownerPage, "project-create-open");

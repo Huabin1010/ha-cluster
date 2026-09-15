@@ -1,6 +1,6 @@
 ---
 name: ha-cluster-agent
-pack_version: "16"
+pack_version: "17"
 description: >-
   Operates the ha-cluster control plane as a signed-in user via REST. Use when
   creating projects, provisioning workspaces (machines), managing members or
@@ -15,7 +15,7 @@ description: >-
 
 ## 本会话只需一次
 
-本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **16**。
+本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **17**。
 
 ```bash
 curl -fsS "${HA_API_BASE:-https://cl.qzsyzn.com/api}/agent-pack/version"
@@ -50,7 +50,7 @@ curl -fsS -H "Authorization: Bearer $HA_AGENT_TOKEN" "${HA_API_BASE:-https://cl.
 
 默认开 **Docker + SSH** 机器，用 Compose **跑已经编好的镜像**。用户没提 Kubernetes / k3s / kubectl 时不要开 `runtime=k8s`。Kubernetes 与 Docker **同一审批**。
 
-创建项目必须带简洁 `purpose`（2–80 字）。旧项目为空时先 `PATCH /projects/{id}` `{purpose}`，否则 `409 PURPOSE_REQUIRED`。
+创建项目必须带英文 `name`（如 `Office Snacks`）和简洁 `purpose`（2–80 字，可中文）。中文名称会 400。旧项目为空时先 `PATCH /projects/{id}` `{purpose}`，否则 `409 PURPOSE_REQUIRED`。
 
 选机器：`GET /workspaces` **默认不含 destroyed**；同名取 `exec_ready=true` 且 `running` 的 **id**（不要只看 `updated_at`）。`exec_ready=false` 先 `POST /start` 或换一台；字段缺省才短命令探一次。`running` ≠ exec 通。
 

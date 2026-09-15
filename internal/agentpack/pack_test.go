@@ -60,6 +60,9 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[APIRefPath], "purpose") || !strings.Contains(p.Files[SkillPath], "purpose") {
 		t.Fatal("pack should require project purpose")
 	}
+	if !strings.Contains(p.Files[SkillPath], "name 必须英文") || !strings.Contains(p.Files[WorkflowsPath], "Office Snacks") {
+		t.Fatal("pack should require english project names")
+	}
 	if !strings.Contains(p.Files[SkillPath], "PURPOSE_REQUIRED") {
 		t.Fatal("pack should freeze projects missing purpose")
 	}

@@ -127,13 +127,16 @@ func (a *App) Login(ctx context.Context, username, password string) (string, *mo
 	return tok, u, nil
 }
 
+const projectNameHint = "项目名称须为英文（字母、数字、空格或短横线，如 Office Snacks）"
+
 func (a *App) CreateProject(ctx context.Context, actor uuid.UUID, name, slug, purpose string) (*models.Project, error) {
-	name = strings.TrimSpace(name)
-	slug = strings.ToLower(strings.TrimSpace(slug))
-	if name == "" || slug == "" {
-		return nil, store.ErrInvalidInput
+	normalized, ok := models.NormalizeProjectName(name)
+	if !ok {
+		return nil, store.Wrap(store.ErrInvalidInput, projectNameHint)
 	}
-	if len(name) > 128 || len(slug) > 64 || !validProjectSlug(slug) {
+	name = normalized
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" || len(slug) > 64 || !validProjectSlug(slug) {
 		return nil, store.ErrInvalidInput
 	}
 	purposeNorm, ok := models.NormalizeProjectPurpose(purpose)

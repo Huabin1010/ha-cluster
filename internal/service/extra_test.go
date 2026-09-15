@@ -90,6 +90,17 @@ func TestCreateProjectSlugValidation(t *testing.T) {
 	if _, err := app.CreateProject(ctx, u.ID, "dup", "my-app", "test purpose"); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("duplicate slug: %v", err)
 	}
+	if _, err := app.CreateProject(ctx, u.ID, "办公零食", "cn-name", "办公室零食柜"); !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("chinese name: %v", err)
+	}
+	pCN, err := app.CreateProject(ctx, u.ID, "Office Snacks", "office-snacks", "办公室零食柜与内部协作")
+	if err != nil || pCN.Name != "Office Snacks" || pCN.Purpose != "办公室零食柜与内部协作" {
+		t.Fatalf("english name + chinese purpose: %+v %v", pCN, err)
+	}
+	zh := "中文名"
+	if _, err := app.PatchProject(ctx, *u, pCN.ID, PatchProjectInput{Name: &zh}); !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("patch chinese name: %v", err)
+	}
 }
 
 func TestEmptyPurposeBlocksOps(t *testing.T) {

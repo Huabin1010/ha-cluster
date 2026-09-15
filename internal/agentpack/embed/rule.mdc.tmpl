@@ -20,7 +20,7 @@ alwaysApply: true
 
 403 表示当前用户没有这项权限，不要改用别人的账号。409 的 JSON `error` 会带原因，不要只报 Conflict，写操作不要用 curl -f 丢掉 body。
 
-完整步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`。默认开 Docker+SSH 并用 Compose 部署；用户明确要 Kubernetes 才 `runtime=k8s`。旧项目 `purpose` 为空须先 `PATCH`，否则 `409 PURPOSE_REQUIRED`。推镜像优先 CNB（`docker.cnb.cool`）。
+完整步骤读 `.cursor/skills/ha-cluster-agent/SKILL.md`。默认开 Docker+SSH 并用 Compose 部署；用户明确要 Kubernetes 才 `runtime=k8s`。旧项目 `purpose` 为空须先 `PATCH`，否则 `409 PURPOSE_REQUIRED`。创建项目 `name` 必须英文（如 `Office Snacks`），`purpose` 可中文。推镜像优先 CNB（`docker.cnb.cool`）。
 
 **发版：** 本机 `~/.docker/config.json` 的 `auths` / `credsStore` 有 `docker.cnb.cool`（或本地已有该仓库镜像）→ 本机 `docker build` / `docker push`，`exec` 只 `pull` + `run`。不要用 `docker info` 的 IndexConfigs 判断没登录。**禁止**把二进制 base64 分片塞进 `exec`。
 
