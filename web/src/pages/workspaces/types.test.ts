@@ -9,6 +9,7 @@ import {
   statusLabel,
   runtimeLabel,
   isK8sRuntime,
+  isWorkspaceConnectable,
   canApproveRole,
   workspaceStatusVariant,
   workspaceStatusDotClass,
@@ -57,6 +58,14 @@ describe("workspace statusLabel", () => {
     expect(statusLabel("failed")).toBe("失败");
     expect(statusLabel("destroying")).toBe("销毁中");
     expect(statusLabel("provisioning")).toBe("开通中");
+  });
+
+  it("keeps pending destroy connectable until actually destroyed", () => {
+    expect(isWorkspaceConnectable("running")).toBe(true);
+    expect(isWorkspaceConnectable("destroy_requested")).toBe(true);
+    expect(isWorkspaceConnectable("destroy_pending_platform")).toBe(true);
+    expect(isWorkspaceConnectable("destroying")).toBe(false);
+    expect(isWorkspaceConnectable("destroyed")).toBe(false);
   });
 
   it("falls back to raw status", () => {

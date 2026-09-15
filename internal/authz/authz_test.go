@@ -37,6 +37,19 @@ func TestCanSSHSessionDeveloperGranted(t *testing.T) {
 	}
 }
 
+func TestCanSSHSessionDestroyPending(t *testing.T) {
+	m := &models.Membership{Role: models.RoleDeveloper, SSHAccess: models.SSHAccessGranted}
+	u := models.User{ID: uuid.New()}
+	w := models.Workspace{Status: models.WSDestroyPendingPlatform, Visibility: models.VisShared}
+	if !CanSSHSession(u, m, w) {
+		t.Fatal("pending platform destroy should still allow ssh")
+	}
+	w.Status = models.WSDestroying
+	if CanSSHSession(u, m, w) {
+		t.Fatal("destroying must not allow ssh")
+	}
+}
+
 func TestCanSSHSessionAdminDefault(t *testing.T) {
 	m := &models.Membership{Role: models.RoleAdmin}
 	models.NormalizeMembershipSSH(m)

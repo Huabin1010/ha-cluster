@@ -189,6 +189,17 @@ export function isDestroyPendingPlatform(ws: Workspace): boolean {
   return ws.status === "destroy_pending_platform";
 }
 
+/** 待销毁终审前实例仍在，有 SSH 权的成员仍可进入操作 */
+export function isWorkspaceConnectable(status: string): boolean {
+  return (
+    status === "running" ||
+    status === "fabric_degraded" ||
+    status === "suspended" ||
+    status === "destroy_requested" ||
+    status === "destroy_pending_platform"
+  );
+}
+
 /** 状态中文映射（U4 验收） */
 export const STATUS_LABEL: Record<string, string> = {
   requested: "待审批",

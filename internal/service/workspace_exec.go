@@ -51,7 +51,7 @@ func shouldProbeExec(w models.Workspace) bool {
 	if models.IsK8sRuntime(w.Runtime) {
 		return false
 	}
-	if w.Status != models.WSRunning && w.Status != models.WSDegraded {
+	if !models.WorkspaceInstanceLive(w.Status) {
 		return false
 	}
 	if w.SSHPort <= 0 || w.NodeID == uuid.Nil {

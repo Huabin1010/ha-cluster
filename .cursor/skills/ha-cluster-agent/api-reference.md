@@ -16,6 +16,6 @@
 
 镜像：`GET /registries/preferred` → CNB `docker.cnb.cool`（推送/部署优先；不确定仓库名才打）。平台仓库配置仍是 `/admin/docker-registries`。
 
-平台：`/admin/join-tokens`、`/admin/docker-registries`、`/admin/ingress-domains`、`/admin/tls-certs`（`GET` 状态；`POST …/issue` 签发/续期；`PATCH …` `{auto_renew}`；到期前 30 天自动续）、`/admin/dangerous-approvals`、`/nodes`、`/capacity`、`/users`、`/audit-logs`。
+平台：`/admin/join-tokens`、`/admin/docker-registries`、`/admin/ingress-domains`、`/admin/tls-certs`（`GET` 状态；`POST …/issue` 签发/续期；`PATCH …` `{auto_renew}`；到期前 30 天自动续）、`/admin/dangerous-approvals`（`POST …/approve` 才真正销毁，`POST …/reject` 驳回保留）、`/nodes`、`/capacity`、`/users`、`/audit-logs`。
 
 `arch`：`amd64|arm64|any`（`x86_64`→amd64）。重复加人 409。磁盘不能缩。

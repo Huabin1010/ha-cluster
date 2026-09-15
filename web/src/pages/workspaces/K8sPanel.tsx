@@ -13,7 +13,7 @@ import { Elevated } from "@/lib/elevated";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/ui";
 import { Hint } from "@/components/ui/tooltip";
-import { canApproveRole, type Workspace } from "./types";
+import { canApproveRole, isWorkspaceConnectable, type Workspace } from "./types";
 import {
   currentRelease,
   emptyK8sStatus,
@@ -98,7 +98,7 @@ export function K8sPanel({
   const [statusReady, setStatusReady] = useState(false);
   const [listErr, setListErr] = useState("");
   const canApply = !opsLocked && (canApproveRole(myRole, platformRole) || myRole === "developer" || myRole === "owner" || myRole === "admin");
-  const running = ws.status === "running" || ws.status === "fabric_degraded";
+  const running = isWorkspaceConnectable(ws.status);
 
   const loadStatus = useCallback(async () => {
     setStatusLoading(true);

@@ -95,6 +95,7 @@ test.describe("PW-4 Workspace 生命周期", () => {
 
     await expect(row).toHaveAttribute("data-status", "destroy_pending_platform");
     await expect(row.getByTestId("ws-destroy-approve-project")).toHaveCount(0);
+    await expect(row.getByTestId("ws-web-terminal")).toBeVisible();
 
     await api.approveDestroyPlatform(admin.tokens.token, ws.id);
     await page.reload();

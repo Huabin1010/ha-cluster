@@ -40,6 +40,7 @@ import {
   workspaceStatusVariant,
   workspaceDetailQueryPollInterval,
   isK8sRuntime,
+  isWorkspaceConnectable,
   runtimeLabel,
 } from "./types";
 import { K8sPanel } from "./K8sPanel";
@@ -586,11 +587,11 @@ export function MachinePage() {
 
   const spec = workspaceSpec(ws);
   const pending = pendingSpec(ws);
-  const wsRunning = ws.status === "running" || ws.status === "fabric_degraded";
+  const wsConnectable = isWorkspaceConnectable(ws.status);
   const sshGranted = canSSH(projectCtx?.my_role, projectCtx?.my_ssh_access, me?.platform_role);
   const needsPurpose = Boolean(projectCtx) && purposeMissing(projectCtx?.purpose);
-  const canConnect = wsRunning && sshGranted && !isK8sRuntime(ws.runtime) && !needsPurpose;
-  const showSSHRequest = wsRunning && !sshGranted && projectCtx?.my_role === "developer";
+  const canConnect = wsConnectable && sshGranted && !isK8sRuntime(ws.runtime) && !needsPurpose;
+  const showSSHRequest = wsConnectable && !sshGranted && projectCtx?.my_role === "developer";
   const recentLogs = logs.slice(0, 5);
   const activeRoutes = routes.filter((rt) => rt.status === "active");
   const pendingRoutes = routes.filter((rt) => rt.status === "pending_approval");
@@ -769,7 +770,7 @@ export function MachinePage() {
                     <p className="m-0 mt-0.5 text-xs text-muted-foreground min-w-0 wrap-break-word">
                       {canConnect
                         ? "有 SSH 权限，无需本机私钥即可在浏览器打开 Shell。"
-                        : wsRunning
+                        : wsConnectable
                           ? `当前 SSH 状态：${sshAccessLabel(projectCtx?.my_ssh_access)}。`
                           : `当前状态：${statusLabel(ws.status)}，开通完成后再连接。`}
                     </p>
@@ -992,8 +993,8 @@ export function MachinePage() {
                   </AlertDescription>
                 </Alert>
               )}
-              {!wsRunning && !isK8sRuntime(ws.runtime) && <p className="m-0 text-sm text-muted-foreground">机器尚未运行，开通后才会给出连接信息。</p>}
-              {wsRunning && !sshGranted && (
+              {!wsConnectable && !isK8sRuntime(ws.runtime) && <p className="m-0 text-sm text-muted-foreground">机器尚未运行，开通后才会给出连接信息。</p>}
+              {wsConnectable && !sshGranted && (
                 <Alert variant="info">
                   <AlertDescription>
                     当前 SSH 状态：{sshAccessLabel(projectCtx?.my_ssh_access)}。

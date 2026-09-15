@@ -949,7 +949,7 @@ func (a *App) SSHTarget(ctx context.Context, actor models.User, workspaceID uuid
 	if !authz.CanSSHSession(actor, m, *w) {
 		return nil, nil, store.ErrForbidden
 	}
-	if w.Status != models.WSRunning && w.Status != models.WSDegraded && w.Status != models.WSSuspended {
+	if !models.WorkspaceConnectable(w.Status) {
 		return nil, nil, store.ErrInvalidInput
 	}
 	if w.Status == models.WSSuspended || w.Status == models.WSStopped {

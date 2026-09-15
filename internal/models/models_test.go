@@ -88,6 +88,15 @@ func TestProvisioningLiveAndWorkspaceClosed(t *testing.T) {
 	if WorkspaceClosed(WSRunning) || WorkspaceClosed(WSProvisioning) {
 		t.Fatal("live statuses must not be closed")
 	}
+	if WorkspaceClosed(WSDestroyRequested) != true || WorkspaceConnectable(WSDestroyPendingPlatform) != true {
+		t.Fatal("pending destroy is closed for start/stop but still connectable")
+	}
+	if WorkspaceConnectable(WSDestroying) || WorkspaceInstanceLive(WSDestroyed) {
+		t.Fatal("destroyed/destroying must not be connectable")
+	}
+	if !WorkspaceInstanceLive(WSDestroyRequested) || WorkspaceInstanceLive(WSSuspended) {
+		t.Fatal("pending destroy is live; suspended needs wake")
+	}
 }
 
 func TestRestoreStatusAfterDestroyReject(t *testing.T) {

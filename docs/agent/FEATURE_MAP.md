@@ -195,6 +195,7 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 - **开通 / 销毁 / 审批过程会自动轮询**（约 3s）：`provisioning`「开通中」、`destroying`、待审批不必点「刷新列表」等稳态
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
 - 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行
+- **待销毁 / 待平台终审**：机器还在。有 SSH 权的成员仍可打开终端、HTTP 执行；平台管理员可 `dangerous-reject-open` 驳回，驳回后实例保留。真正销毁发生在终审通过之后。
 - 机器详情：网页终端、HTTP 执行 curl、Ingress（含推荐 CNB 镜像仓库）、审计历史
 - **运行环境**：开通默认 **Docker + SSH（Compose 部署）**；用户需要时才选 Kubernetes。详情页粘贴 YAML apply、看 Deployment/Pod/配额状态（拉取中显示加载，不要把空表当成无资源）、下载 kubeconfig（viewer 只读资源与状态）。**审批与 Docker 相同**：developer 提交后待审；owner / admin / `platform_admin` 直建，不必再审。k8s 机器不能 exec，也不要借 Docker 机跑 kubectl。
 
@@ -261,8 +262,8 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 - viewer 不能申请机器
 - developer 创建（含 Kubernetes）需审批；owner/admin 可直建
 - 升配：admin 可直接生效（视实现），降配一律审批
-- SSH：成员 + `ssh_access=granted` + 机器 running/fabric_degraded；否则只显示申请入口
-- 销毁：项目 admin 初审 → 平台终审（`nav-dangerous`）
+- SSH：成员 + `ssh_access=granted` + 机器仍可连接（`running` / `fabric_degraded` / 待销毁终审）；否则只显示申请入口
+- 销毁：项目 admin 初审 → 平台终审（`nav-dangerous`）。终审可 **通过销毁** 或 **驳回保留**；驳回前用户仍可进入机器。
 
 相关 E2E：`web/e2e/pw4-workspaces/`。
 
@@ -488,7 +489,7 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 
 ### 子功能
 
-查看待平台终审的销毁；列表展示**项目名称**与**申请人**。可打开确认后**通过销毁**，或**驳回**并保留实例。**窄屏**为卡片（`dangerous-approval-row`）。
+查看待平台终审的销毁；列表展示**项目名称**与**申请人**。可打开确认后**通过销毁**，或**驳回**并保留实例。驳回前这台机器仍可被项目成员进入操作。**窄屏**为卡片（`dangerous-approval-row`）。
 
 ### 快捷键
 

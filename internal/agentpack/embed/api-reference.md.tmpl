@@ -107,7 +107,8 @@
 | POST | `/admin/tls-certs/{id}/issue` | admin；立即签发/续期（DNS-01，可能 1–3 分钟） |
 | PATCH | `/admin/tls-certs/{id}` | `{auto_renew}`；到期前 30 天后台自动续 |
 | GET | `/admin/dangerous-approvals` | staff |
-| POST | `/admin/dangerous-approvals/{id}/approve` | 终审 |
+| POST | `/admin/dangerous-approvals/{id}/approve` | 终审通过，这时才真正销毁 |
+| POST | `/admin/dangerous-approvals/{id}/reject` | 驳回并保留实例；`{reason?}` |
 | GET | `/users` `POST /users/batch` | admin |
 | POST | `/users/{id}/suspend` `/unsuspend` `/reset-password` | admin |
 | PATCH/DELETE | `/users/{id}` | admin |

@@ -513,11 +513,36 @@ func ProvisioningLive(status string) bool {
 	return status == WSProvisioning
 }
 
-// WorkspaceClosed is true once the workspace must not be started, stopped, or
-// otherwise treated as a live machine (destroy in flight or already gone).
+// WorkspaceClosed is true once start/stop must not rewrite status
+// (destroy review in flight, destroy executing, or already gone).
+// SSH/exec still use WorkspaceConnectable: pending review does not take
+// the instance offline.
 func WorkspaceClosed(status string) bool {
 	switch status {
 	case WSDestroyed, WSDestroying, WSDestroyRequested, WSDestroyPendingPlatform, WSRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// WorkspaceConnectable is true while members may still SSH / exec.
+// destroy_requested and destroy_pending_platform keep the guest running
+// until platform actually destroys it (or rejects and restores).
+func WorkspaceConnectable(status string) bool {
+	switch status {
+	case WSRunning, WSDegraded, WSSuspended, WSDestroyRequested, WSDestroyPendingPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// WorkspaceInstanceLive is true while the guest is expected to still answer SSH
+// without a wake-from-suspend. Used by bastion routing and exec probes.
+func WorkspaceInstanceLive(status string) bool {
+	switch status {
+	case WSRunning, WSDegraded, WSDestroyRequested, WSDestroyPendingPlatform:
 		return true
 	default:
 		return false

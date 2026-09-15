@@ -56,6 +56,17 @@ func TestResolveStopped(t *testing.T) {
 	}
 }
 
+func TestResolveDestroyPendingStillLive(t *testing.T) {
+	ownerID := uuid.New()
+	actor := models.User{ID: ownerID}
+	w := models.Workspace{Status: models.WSDestroyPendingPlatform, SSHPort: 22001, Visibility: models.VisShared, OwnerUserID: ownerID}
+	n := models.Node{FabricIP: "10.129.129.10"}
+	tg, err := Resolve(w, n, actor, mem(models.RoleDeveloper, models.SSHAccessGranted))
+	if err != nil || tg.Host != "10.129.129.10" {
+		t.Fatalf("pending destroy should still route: %+v %v", tg, err)
+	}
+}
+
 func TestResolvePrivateWorkspace(t *testing.T) {
 	ownerID := uuid.New()
 	otherUser := uuid.New()

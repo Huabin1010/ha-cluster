@@ -690,6 +690,12 @@ func TestDangerousDestroyQueueAndReject(t *testing.T) {
 	if item.ApplicantDisplayName != "鲍勃" {
 		t.Fatalf("applicant display: %+v", item)
 	}
+	if _, _, err := app.SSHTarget(ctx, *plat, ws.ID); err != nil {
+		t.Fatalf("pending destroy should still allow ssh: %v", err)
+	}
+	if err := app.StopWorkspace(ctx, *plat, ws.ID); !errors.Is(err, store.ErrInvalidInput) {
+		t.Fatalf("stop during pending destroy should stay blocked: %v", err)
+	}
 	if err := app.RejectDestroyPlatform(ctx, *dev, ws.ID, ""); !errors.Is(err, store.ErrForbidden) {
 		t.Fatalf("developer must not platform-reject: %v", err)
 	}

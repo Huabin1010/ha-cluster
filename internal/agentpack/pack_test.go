@@ -57,8 +57,8 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[SkillPath], "默认开 Docker + SSH") && !strings.Contains(p.Files[SkillPath], "runtime=container") {
 		t.Fatal("skill should default to compose/container")
 	}
-	if !strings.Contains(p.Files[APIRefPath], "purpose") || !strings.Contains(p.Files[SkillPath], "purpose") {
-		t.Fatal("pack should require project purpose")
+	if !strings.Contains(p.Files[WorkflowsPath], "dangerous-approvals/{id}/reject") {
+		t.Fatal("pack should document platform destroy reject")
 	}
 	if !strings.Contains(p.Files[SkillPath], "name 必须英文") || !strings.Contains(p.Files[WorkflowsPath], "Office Snacks") {
 		t.Fatal("pack should require english project names")

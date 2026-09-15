@@ -24,7 +24,7 @@ type Target struct {
 
 // Resolve picks dial target after authz.CanSSHSession.
 func Resolve(w models.Workspace, n models.Node, actor models.User, m *models.Membership) (Target, error) {
-	if w.Status != models.WSRunning && w.Status != models.WSDegraded {
+	if !models.WorkspaceInstanceLive(w.Status) {
 		return Target{}, ErrOffline
 	}
 	if !authz.CanSSHSession(actor, m, w) {

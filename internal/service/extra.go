@@ -572,7 +572,7 @@ func (a *App) syncProjectWorkspaceKeys(ctx context.Context, projectID uuid.UUID)
 		return err
 	}
 	for _, w := range wss {
-		if w.Status != models.WSRunning && w.Status != models.WSDegraded && w.Status != models.WSSuspended {
+		if !models.WorkspaceConnectable(w.Status) {
 			continue
 		}
 		pubs := a.collectWorkspacePubkeys(ctx, w)

@@ -140,6 +140,7 @@ docker logs <name>
 - 磁盘不能缩。`arch` 只接受 `amd64` / `arm64` / `any`（`x86_64` → `amd64`）。
 - 重复加人返回 409，不要当成功。
 - 平台接口都在 `/admin/...`，普通用户 403 是正常的。
+- **待销毁终审**（`destroy_requested` / `destroy_pending_platform`）机器还在：SSH / exec 仍可用。平台 `POST /admin/dangerous-approvals/{id}/reject` 驳回后实例保留；只有 `/approve` 才会真正销毁。不要把「待平台终审」当成已经删掉。
 
 ## 给用户回传时
 

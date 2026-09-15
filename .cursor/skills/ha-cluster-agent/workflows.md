@@ -38,4 +38,4 @@ viewer 不能申请。`409 INSUFFICIENT_CAPACITY` 先清闲置机器。
 
 ## 销毁
 
-`POST /workspaces/{id}/destroy-request` → 项目 `…/destroy-request/approve` → 平台 `POST /admin/dangerous-approvals/{id}/approve`。
+`POST /workspaces/{id}/destroy-request` → 项目 `…/destroy-request/approve` → 平台终审 `POST /admin/dangerous-approvals/{id}/approve`（这时才真正销毁）或 `/reject`（驳回，实例保留）。终审通过前 SSH / exec 仍可用，不要把「待平台终审」当成已经删掉。

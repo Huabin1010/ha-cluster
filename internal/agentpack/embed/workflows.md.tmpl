@@ -208,12 +208,13 @@ POST /workspaces/{id}/resize/approve      # owner/admin
 POST /workspaces/{id}/resize/reject
 ```
 
-销毁（两段）：
+销毁（两段）。终审通过前实例仍在，SSH / exec 仍可用。不同意就驳回，不要当成已经删掉：
 
 ```
 POST /workspaces/{id}/destroy-request              # 申请人
 POST /workspaces/{id}/destroy-request/approve      # 项目 owner/admin 初审
-POST /admin/dangerous-approvals/{id}/approve       # 仅平台角色终审
+POST /admin/dangerous-approvals/{id}/approve       # 仅平台角色终审 → 这时才真正销毁
+POST /admin/dangerous-approvals/{id}/reject        # 驳回，工作区保留，状态恢复
 ```
 
 `DELETE /workspaces/{id}` 对普通用户等于发起销毁申请；`platform_admin` 才会直接删。

@@ -11,6 +11,7 @@ import {
   isDestroyPending,
   isDestroyPendingPlatform,
   isDestroyRequested,
+  isWorkspaceConnectable,
   statusLabel,
   workspaceStatusVariant,
   workspaceStatusDotClass,
@@ -101,11 +102,11 @@ export function WorkspaceRow({
     ws.status !== "destroyed" &&
     ws.status !== "destroying" &&
     ws.status !== "requested";
-  const wsRunning = ws.status === "running" || ws.status === "fabric_degraded" || ws.status === "suspended";
+  const wsConnectable = isWorkspaceConnectable(ws.status) && displayStatus !== "destroying";
   const sshGranted = canSSH(myRole, mySshAccess, platformRole);
   const k8s = isK8sRuntime(ws.runtime);
-  const showSSH = wsRunning && sshGranted && displayStatus !== "destroying" && !k8s;
-  const showSSHRequest = wsRunning && !sshGranted && myRole === "developer" && displayStatus !== "destroying" && !k8s;
+  const showSSH = wsConnectable && sshGranted && !k8s;
+  const showSSHRequest = wsConnectable && !sshGranted && myRole === "developer" && !k8s;
   const spec = workspaceSpec(ws);
   const pendingResize = pendingSpec(ws);
   const resizePending = hasPendingResize(ws);
@@ -184,7 +185,14 @@ export function WorkspaceRow({
     );
 
   const statusBadge = (
-    <Hint label={`原始代码: ${displayStatus}`} className="font-mono">
+    <Hint
+      label={
+        destroyPending
+          ? `${displayStatus} · 终审前机器仍可进入操作`
+          : `原始代码: ${displayStatus}`
+      }
+      className="font-mono"
+    >
       <span className="inline-flex">
         <Badge variant={workspaceStatusVariant(displayStatus)} className="inline-flex items-center gap-1 whitespace-nowrap shrink-0">
           {statusBusy && <Loader2 className="size-3 shrink-0 animate-spin" />}

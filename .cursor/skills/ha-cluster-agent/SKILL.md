@@ -1,6 +1,6 @@
 ---
 name: ha-cluster-agent
-pack_version: "17"
+pack_version: "18"
 description: >-
   Operates the ha-cluster control plane as a signed-in user via REST. Use when
   creating projects, provisioning workspaces (machines), managing members or
@@ -15,7 +15,7 @@ description: >-
 
 ## 本会话只需一次
 
-本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **17**。
+本地版本见 [VERSION](VERSION)（本文件 `pack_version` 同源），当前是 **18**。
 
 ```bash
 curl -fsS "${HA_API_BASE:-https://cl.qzsyzn.com/api}/agent-pack/version"
@@ -52,7 +52,7 @@ curl -fsS -H "Authorization: Bearer $HA_AGENT_TOKEN" "${HA_API_BASE:-https://cl.
 
 创建项目必须带英文 `name`（如 `Office Snacks`）和简洁 `purpose`（2–80 字，可中文）。中文名称会 400。旧项目为空时先 `PATCH /projects/{id}` `{purpose}`，否则 `409 PURPOSE_REQUIRED`。
 
-选机器：`GET /workspaces` **默认不含 destroyed**；同名取 `exec_ready=true` 且 `running` 的 **id**（不要只看 `updated_at`）。`exec_ready=false` 先 `POST /start` 或换一台；字段缺省才短命令探一次。`running` ≠ exec 通。
+选机器：`GET /workspaces` **默认不含 destroyed**；同名取 `exec_ready=true` 且 `running` 的 **id**（不要只看 `updated_at`）。`exec_ready=false` 先 `POST /start` 或换一台；字段缺省才短命令探一次。`running` ≠ exec 通。`destroy_pending_platform` 仍可 exec，直到平台终审通过。
 
 k8s 工作区 `POST /exec` 会 400。apply 缺 `resources.requests` 会 **409**，`error` 里写明会被 `project-quota` 拦住；读 JSON 不要只报 Conflict。已 apply 的再用 `GET …/k8s/status` 看副本/Pod。**禁止**把 kubeconfig 写进另一台 Docker 机器再 exec kubectl / python 探活。
 

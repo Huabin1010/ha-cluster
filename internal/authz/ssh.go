@@ -9,7 +9,7 @@ import (
 // CanSSHSession checks project SSH grant + workspace ACL + running state.
 func CanSSHSession(actor models.User, m *models.Membership, w models.Workspace) bool {
 	if IsPlatformAdmin(actor) {
-		return w.Status == models.WSRunning || w.Status == models.WSDegraded || w.Status == models.WSSuspended
+		return models.WorkspaceConnectable(w.Status)
 	}
 	if m == nil {
 		return false
@@ -22,12 +22,10 @@ func CanSSHSession(actor models.User, m *models.Membership, w models.Workspace) 
 			return false
 		}
 	}
-	switch w.Status {
-	case models.WSRunning, models.WSDegraded, models.WSSuspended:
-		return true
-	default:
+	if !models.WorkspaceConnectable(w.Status) {
 		return false
 	}
+	return true
 }
 
 func hasSSHAccess(m *models.Membership) bool {
