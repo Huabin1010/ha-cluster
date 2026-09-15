@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 var adminUserID = uuid.MustParse("00000000-0000-0000-0000-000000000009")
 
 const defaultAdminPassword = "123456qq"
+const defaultAdminEmail = "admin@qzsyzn.com"
 
 func main() {
 	ctx := context.Background()
@@ -122,12 +124,22 @@ func ensureBootstrapAdmin(app *service.App) {
 	}
 
 	wantPass := env("HA_ADMIN_PASSWORD", defaultAdminPassword)
+	wantEmail := strings.ToLower(strings.TrimSpace(env("HA_ADMIN_EMAIL", defaultAdminEmail)))
 	u, err := app.Store.GetUserByUsername(ctx, "admin")
 	if err == nil {
 		changed := false
 		if u.PlatformRole != models.RolePlatformAdmin {
 			u.PlatformRole = models.RolePlatformAdmin
 			changed = true
+		}
+		if wantEmail != "" && !strings.EqualFold(u.Email, wantEmail) {
+			if existing, emailErr := app.Store.GetUserByEmail(ctx, wantEmail); emailErr == nil && existing.ID != u.ID {
+				log.Printf("bootstrap admin: email %s already used by %s, leave %s", wantEmail, existing.Username, u.Email)
+			} else {
+				u.Email = wantEmail
+				changed = true
+				log.Printf("synced admin email to %s", wantEmail)
+			}
 		}
 		if u.PasswordHash == "" || !auth.VerifyPassword(wantPass, u.PasswordHash) {
 			if hash, hashErr := auth.HashPassword(wantPass); hashErr == nil {
@@ -165,7 +177,7 @@ func ensureBootstrapAdmin(app *service.App) {
 	admin := &models.User{
 		ID:           adminUserID,
 		Username:     "admin",
-		Email:        "admin@mnnumath.vip",
+		Email:        wantEmail,
 		PasswordHash: hash,
 		PlatformRole: models.RolePlatformAdmin,
 		Status:       models.UserActive,

@@ -33,7 +33,7 @@ test.describe("PW-5 审计日志", () => {
               resource_type: "workspace",
               resource_id: "ws-demo-id",
               resource_name: "huanghuabin",
-              meta: { username: "huanghuabin", command: "uname -a" },
+              meta: { username: "huanghuabin", command: "uname -a", stdout: "Linux box 6.8.0\n", exit_code: 0 },
               created_at: "2026-09-12T23:26:05Z",
             },
             {
@@ -81,6 +81,14 @@ test.describe("PW-5 审计日志", () => {
     await expect(table).toContainText("办公零食柜");
     await expect(table.getByTestId("audit-target-link").first()).not.toContainText("huanghuabin");
     await expect(adminPage.getByTestId("audit-copy").first()).toBeVisible();
+
+    await adminPage.getByTestId("audit-exec-command").first().click();
+    const execDlg = adminPage.getByTestId("audit-exec-dialog");
+    await expect(execDlg).toBeVisible();
+    await expect(adminPage.getByTestId("audit-exec-input")).toContainText("uname -a");
+    await expect(adminPage.getByTestId("audit-exec-output")).toContainText("Linux box");
+    await execDlg.getByRole("button", { name: "关闭" }).click();
+    await expect(execDlg).toBeHidden();
 
     await adminPage.getByTestId("audit-copy").first().click();
     await expect(adminPage.getByText("已复制排查信息")).toBeVisible();

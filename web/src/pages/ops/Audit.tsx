@@ -31,9 +31,11 @@ import {
   auditResourceProbe,
   canOpenAuditResource,
   fmtTime,
+  isSSHExecAction,
   resourceTypeLabel,
 } from "./format";
 import { actorHoverUser, AuditActorHover, AuditTargetHover, type AuditHoverProject, type AuditHoverUser } from "./audit-hover";
+import { AuditExecCommandButton, AuditExecResultDialog } from "./audit-exec";
 import { useClientPager } from "@/lib/use-client-pager";
 import { cn } from "@/lib/utils";
 
@@ -128,6 +130,7 @@ function AuditTargetCell({
   workspaces,
   projects,
   listsReady,
+  onOpenExec,
 }: {
   log: AuditLog;
   me?: AuthUser;
@@ -136,10 +139,13 @@ function AuditTargetCell({
   workspaces: Workspace[];
   projects: AuditHoverProject[];
   listsReady: boolean;
+  onOpenExec?: (log: AuditLog) => void;
 }) {
   const navigate = useNavigate();
   const [opening, setOpening] = useState(false);
-  const change = auditChangeSummary(log.action, log.meta);
+  const exec = isSSHExecAction(log.action);
+  const change = exec ? "" : auditChangeSummary(log.action, log.meta);
+  const command = exec ? String(log.meta?.command ?? "") : "";
   const name = auditLogDisplayName(log, workspaces, projects);
   const href = auditResourceHref(log.resource_type, log.resource_id, log.meta);
   const canOpen = canOpenAuditResource(log.resource_type, log.resource_id, log.meta, {
@@ -202,48 +208,49 @@ function AuditTargetCell({
     }
   }
 
-  const body = (
-    <div className={cn("flex flex-col gap-0.5 min-w-0", to ? "cursor-pointer" : "cursor-help")}>
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap min-w-0">
-        <span className="text-muted-foreground shrink-0">{resourceTypeLabel(log.resource_type)}</span>
-        <span
-          className={cn(
-            "font-medium truncate",
-            to ? "text-primary hover:underline underline-offset-2" : "text-foreground",
-          )}
-        >
-          {name}
-        </span>
+  const nameRow = (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap min-w-0">
+      <span className="text-muted-foreground shrink-0">{resourceTypeLabel(log.resource_type)}</span>
+      <span
+        className={cn(
+          "font-medium truncate",
+          to ? "text-primary hover:underline underline-offset-2" : "text-foreground",
+        )}
+      >
+        {name}
       </span>
-      {change ? (
-        <span className="text-foreground break-words min-w-0 leading-snug">{change}</span>
-      ) : null}
-    </div>
+    </span>
   );
 
   return (
-    <AuditTargetHover
-      type={log.resource_type}
-      id={log.resource_id}
-      name={name}
-      canOpen={canOpen}
-      logs={logs}
-      workspace={workspace}
-      project={project}
-    >
-      {to ? (
-        <Link
-          to={to}
-          data-testid="audit-target-link"
-          className={cn("min-w-0 max-w-full block", opening && "pointer-events-none opacity-70")}
-          onClick={(e) => void openTarget(e)}
-        >
-          {body}
-        </Link>
-      ) : (
-        <div className="min-w-0">{body}</div>
-      )}
-    </AuditTargetHover>
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <AuditTargetHover
+        type={log.resource_type}
+        id={log.resource_id}
+        name={name}
+        canOpen={canOpen}
+        logs={logs}
+        workspace={workspace}
+        project={project}
+      >
+        {to ? (
+          <Link
+            to={to}
+            data-testid="audit-target-link"
+            className={cn("min-w-0 max-w-full block", opening && "pointer-events-none opacity-70")}
+            onClick={(e) => void openTarget(e)}
+          >
+            {nameRow}
+          </Link>
+        ) : (
+          <div className={cn("min-w-0", to ? "cursor-pointer" : "cursor-help")}>{nameRow}</div>
+        )}
+      </AuditTargetHover>
+      {exec && command ? <AuditExecCommandButton command={command} onOpen={() => onOpenExec?.(log)} /> : null}
+      {!exec && change ? (
+        <span className="text-foreground break-words min-w-0 leading-snug">{change}</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -294,6 +301,7 @@ function AuditCopyButton({
 function AuditList() {
   const { data: me } = useGetIdentity<AuthUser>();
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [execLog, setExecLog] = useState<AuditLog | null>(null);
   const canReconcile = me?.platform_role === "platform_admin";
   const canListUsers = canManageUsers(me?.platform_role);
   const { data, isLoading, error, refetch } = useList<AuditLog>({
@@ -336,6 +344,7 @@ function AuditList() {
   const pager = useClientPager(logs);
 
   return (
+    <>
     <PageFrame
       header={
         <PageHeading
@@ -529,6 +538,7 @@ function AuditList() {
                       workspaces={workspaces}
                       projects={projects}
                       listsReady={listsReady}
+                      onOpenExec={setExecLog}
                     />
                   </TableCell>
                   <TableCell className="mono font-mono text-xs py-2.5 text-right pr-4 whitespace-nowrap text-foreground">
@@ -595,6 +605,7 @@ function AuditList() {
                   workspaces={workspaces}
                   projects={projects}
                   listsReady={listsReady}
+                  onOpenExec={setExecLog}
                 />
               </div>
             </ListCard>
@@ -602,6 +613,16 @@ function AuditList() {
         />
       )}
     </PageFrame>
+    <AuditExecResultDialog
+      open={execLog != null}
+      onOpenChange={(next) => {
+        if (!next) setExecLog(null);
+      }}
+      action={execLog?.action ?? "ssh.exec"}
+      meta={execLog?.meta}
+      resourceName={execLog ? auditLogDisplayName(execLog, workspaces, projects) : ""}
+    />
+    </>
   );
 }
 

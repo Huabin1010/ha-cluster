@@ -344,7 +344,7 @@ export function WorkspacesPage() {
                         创建时间
                       </span>
                     </TableHead>
-                    <TableHead stickyEnd className="w-[320px] text-right py-2.5 pr-4">
+                    <TableHead stickyEnd className="w-[200px] text-right py-2.5 pr-4">
                       <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">
                         <SlidersHorizontal className="size-3.5 opacity-60 shrink-0" />
                         快捷操作

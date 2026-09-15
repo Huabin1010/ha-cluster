@@ -311,37 +311,36 @@ export function BatchCreateUsersDialog({
 
                 {currentProjectId ? (
                   <Field label="项目关联">
-                    <div className="flex h-9 items-center gap-2">
-                      <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={addToProject}
-                          onChange={(e) => setAddToProject(e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 text-primary"
-                        />
-                        同时加入当前项目
-                      </label>
-                      {addToProject && (
-                        <div className="w-28 ml-auto">
-                          <SelectBox
-                            testId="batch-create-role-select"
-                            value={projectRole}
-                            onValueChange={setProjectRole}
-                            options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground m-0">
+                    <label className="flex min-h-9 items-center gap-2 text-sm text-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={addToProject}
+                        onChange={(e) => setAddToProject(e.target.checked)}
+                        className="size-4 shrink-0 rounded border-border"
+                      />
+                      同时加入当前项目
+                    </label>
+                    {addToProject && (
+                      <SelectBox
+                        testId="batch-create-role-select"
+                        className="w-full min-w-0"
+                        aria-label="项目角色"
+                        value={projectRole}
+                        onValueChange={setProjectRole}
+                        options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground m-0 break-words min-w-0">
                       自动将创建的用户加入 {currentProjectName || currentProjectId}
                     </p>
                   </Field>
                 ) : (
                   projects.length > 0 && (
                     <Field label="分配至项目 (可选)">
-                      <div className="flex gap-2">
+                      <div className="grid gap-2 min-w-0">
                         <SelectBox
                           testId="batch-create-project-select"
+                          className="w-full min-w-0"
                           value={targetProjectId || "__none__"}
                           onValueChange={(v) => setTargetProjectId(v === "__none__" ? "" : v)}
                           options={[
@@ -353,14 +352,14 @@ export function BatchCreateUsersDialog({
                           ]}
                         />
                         {targetProjectId && (
-                          <div className="w-28">
-                            <SelectBox
-                              testId="batch-create-role-select"
-                              value={projectRole}
-                              onValueChange={setProjectRole}
-                              options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
-                            />
-                          </div>
+                          <SelectBox
+                            testId="batch-create-role-select"
+                            className="w-full min-w-0"
+                            aria-label="项目角色"
+                            value={projectRole}
+                            onValueChange={setProjectRole}
+                            options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))}
+                          />
                         )}
                       </div>
                     </Field>

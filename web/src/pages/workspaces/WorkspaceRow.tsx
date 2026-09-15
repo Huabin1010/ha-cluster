@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock, Box, Ban } from "lucide-react";
+import { Check, Loader2, Play, Square, Terminal, Trash2, X, Cpu, Globe, Lock, Clock, Box, Ban } from "lucide-react";
 import { api, friendlyError } from "@/providers";
-import { formatTime, copyText } from "@/ui/format";
+import { formatTime } from "@/ui/format";
 import { canSSH } from "@/lib/permissions";
 import {
   formatPlanSpec,
@@ -65,7 +65,6 @@ export function WorkspaceRow({
   platformRole,
   myRole,
   mySshAccess,
-  projectId,
   opsLocked,
   onBusy,
   onRefresh,
@@ -76,9 +75,7 @@ export function WorkspaceRow({
   const [destroyOpen, setDestroyOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [destroyRejectOpen, setDestroyRejectOpen] = useState(false);
-  const [copiedExec, setCopiedExec] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
-  const [manualExec, setManualExec] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
   const busy = busyId === ws.id || pendingAction !== null;
@@ -106,7 +103,6 @@ export function WorkspaceRow({
   const sshGranted = canSSH(myRole, mySshAccess, platformRole);
   const k8s = isK8sRuntime(ws.runtime);
   const showSSH = wsConnectable && sshGranted && !k8s;
-  const showSSHRequest = wsConnectable && !sshGranted && myRole === "developer" && !k8s;
   const spec = workspaceSpec(ws);
   const pendingResize = pendingSpec(ws);
   const resizePending = hasPendingResize(ws);
@@ -251,15 +247,18 @@ export function WorkspaceRow({
     </span>
   );
 
+  const opsBtn =
+    "inline-flex h-7 w-full items-center justify-center gap-1 whitespace-nowrap text-xs shrink-0";
+
   const actionButtons = (
-        <div className={cn("flex flex-wrap items-center gap-1.5", asCard ? "w-full justify-start" : "justify-end whitespace-nowrap")}>
+        <div className={cn("grid grid-cols-2 gap-1.5", asCard ? "w-full max-w-[176px]" : "ml-auto w-[176px]")}>
           {isCreateRequested && canApprove && (
             <Button
               type="button"
               size="compact"
               data-testid="ws-approve"
               disabled={actionDisabled}
-              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+              className={opsBtn}
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/approve`, { method: "POST", body: "{}" });
@@ -268,7 +267,7 @@ export function WorkspaceRow({
               }
             >
               <Check className="size-3.5 shrink-0" />
-              批准开通
+              批准
             </Button>
           )}
           {isCreateRequested && canApprove && (
@@ -279,7 +278,7 @@ export function WorkspaceRow({
                 size="compact"
                 data-testid="ws-reject"
                 disabled={busy}
-                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                className={opsBtn}
                 onClick={() => setRejectOpen(true)}
               >
                 <X className="size-3.5 shrink-0" />
@@ -321,7 +320,7 @@ export function WorkspaceRow({
               size="compact"
                 data-testid="ws-resize-approve"
               disabled={actionDisabled}
-              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+              className={opsBtn}
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/resize/approve`, { method: "POST", body: "{}" });
@@ -330,7 +329,7 @@ export function WorkspaceRow({
               }
             >
               <Check className="size-3.5 shrink-0" />
-              批准扩容
+              批准
             </Button>
           )}
           {resizePending && (
@@ -340,7 +339,7 @@ export function WorkspaceRow({
               size="compact"
               data-testid="ws-resize-reject"
               disabled={busy}
-              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+              className={opsBtn}
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/resize/reject`, {
@@ -352,7 +351,7 @@ export function WorkspaceRow({
               }
             >
               <X className="size-3.5 shrink-0" />
-              {canApprove ? "拒绝扩容" : "撤销扩容"}
+              {canApprove ? "拒绝" : "撤销"}
             </Button>
           )}
           {canResize && (
@@ -370,12 +369,11 @@ export function WorkspaceRow({
           {canStart && (
             <Button
               type="button"
-              variant="ghost"
               size="compact"
               data-testid="ws-start"
               disabled={actionDisabled}
               loading={pendingAction === "start"}
-              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+              className={opsBtn}
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/start`, { method: "POST" });
@@ -390,12 +388,11 @@ export function WorkspaceRow({
           {canStop && (
             <Button
               type="button"
-              variant="ghost"
               size="compact"
               data-testid="ws-stop"
               disabled={actionDisabled}
               loading={pendingAction === "stop"}
-              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+              className={opsBtn}
               onClick={() =>
                 run(async () => {
                   await api(`/workspaces/${ws.id}/stop`, { method: "POST" });
@@ -415,11 +412,11 @@ export function WorkspaceRow({
                 size="compact"
                 data-testid="ws-cancel-request"
                 disabled={busy}
-                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                className={opsBtn}
                 onClick={() => setDestroyOpen(true)}
               >
                 <X className="size-3.5 shrink-0" />
-                撤销申请
+                撤销
               </Button>
               <AlertDialog open={destroyOpen} onOpenChange={closeDialogUnlessBusy}>
                 <AlertDialogContent>
@@ -462,11 +459,11 @@ export function WorkspaceRow({
                 data-testid="ws-destroy-reject-project"
                 disabled={busy}
                 loading={pendingAction === "destroy-reject"}
-                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                className={opsBtn}
                 onClick={() => setDestroyRejectOpen(true)}
               >
                 <Ban className="size-3.5 shrink-0" />
-                驳回销毁
+                驳回
               </Button>
               <Button
                 type="button"
@@ -475,7 +472,7 @@ export function WorkspaceRow({
                 data-testid="ws-destroy-approve-project"
                 disabled={busy}
                 loading={pendingAction === "destroy-approve"}
-                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                className={opsBtn}
                 onClick={() =>
                   run(async () => {
                     await api(`/workspaces/${ws.id}/destroy-request/approve`, { method: "POST", body: "{}" });
@@ -484,7 +481,7 @@ export function WorkspaceRow({
                 }
               >
                 <Trash2 className="size-3.5 shrink-0" />
-                销毁初审
+                初审
               </Button>
             </>
           )}
@@ -496,11 +493,11 @@ export function WorkspaceRow({
               data-testid="ws-destroy"
               disabled={busy}
               loading={pendingAction === "destroy"}
-              className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+              className={opsBtn}
               onClick={() => setDestroyOpen(true)}
             >
               <Trash2 className="size-3.5 shrink-0" />
-              {destroyNow ? "销毁" : skipProjectReview ? "销毁" : "申请销毁"}
+              销毁
             </Button>
           )}
           {(canRequestDestroy || destroyOpen) && (
@@ -606,11 +603,11 @@ export function WorkspaceRow({
                 data-testid="ws-destroy-reject-platform"
                 disabled={busy}
                 loading={pendingAction === "destroy-reject"}
-                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                className={opsBtn}
                 onClick={() => setDestroyRejectOpen(true)}
               >
                 <Ban className="size-3.5 shrink-0" />
-                驳回终审
+                驳回
               </Button>
               <Button
                 type="button"
@@ -619,7 +616,7 @@ export function WorkspaceRow({
                 data-testid="ws-destroy-force"
                 disabled={busy}
                 loading={pendingAction === "destroy-force"}
-                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                className={opsBtn}
                 onClick={() =>
                   run(async () => {
                     await api(`/admin/dangerous-approvals/${ws.id}/approve`, { method: "POST", body: "{}" });
@@ -628,25 +625,9 @@ export function WorkspaceRow({
                 }
               >
                 <Trash2 className="size-3.5 shrink-0" />
-                平台终审
+                终审
               </Button>
             </>
-          )}
-          {k8s && (
-            <Button variant="outline" size="compact" asChild className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs">
-              <Link data-testid="ws-manage" to={`/workspaces/${ws.id}/k8s`}>
-                <Box className="size-3.5 shrink-0" />
-                Kubernetes
-              </Link>
-            </Button>
-          )}
-          {showSSHRequest && projectId && (
-            <Button variant="outline" size="compact" asChild className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs">
-              <Link data-testid="ws-request-ssh" to={`/projects/${projectId}/members`}>
-                <Terminal className="size-3.5 shrink-0" />
-                申请 SSH
-              </Link>
-            </Button>
           )}
           {showSSH && (
             <>
@@ -655,7 +636,7 @@ export function WorkspaceRow({
                 size="compact"
                 data-testid="ws-web-terminal"
                 disabled={actionDisabled}
-                className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs"
+                className={opsBtn}
                 onClick={() => {
                   if (opsLocked) {
                     onError("请先填写项目用途，才能继续操作");
@@ -665,7 +646,7 @@ export function WorkspaceRow({
                 }}
               >
                 <Terminal className="size-3.5 shrink-0" />
-                打开终端
+                终端
               </Button>
               <WorkspaceTerminalDialog
                 workspaceId={ws.id}
@@ -673,84 +654,6 @@ export function WorkspaceRow({
                 open={termOpen}
                 onOpenChange={setTermOpen}
               />
-              <Button variant="outline" size="compact" asChild className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 text-xs">
-                <Link data-testid="ws-manage" to={`/workspaces/${ws.id}`}>
-                  连接 / 详情
-                </Link>
-              </Button>
-              <Hint label="复制 HTTP 执行命令">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="compact"
-                  data-testid="ws-copy-http-exec"
-                  disabled={actionDisabled}
-                  className={cn(
-                    "inline-flex items-center gap-1 shrink-0 whitespace-nowrap h-7 px-2 text-xs",
-                    copiedExec && "text-emerald-500 font-medium"
-                  )}
-                  onClick={() =>
-                    run(async () => {
-                      const info = await api<{ exec_example: string }>(`/workspaces/${ws.id}/connection`);
-                      const cmd = info.exec_example;
-                      if (!cmd) {
-                        onError("没有 HTTP 执行命令");
-                        return;
-                      }
-                      const ok = await copyText(cmd);
-                      if (ok) {
-                        setCopiedExec(true);
-                        setTimeout(() => setCopiedExec(false), 2000);
-                        onToast("已复制 HTTP 执行命令");
-                        return;
-                      }
-                      setManualExec(cmd);
-                    })
-                  }
-                >
-                  {copiedExec ? <Check className="size-3.5 text-emerald-500 shrink-0" /> : <Copy className="size-3.5 opacity-70 shrink-0" />}
-                  {copiedExec ? "已复制" : "复制命令"}
-                </Button>
-              </Hint>
-              <AlertDialog open={Boolean(manualExec)} onOpenChange={(open) => { if (!open) setManualExec(""); }}>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>手动复制 HTTP 执行命令</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      当前页面不是 HTTPS，浏览器不允许直接写入剪贴板。点选下方命令复制，或再点一次「复制」。
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogBody>
-                    <textarea
-                      readOnly
-                      autoFocus
-                      data-testid="ws-copy-http-exec-fallback"
-                      className="w-full min-h-20 rounded-md border border-(--line-strong) bg-(--input-bg) p-2 font-mono text-xs"
-                      value={manualExec}
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
-                  </AlertDialogBody>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>关闭</AlertDialogCancel>
-                    <Button
-                      type="button"
-                      data-testid="ws-copy-http-exec-fallback-confirm"
-                      onClick={() => {
-                        void (async () => {
-                          const ok = await copyText(manualExec);
-                          if (!ok) return;
-                          setCopiedExec(true);
-                          setTimeout(() => setCopiedExec(false), 2000);
-                          onToast("已复制 HTTP 执行命令");
-                          setManualExec("");
-                        })();
-                      }}
-                    >
-                      复制
-                    </Button>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
             </>
           )}
         </div>
@@ -768,7 +671,15 @@ export function WorkspaceRow({
           leading={statusDot}
           title={
             <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
-              <span className="truncate">{ws.name}</span>
+              <Hint label="查看详情" className="min-w-0 truncate">
+                <Link
+                  data-testid="ws-manage"
+                  to={`/workspaces/${ws.id}`}
+                  className="truncate text-foreground hover:underline"
+                >
+                  {ws.name}
+                </Link>
+              </Hint>
               {visibilityIcon}
             </span>
           }
@@ -805,7 +716,15 @@ export function WorkspaceRow({
       <TableCell className="py-2.5 whitespace-nowrap font-medium text-foreground">
         <div className="flex items-center gap-2">
           {statusDot}
-          <span className="truncate max-w-[180px] sm:max-w-xs">{ws.name}</span>
+          <Hint label="查看详情" className="min-w-0 max-w-[180px] sm:max-w-xs truncate">
+            <Link
+              data-testid="ws-manage"
+              to={`/workspaces/${ws.id}`}
+              className="truncate text-foreground hover:underline"
+            >
+              {ws.name}
+            </Link>
+          </Hint>
           {visibilityIcon}
         </div>
       </TableCell>
@@ -826,7 +745,7 @@ export function WorkspaceRow({
       <TableCell className="py-2.5 whitespace-nowrap text-xs text-muted-foreground">
         {ws.created_at ? formatTime(ws.created_at) : "—"}
       </TableCell>
-      <TableCell stickyEnd className="py-2.5 text-right w-[320px] pr-4">
+      <TableCell stickyEnd className="py-2.5 text-right w-[200px] pr-4">
         {actionButtons}
       </TableCell>
     </TableRow>

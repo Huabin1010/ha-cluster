@@ -102,6 +102,9 @@ func TestBuildPackContainsAuthAndFiles(t *testing.T) {
 	if !strings.Contains(p.Files[SkillPath], "禁止") || !strings.Contains(p.Files[WorkflowsPath], "传二进制") {
 		t.Fatal("pack should forbid shipping binaries through exec")
 	}
+	if !strings.Contains(p.Files[APIRefPath], "/workspaces/availability") || !strings.Contains(p.Files[WorkflowsPath], "/workspaces/availability") {
+		t.Fatal("pack should query capacity before creating a workspace")
+	}
 	md := Markdown(p)
 	if !strings.Contains(md, SkillPath) || !strings.Contains(md, "HA_CLUSTER_AGENT_PACK v"+Version) {
 		t.Fatal(md[:200])

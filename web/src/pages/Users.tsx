@@ -20,7 +20,7 @@ import { friendlyError, type ApiError, type AuthUser } from "@/providers";
 import { canManageUsers } from "@/lib/permissions";
 import { roleChipLabel } from "@/pages/members/roles";
 import { BatchCreateUsersDialog } from "@/pages/members/BatchCreateUsersDialog";
-import { matchesUserQuery, platformRoleLabel, userStatusLabel } from "@/pages/users/format";
+import { ASSIGNABLE_PLATFORM_ROLES, matchesUserFilters, matchesUserQuery, platformRoleLabel, USER_STATUS_FILTERS, userStatusLabel } from "@/pages/users/format";
 import {
   type ActionKind,
   type PlatformUser,
@@ -32,6 +32,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SelectBox } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Hint, Tooltip } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -126,7 +127,7 @@ function Forbidden() {
           <Shield className="size-10 text-destructive" />
           <h3 className="m-0 text-base font-semibold text-foreground">无权查看用户列表</h3>
           <p className="m-0 text-xs text-muted-foreground leading-relaxed">
-            仅平台管理员可以查看全部账号、批量创建用户，以及重置密码、停用或删除账号。
+            仅平台管理员可以查看全部账号、批量创建用户，以及重置密码、禁用或删除账号。
           </p>
         </Elevated>
       </div>
@@ -174,6 +175,9 @@ export function UsersPage() {
   const [searchParams] = useSearchParams();
   const allowed = canManageUsers(me?.platform_role);
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
 
   useEffect(() => {
     setQuery(searchParams.get("q") ?? "");
@@ -198,10 +202,17 @@ export function UsersPage() {
   const users = data?.data ?? [];
   const projects = projectData?.data ?? [];
   const filtered = useMemo(
-    () => users.filter((u) => matchesUserQuery(u, query)),
-    [users, query],
+    () =>
+      users.filter(
+        (u) =>
+          matchesUserQuery(u, query) &&
+          matchesUserFilters(u, { role: roleFilter, status: statusFilter, projectId: projectFilter }),
+      ),
+    [users, query, roleFilter, statusFilter, projectFilter],
   );
-  const pager = useClientPager(filtered, `platform-users:${query}`);
+  const pager = useClientPager(filtered, `platform-users:${query}:${roleFilter}:${statusFilter}:${projectFilter}`);
+  const hasListFilter =
+    query.trim() !== "" || roleFilter !== "all" || statusFilter !== "all" || projectFilter !== "all";
 
   const forbidden = (error as ApiError | undefined)?.status === 403 || (me !== undefined && !allowed);
   if (me === undefined) {
@@ -246,7 +257,7 @@ export function UsersPage() {
                 {users.length} 人
               </Badge>
             }
-            description="平台账号名册。可批量开号、重置密码、调整角色或停用、删除账号。"
+            description="平台账号名册。可批量开号、重置密码、调整角色或禁用、删除账号。"
             actions={
               <>
                 <Button
@@ -273,16 +284,57 @@ export function UsersPage() {
               </>
             }
           >
-            <div className="relative w-full sm:max-w-sm">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                size="compact"
-                data-testid="users-search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索姓名、用户名、邮箱或 ID"
-                className="pl-8"
-              />
+            <div className="flex flex-col gap-2 min-w-0">
+              <div className="relative w-full sm:max-w-sm">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  size="compact"
+                  data-testid="users-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜索姓名、用户名、邮箱或 ID"
+                  className="pl-8"
+                />
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <SelectBox
+                  testId="users-filter-role"
+                  size="compact"
+                  aria-label="平台角色"
+                  className="w-full min-w-0 sm:w-[160px]"
+                  value={roleFilter}
+                  onValueChange={setRoleFilter}
+                  options={[
+                    { value: "all", label: "全部角色" },
+                    ...ASSIGNABLE_PLATFORM_ROLES.map((r) => ({ value: r, label: platformRoleLabel(r) })),
+                  ]}
+                />
+                <SelectBox
+                  testId="users-filter-status"
+                  size="compact"
+                  aria-label="账号状态"
+                  className="w-full min-w-0 sm:w-[140px]"
+                  value={statusFilter}
+                  onValueChange={setStatusFilter}
+                  options={[
+                    { value: "all", label: "全部状态" },
+                    ...USER_STATUS_FILTERS.map((s) => ({ value: s, label: userStatusLabel(s) })),
+                  ]}
+                />
+                <SelectBox
+                  testId="users-filter-project"
+                  size="compact"
+                  aria-label="所属项目"
+                  className="w-full min-w-0 sm:w-[180px]"
+                  value={projectFilter}
+                  onValueChange={setProjectFilter}
+                  options={[
+                    { value: "all", label: "全部项目" },
+                    { value: "none", label: "尚未加入项目" },
+                    ...projects.map((p) => ({ value: p.id, label: p.name })),
+                  ]}
+                />
+              </div>
             </div>
             {error && (
               <Alert variant="destructive">
@@ -318,11 +370,11 @@ export function UsersPage() {
               </div>
               <div>
                 <h3 className="m-0 text-base font-semibold text-foreground">
-                  {query.trim() ? "没有匹配的用户" : "还没有平台用户"}
+                  {hasListFilter ? "没有匹配的用户" : "还没有平台用户"}
                 </h3>
                 <p className="m-0 mt-1.5 text-xs text-muted-foreground leading-relaxed">
-                  {query.trim()
-                    ? "换一个关键词试试，或清空搜索查看全部账号。"
+                  {hasListFilter
+                    ? "换一个关键词或筛选条件试试，或清空后查看全部账号。"
                     : "点击右上角「批量创建用户」开一批测试账号，再按需配置角色或加入项目。"}
                 </p>
               </div>
@@ -371,7 +423,7 @@ export function UsersPage() {
                       创建时间
                     </span>
                   </TableHead>
-                  <TableHead stickyEnd className="w-[148px] py-2.5 pr-4 text-right">
+                  <TableHead stickyEnd className="w-[176px] py-2.5 pr-4 text-right">
                     <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap w-full">操作</span>
                   </TableHead>
                 </TableRow>
@@ -434,7 +486,7 @@ export function UsersPage() {
                     <TableCell className="py-2.5 whitespace-nowrap text-xs text-muted-foreground">
                       {fmtTime(u.created_at)}
                     </TableCell>
-                    <TableCell stickyEnd className="py-2.5 pr-4 text-right w-[148px]">
+                    <TableCell stickyEnd className="py-2.5 pr-4 text-right w-[176px]">
                       <UserRowActions
                         user={u}
                         isSelf={me?.id === u.id}

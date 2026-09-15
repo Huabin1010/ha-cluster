@@ -113,7 +113,10 @@ func (a *App) Login(ctx context.Context, username, password string) (string, *mo
 	if err != nil {
 		return "", nil, store.ErrUnauthorized
 	}
-	if u.Status != models.UserActive || !auth.VerifyPassword(password, u.PasswordHash) {
+	if u.Status != models.UserActive {
+		return "", nil, store.ErrAccountDisabled
+	}
+	if !auth.VerifyPassword(password, u.PasswordHash) {
 		return "", nil, store.ErrUnauthorized
 	}
 	tok, err := auth.SignAccess(a.JWT, u.ID, u.Username, u.PlatformRole, u.TokenVersion, a.AccessTTL)

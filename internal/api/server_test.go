@@ -335,6 +335,78 @@ func TestHeartbeatAndCapacity(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAvailability(t *testing.T) {
+	h := testServer(t)
+	tok := registerLogin(t, h, "alice", "a@x.com")
+
+	rr := doJSON(t, h, http.MethodGet, "/workspaces/availability?plan=nano&arch=amd64&runtime=container", tok, nil)
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	var av service.WorkspaceAvailability
+	if err := json.Unmarshal(rr.Body.Bytes(), &av); err != nil {
+		t.Fatal(err)
+	}
+	if !av.Available || !av.ClusterOK || av.Fits < 1 || av.Plan != "nano" || av.Arch != "amd64" {
+		t.Fatalf("nano amd64 should fit: %+v", av)
+	}
+
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/availability?plan=xlarge&arch=amd64", tok, nil)
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &av)
+	if av.Available || av.ClusterOK || av.Fits != 0 {
+		t.Fatalf("xlarge should not fit 2Gi node: %+v", av)
+	}
+
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/availability?plan=nano&arch=arm64", tok, nil)
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &av)
+	if av.Available || av.ClusterOK || !strings.Contains(av.Reason, "架构") {
+		t.Fatalf("arm64 should miss: %+v", av)
+	}
+
+	rr = doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "demo", "slug": "demo-av", "purpose": "test purpose"})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+
+	rr = doJSON(t, h, http.MethodPatch, "/projects/"+p.ID.String(), tok, map[string]any{"budget_cpu_milli": 100})
+	if rr.Code != 200 {
+		t.Fatal(rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/availability?plan=nano&arch=amd64&project_id="+p.ID.String(), tok, nil)
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &av)
+	if av.Available || av.BudgetOK || !av.ClusterOK || av.BudgetReason == "" {
+		t.Fatalf("tiny CPU budget should block nano: %+v", av)
+	}
+
+	viewerTok := registerLogin(t, h, "viewer", "v@x.com")
+	rr = doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", tok, map[string]string{
+		"username": "viewer", "role": "viewer",
+	})
+	if rr.Code != http.StatusCreated && rr.Code != http.StatusOK {
+		t.Fatalf("add viewer %d %s", rr.Code, rr.Body.String())
+	}
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/availability?plan=nano&arch=amd64&project_id="+p.ID.String(), viewerTok, nil)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("viewer want 403 got %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = doJSON(t, h, http.MethodGet, "/workspaces/availability?plan=nope&arch=amd64", tok, nil)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("unknown plan want 400 got %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestHeartbeatStoresHostTotals(t *testing.T) {
 	h := testServer(t)
 	const Gi = int64(1 << 30)
@@ -1243,6 +1315,69 @@ func TestListUsersAPI(t *testing.T) {
 	}
 }
 
+func TestMemberCandidatesAPI(t *testing.T) {
+	h := testServer(t)
+	ownerTok := registerLogin(t, h, "cand_owner", "cand_owner@x.com")
+	_ = registerLogin(t, h, "cand_alice", "alice@x.com")
+	_ = registerLogin(t, h, "cand_bob", "bob@x.com")
+	devTok := registerLogin(t, h, "cand_dev", "cand_dev@x.com")
+
+	rr := doJSON(t, h, http.MethodPost, "/projects", ownerTok, map[string]string{
+		"name": "Cand", "slug": "cand-dir", "purpose": "test purpose",
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatal(rr.Body.String())
+	}
+	var p models.Project
+	_ = json.Unmarshal(rr.Body.Bytes(), &p)
+
+	add := doJSON(t, h, http.MethodPost, "/projects/"+p.ID.String()+"/members", ownerTok, map[string]string{
+		"username": "cand_dev", "role": "developer",
+	})
+	if add.Code != http.StatusCreated {
+		t.Fatalf("add member: %d %s", add.Code, add.Body.String())
+	}
+
+	listed := doJSON(t, h, http.MethodGet, "/projects/"+p.ID.String()+"/member-candidates", ownerTok, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d %s", listed.Code, listed.Body.String())
+	}
+	var envelope struct {
+		Data []struct {
+			Username    string `json:"username"`
+			DisplayName string `json:"display_name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, u := range envelope.Data {
+		names[u.Username] = true
+	}
+	if !names["cand_alice"] || !names["cand_bob"] {
+		t.Fatalf("expected alice and bob in candidates, got %+v", envelope.Data)
+	}
+	if names["cand_owner"] || names["cand_dev"] {
+		t.Fatalf("existing members must be excluded, got %+v", envelope.Data)
+	}
+
+	q := doJSON(t, h, http.MethodGet, "/projects/"+p.ID.String()+"/member-candidates?q=alice", ownerTok, nil)
+	if q.Code != http.StatusOK {
+		t.Fatal(q.Body.String())
+	}
+	envelope.Data = nil
+	_ = json.Unmarshal(q.Body.Bytes(), &envelope)
+	if len(envelope.Data) != 1 || envelope.Data[0].Username != "cand_alice" {
+		t.Fatalf("q=alice want cand_alice, got %+v", envelope.Data)
+	}
+
+	forbidden := doJSON(t, h, http.MethodGet, "/projects/"+p.ID.String()+"/member-candidates", devTok, nil)
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("developer want 403, got %d %s", forbidden.Code, forbidden.Body.String())
+	}
+}
+
 func TestManageUsersAPI(t *testing.T) {
 	h := testServer(t)
 	adminTok := registerLogin(t, h, "admin_mgmt", "admin_mgmt@x.com")
@@ -1306,16 +1441,29 @@ func TestManageUsersAPI(t *testing.T) {
 	if newLogin.Code != http.StatusOK {
 		t.Fatalf("new password login %d %s", newLogin.Code, newLogin.Body.String())
 	}
+	var live struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(newLogin.Body.Bytes(), &live); err != nil || live.Token == "" {
+		t.Fatalf("live token missing: %s", newLogin.Body.String())
+	}
 
 	sus := doJSON(t, h, http.MethodPost, "/users/"+devID+"/suspend", adminTok, nil)
 	if sus.Code != http.StatusOK {
 		t.Fatalf("suspend %d %s", sus.Code, sus.Body.String())
+	}
+	deadSess := doJSON(t, h, http.MethodGet, "/me", live.Token, nil)
+	if deadSess.Code != http.StatusUnauthorized {
+		t.Fatalf("suspended session should die immediately, got %d %s", deadSess.Code, deadSess.Body.String())
 	}
 	blocked := doJSON(t, h, http.MethodPost, "/auth/login", "", map[string]string{
 		"username": "dev_mgmt", "password": cred.Password,
 	})
 	if blocked.Code != http.StatusUnauthorized {
 		t.Fatalf("suspended login %d", blocked.Code)
+	}
+	if !strings.Contains(blocked.Body.String(), "ACCOUNT_DISABLED") {
+		t.Fatalf("want ACCOUNT_DISABLED, got %s", blocked.Body.String())
 	}
 
 	role := doJSON(t, h, http.MethodPatch, "/users/"+devID, adminTok, map[string]string{"platform_role": "platform_ops"})
@@ -1479,6 +1627,13 @@ func TestWorkspaceHTTPExec(t *testing.T) {
 	}
 	if out.Exit != 0 || out.Via != "http-ssh" || !strings.Contains(out.Stdout, "uname -a") || !strings.Contains(out.Stdout, "payload") {
 		t.Fatalf("exec body %+v", out)
+	}
+	logsRR := doJSON(t, h, http.MethodGet, "/audit-logs", tok, nil)
+	if logsRR.Code != http.StatusOK {
+		t.Fatalf("audit %d %s", logsRR.Code, logsRR.Body.String())
+	}
+	if !strings.Contains(logsRR.Body.String(), `"stdout"`) || !strings.Contains(logsRR.Body.String(), "uname -a") {
+		t.Fatalf("audit should keep exec stdout: %s", logsRR.Body.String())
 	}
 	got := doJSON(t, h, http.MethodGet, "/workspaces/"+ws.ID.String(), tok, nil)
 	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"exec_ready":true`) {

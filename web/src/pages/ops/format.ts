@@ -571,6 +571,66 @@ export function auditChangeSummary(action: string, meta?: AuditMeta): string {
   return parts.join(" · ");
 }
 
+export function isSSHExecAction(action: string): boolean {
+  return action === "ssh.exec" || action === "ssh.exec.deny";
+}
+
+export type AuditExecDetail = {
+  command: string;
+  stdout: string;
+  stderr: string;
+  error: string;
+  exitCode: number | null;
+  commandTruncated: boolean;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+  hasRecordedOutput: boolean;
+};
+
+function metaFlag(meta: AuditMeta | undefined, key: string): boolean {
+  if (!meta) return false;
+  const v = meta[key];
+  return v === true || v === "true" || v === 1;
+}
+
+export function auditExecDetail(action: string, meta?: AuditMeta): AuditExecDetail {
+  const stdout = metaStr(meta, "stdout");
+  const stderr = metaStr(meta, "stderr");
+  const error = metaStr(meta, "error") || (action.includes("deny") ? metaStr(meta, "reason") : "");
+  const exit = metaNum(meta, "exit_code");
+  return {
+    command: metaStr(meta, "command"),
+    stdout,
+    stderr,
+    error,
+    exitCode: exit == null ? null : exit,
+    commandTruncated: metaFlag(meta, "command_truncated"),
+    stdoutTruncated: metaFlag(meta, "stdout_truncated"),
+    stderrTruncated: metaFlag(meta, "stderr_truncated"),
+    hasRecordedOutput: Boolean(stdout || stderr || error || meta?.stdout != null || meta?.stderr != null),
+  };
+}
+
+export function formatAuditExecOutput(detail: AuditExecDetail): string {
+  const chunks: string[] = [];
+  if (detail.error) chunks.push(detail.error);
+  if (detail.stdout) chunks.push(detail.stdout);
+  if (detail.stderr) {
+    if (chunks.length) chunks.push("");
+    chunks.push(detail.stderr);
+  }
+  const notes: string[] = [];
+  if (detail.stdoutTruncated) notes.push("stdout 已截断");
+  if (detail.stderrTruncated) notes.push("stderr 已截断");
+  if (notes.length) {
+    chunks.push("", `… ${notes.join("，")}`);
+  }
+  if (!chunks.length) {
+    return detail.hasRecordedOutput ? "（无输出）" : "当时未记录命令输出。之后执行的命令会保存 stdout / stderr。";
+  }
+  return chunks.join("\n");
+}
+
 export type AuditEvent = {
   actor_user_id: string;
   action: string;

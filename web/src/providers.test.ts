@@ -385,6 +385,8 @@ describe("friendlyError (U3)", () => {
       /resources\.requests/,
     );
     expect(friendlyError(new Error("PURPOSE_REQUIRED"))).toMatch(/用途/);
+    const disabled = Object.assign(new Error("ACCOUNT_DISABLED"), { status: 401 });
+    expect(friendlyError(disabled)).toBe("账号已禁用，无法登录");
   });
 });
 

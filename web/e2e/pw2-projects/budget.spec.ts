@@ -45,13 +45,9 @@ test.describe("PW-2 项目预算与拦截", () => {
     // 前往创建 workspace 页面
     await page.goto(`/workspaces?project_id=${p.id}`);
     await page.getByTestId("ws-create").click();
-
-    // 断言出现 409 资源不足错误提示
-    const err = page.getByTestId("ws-error");
-    await expect(err).toBeVisible();
-    await expect(err).toContainText("资源不足");
-
-    const banner = page.locator(".ws-insufficient");
-    await expect(banner).toBeVisible();
+    const preview = page.getByTestId("ws-capacity-preview");
+    await expect(preview).toHaveAttribute("data-available", "false", { timeout: 15_000 });
+    await expect(preview).toContainText(/预算/);
+    await expect(page.getByTestId("ws-submit")).toBeDisabled();
   });
 });

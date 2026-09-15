@@ -42,6 +42,8 @@ test.describe("PW-4 Kubernetes 工作区", () => {
     await expect(row).toContainText("Kubernetes");
 
     await row.getByTestId("ws-manage").click();
+    await expect(page).toHaveURL(/\/workspaces\/[^/]+$/);
+    await page.getByTestId("ws-nav-k8s").click();
     await expect(page).toHaveURL(/\/workspaces\/.+\/k8s/);
     await expect(page.getByTestId("ws-k8s-yaml")).toBeVisible();
     await page.getByTestId("ws-k8s-yaml").fill(DEMO_YAML);
@@ -116,6 +118,8 @@ test.describe("PW-4 Kubernetes 工作区", () => {
     await expect(ownerRow).toContainText("Kubernetes");
 
     await ownerRow.getByTestId("ws-manage").click();
+    await expect(ownerPage).toHaveURL(/\/workspaces\/[^/]+$/);
+    await ownerPage.getByTestId("ws-nav-k8s").click();
     await expect(ownerPage).toHaveURL(/\/workspaces\/.+\/k8s/);
     await expect(ownerPage.getByTestId("ws-k8s-yaml")).toBeVisible();
   });

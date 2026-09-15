@@ -1,7 +1,7 @@
 import { FormEvent, MutableRefObject, ReactNode, useCallback, useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Plus } from "lucide-react";
 import { api, friendlyError, isInsufficientCapacity } from "@/providers";
-import { formatUsageHint } from "./format";
+import { CapacityPreview, formatCapacityAvailable, formatCapacityUnavailable, formatUsageHint } from "./format";
 import { ARCHES, canApproveRole, formatPlanSpec, PlanItem, PLANS, PLAN_SPECS, ProjectOption, ProjectUsage } from "./types";
 import { purposeMissing } from "@/pages/projects/types";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,8 @@ export function CreateForm({
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState("");
   const [availablePlans, setAvailablePlans] = useState<PlanItem[]>([]);
+  const [capacity, setCapacity] = useState<CapacityPreview | null>(null);
+  const [capacityLoading, setCapacityLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +106,33 @@ export function CreateForm({
     void loadUsage();
   }, [loadUsage, usageTick, open]);
 
+  useEffect(() => {
+    if (!open || !plan || !arch) {
+      setCapacity(null);
+      setCapacityLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCapacityLoading(true);
+    const qs = new URLSearchParams({ plan, arch, runtime });
+    if (effectiveProjectId) qs.set("project_id", effectiveProjectId);
+    api<CapacityPreview>(`/workspaces/availability?${qs.toString()}`)
+      .then((row) => {
+        if (!cancelled) setCapacity(row);
+      })
+      .catch(() => {
+        if (!cancelled) setCapacity(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCapacityLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, plan, arch, runtime, effectiveProjectId]);
+
+  const capacityBlocked = Boolean(capacity && !capacity.available);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!effectiveProjectId) {
@@ -115,6 +144,12 @@ export function CreateForm({
       const msg = "请先填写项目用途，才能开通服务器";
       setFormErr(msg);
       onError(msg);
+      return;
+    }
+    if (capacityBlocked) {
+      const msg = capacity ? formatCapacityUnavailable(capacity) : "当前无法分配此套餐";
+      setFormErr(msg);
+      onError(msg, true);
       return;
     }
     setBusy(true);
@@ -222,6 +257,32 @@ export function CreateForm({
               </Field>
             </div>
 
+            {capacityLoading && (
+              <div
+                data-testid="ws-capacity-preview"
+                data-state="loading"
+                className="rounded-lg border border-border/60 bg-muted/40 p-3 text-xs text-foreground leading-relaxed break-words min-w-0"
+              >
+                正在查询 {arch} · {plan} 当前能否分配…
+              </div>
+            )}
+            {!capacityLoading && capacity && capacity.available && (
+              <Alert variant="success" data-testid="ws-capacity-preview" data-available="true" className="min-w-0">
+                <CheckCircle2 className="size-3.5 shrink-0" />
+                <AlertDescription className="min-w-0 break-words text-foreground">
+                  {formatCapacityAvailable(capacity)}
+                </AlertDescription>
+              </Alert>
+            )}
+            {!capacityLoading && capacity && !capacity.available && (
+              <Alert variant="destructive" data-testid="ws-capacity-preview" data-available="false" className="min-w-0">
+                <AlertTriangle className="size-3.5 shrink-0" />
+                <AlertDescription className="min-w-0 break-words text-foreground">
+                  {formatCapacityUnavailable(capacity)}
+                </AlertDescription>
+              </Alert>
+            )}
+
             <Field label="可见性">
               <SelectBox
                 testId="ws-visibility-select"
@@ -275,8 +336,8 @@ export function CreateForm({
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               取消
             </Button>
-            <Button data-testid="ws-submit" disabled={busy} type="submit">
-              {busy ? "创建中…" : canApprove ? "开通服务器" : "提交申请"}
+            <Button data-testid="ws-submit" disabled={busy || capacityBlocked} type="submit">
+              {busy ? "创建中…" : capacityBlocked ? "暂不可分配" : canApprove ? "开通服务器" : "提交申请"}
             </Button>
           </DialogFooter>
         </form>

@@ -117,7 +117,7 @@
 
 - 列表：创建（**名称须英文**：字母、数字、空格或短横线，如 `Office Snacks`；**用途必填** 2–80 字，可中文）、编辑、删除、复制 ID；「用途」列一句话说清这个项目是干什么的
 - **窄屏**：列表为卡片（testid 仍是 `project-row`）
-- **旧项目未填用途会冻结**：不能开通机器、加人、SSH、改预算；红条 `project-purpose-gate`，负责人点 `project-purpose-fill` 补上后才能继续
+- **旧项目未填用途会冻结**：不能开通机器、加人、SSH、改预算；红条 `project-purpose-gate`，负责人点 `project-purpose-fill` 补上后才能继续。进入详情**不会**自动弹出「编辑项目」
 - 详情 Tab：项目概览 / 工作区服务器 / 成员与权限 / 设置与预算
 - 概览：用量卡片、跳到服务器列表
 - 设置：预算 CPU/内存/磁盘、保存、删除项目
@@ -184,18 +184,19 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 
 - 全局列表：侧栏 `nav-workspaces` → `/workspaces`（可用 `?project_id=`）
 - 项目内：项目详情 `project-tab-workspaces` → `/projects/:id/workspaces`
-- 机器详情：行内「管理」`ws-manage` → `/workspaces/:id`（Tab：概览 / 连接 / Kubernetes（仅 k8s 运行时） / 域名接入 / 操作历史）
+- 机器详情：行内点服务器名称 `ws-manage` → `/workspaces/:id`（Tab：概览 / 连接 / Kubernetes（仅 k8s 运行时） / 域名接入 / 操作历史）
 
 ### 子功能
 
 - 项目内列表右上角「开通服务器 / 申请服务器」同样是 `ws-create`（自定义 trigger，不要漏 testid）；筛到未填用途的项目时变成 `project-purpose-fill`
 - 按项目筛选、含异常、刷新
+- **开通前容量预览**：选完套餐与架构后，弹窗内 `ws-capacity-preview` 立即显示该架构该规格还能否分配（不够则禁用提交，不必等开通失败）
 - **窄屏**：顶栏只留标题与「开通服务器」；统计卡与筛选随列表滚动；列表为卡片（testid 仍是 `ws-row`，不要找桌面表头）
 - 未填用途的项目：列表出现 `project-purpose-gate`，行内启停/终端/升配禁用，销毁仍可做
 - **开通 / 销毁 / 审批过程会自动轮询**（约 3s）：`provisioning`「开通中」、`destroying`、待审批不必点「刷新列表」等稳态
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
-- 行内：审批创建、驳回、启停、升配、销毁申请/初审、网页终端、复制 HTTP 执行
-- **待销毁 / 待平台终审**：机器还在。有 SSH 权的成员仍可打开终端、HTTP 执行；平台管理员可 `dangerous-reject-open` 驳回，驳回后实例保留。真正销毁发生在终审通过之后。
+- 行内快捷操作固定 2×2：升配 / 停止（或启动）/ 销毁 / 终端；文案均为两字，实心按钮。详情点服务器名称；HTTP 执行只在详情「连接」
+- **待销毁 / 待平台终审**：机器还在。有 SSH 权的成员仍可打开终端；平台管理员可 `dangerous-reject-open` 驳回，驳回后实例保留。真正销毁发生在终审通过之后。
 - 机器详情：网页终端、HTTP 执行 curl、Ingress（含推荐 CNB 镜像仓库）、审计历史
 - **运行环境**：开通默认 **Docker + SSH（Compose 部署）**；用户需要时才选 Kubernetes。详情页粘贴 YAML apply、看 Deployment/Pod/配额状态（拉取中显示加载，不要把空表当成无资源）、下载 kubeconfig（viewer 只读资源与状态）。**审批与 Docker 相同**：developer 提交后待审；owner / admin / `platform_admin` 直建，不必再审。k8s 机器不能 exec，也不要借 Docker 机跑 kubectl。
 
@@ -211,6 +212,7 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 |---|---|
 | 开通 / 申请服务器 | `ws-create` |
 | 项目 / 名称 / 套餐 / 架构 / 可见性 / 运行环境 | `ws-project-select` / `ws-name-input` / `ws-plan-select` / `ws-arch-select` / `ws-visibility-select` / `ws-create-runtime` |
+| 套餐容量预览 | `ws-capacity-preview`（`data-available=true|false`，查询中为 `data-state=loading`） |
 | 提交开通 | `ws-submit` |
 | 项目筛选 | `ws-filter-project` |
 | 含异常 | `ws-show-abnormal` |
@@ -228,11 +230,8 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 | 销毁 / 项目初审销毁 | `ws-destroy` / `ws-destroy-approve-project` |
 | 项目驳回销毁 / 平台驳回终审 | `ws-destroy-reject-project` / `ws-destroy-reject-platform` |
 | 平台强毁（破窗） | `ws-destroy-force` |
-| 去申请 SSH | `ws-request-ssh` |
-| 网页终端 | `ws-web-terminal` |
-| 管理详情 | `ws-manage` |
-| 复制 HTTP 执行 | `ws-copy-http-exec` |
-| 剪贴板回退 | `ws-copy-http-exec-fallback` / `ws-copy-http-exec-fallback-confirm` |
+| 网页终端 | `ws-web-terminal`（文案「终端」） |
+| 机器详情（点名称） | `ws-manage` |
 | 危险确认 | `confirm-ok` / `confirm-cancel` |
 
 **机器详情**
@@ -279,10 +278,12 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 
 ### 子功能
 
-- 添加已有用户、邮件邀请、批量创建用户（平台管理员也可从全局入口开）
+- 添加已有用户（Combobox 搜索用户名 / 显示名后选择，不再手填用户名）、邮件邀请、批量创建用户（平台管理员也可从全局入口开）
 - 改角色、SSH 开关、移除、申请 SSH
 - 粘贴邀请 token 接受加入
 - **窄屏**：成员列表为卡片（testid 仍是 `member-row`）
+- 列表可按 **项目角色**、**SSH 权限**筛选（`member-filter-role` / `member-filter-ssh`）
+- **项目角色与权限说明**：header「项目角色」旁问号 `role-help` 打开弹窗 `role-help-dialog`（不再在列表上方铺一整块说明）
 
 ### 快捷键
 
@@ -297,13 +298,14 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 | 前往用户列表 | `users-page-link` | `platform_admin` |
 | 接受邀请页链接 | `invite-accept-page` | |
 | 项目下拉 | `member-project` | |
-| 添加成员 | `member-add-open` → `member-add-form` / `member-username` / `member-role` / `member-add` |
+| 添加成员 | `member-add-open` → `member-add-form` / `member-username`（Combobox） / `member-username-search` / `member-role` / `member-add` |
 | 邮件邀请 | `invite-open` → `invite-form` / `invite-email` / `invite-role` |
 | 邀请 token / 复制 / 去接受 | `invite-token` / `invite-copy` / `invite-accept-link` |
 | 申请 SSH | `member-request-ssh` |
 | 批量创建 | `batch-create-open` → `batch-create-dialog` / `batch-create-textarea` / `batch-create-default-password` / `batch-create-role-select` / `batch-create-project-select` / `batch-create-submit` / `batch-create-result` |
 | 错误 | `member-error` |
-| 角色说明 | `role-help` |
+| 筛选角色 / SSH | `member-filter-role` / `member-filter-ssh` | |
+| 角色说明 | `role-help` → `role-help-dialog` | |
 | 成员表 / 行 | `member-table` / `member-row` |
 | 行内角色 / SSH / 移除 | `member-role-select` / `member-ssh-toggle` / `member-remove` |
 | 接受页 token / 提交 / 对错 | `accept-token` / `accept-submit` / `accept-ok` / `accept-error` |
@@ -326,8 +328,10 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 
 - 查看全部平台账号与所属项目
 - 搜索姓名 / 用户名 / 邮箱 / ID（`/users?q=` 预填搜索，供审计页跳转）
+- 顶部筛选：平台角色、状态、所属项目
 - 批量创建用户（可选同时加入项目；格式：用户名 邮箱 [姓名] [密码]）
-- 配置账号：姓名、平台角色、停用 / 恢复、加入项目
+- 配置账号：姓名、平台角色、禁用 / 恢复、加入项目
+- **禁用账号**：即刻无法登录，已登录会话立即失效
 - 重置密码（生成一次性新密码，旧会话立即失效）
 - **窄屏**：账号列表为卡片（testid 仍是 `users-row`）
 - 删除用户（软删；项目负责人须先转让）
@@ -342,11 +346,13 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 |---|---|---|
 | 侧栏「用户」 | `nav-users` | `platform_admin` |
 | 搜索 | `users-search` | |
+| 平台角色 / 状态 / 项目筛选 | `users-filter-role` / `users-filter-status` / `users-filter-project` | |
 | 刷新 | `users-refresh` | |
 | 批量创建 | `users-batch-create-open` → `batch-create-dialog` | |
 | 用户表 / 行 | `users-table` / `users-row` | |
 | 复制 ID | `users-copy-id` | |
 | 配置账号 | `users-configure` → `users-configure-dialog` / `users-configure-form` / `users-configure-display-name` / `users-configure-role` / `users-configure-submit` / `users-toggle-status` | |
+| 禁用 / 恢复 | `users-disable` → `users-disable-dialog`，确认 `confirm-ok` / `confirm-cancel` | |
 | 加入项目 | 配置弹窗内 `users-add-to-project` → `users-add-dialog` / `users-add-form` / `users-add-project` / `users-add-role` / `users-add-submit` | |
 | 重置密码 | `users-reset-password` → `users-reset-dialog` / `users-reset-submit` / `users-reset-copy` | |
 | 删除用户 | `users-delete` → `users-delete-dialog`，确认 `confirm-ok` / `confirm-cancel` | |
@@ -457,7 +463,7 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 
 ### 子功能
 
-刷日志、平台对账 reconcile、看行。**窄屏**为卡片（`audit-row`）。操作人悬停看最近登录、最近操作、加入的项目与名下服务器；操作对象有权限时悬停看状态/规格/最近变动，点击名称会先确认资源仍存在再进详情，已销毁则 toast「资源已被销毁」。TLS 证书、域名分区、镜像仓库展示域名/仓库名而不是短 ID。安全动作徽章按类型分色（销毁/删除为红，签发证书、终端、SSH 等各用不同色）。每行 ID 旁可复制排查信息（ID、触发时间、操作人、动作、资源、IP）。
+刷日志、平台对账 reconcile、看行。**窄屏**为卡片（`audit-row`）。操作人悬停看最近登录、最近操作、加入的项目与名下服务器；操作对象有权限时悬停看状态/规格/最近变动，点击名称会先确认资源仍存在再进详情，已销毁则 toast「资源已被销毁」。TLS 证书、域名分区、镜像仓库展示域名/仓库名而不是短 ID。安全动作徽章按类型分色（销毁/删除为红，签发证书、终端、SSH 等各用不同色）。每行 ID 旁可复制排查信息（ID、触发时间、操作人、动作、资源、IP）。SSH 执行命令在目标列最多显示两行，悬停看全文，点击打开结果弹窗（左输入 / 右输出）。
 
 ### 快捷键
 
@@ -474,6 +480,8 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 | 操作人悬停卡 | `audit-actor-hover` |
 | 可点击的操作对象 | `audit-target-link` |
 | 操作对象悬停卡 | `audit-target-hover` |
+| SSH 命令（两行截断） | `audit-exec-command` |
+| 命令结果弹窗 / 输入 / 输出 | `audit-exec-dialog` / `audit-exec-input` / `audit-exec-output` |
 
 角色门：`platform_admin` / `platform_ops`。reconcile 仅 `platform_admin`。
 
@@ -589,5 +597,5 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 
 1. **项目 → 服务器**：登录 → `nav-projects` → `project-detail`（不要点行中央，会点到复制 ID）→ 桌面 `[data-testid=project-subnav] [data-testid=project-tab-workspaces]` → `ws-create` 或已有 `ws-row`。
 2. **节点加入命令**：`platform_admin` → `nav-nodes` → `nodes-join-token-open`（自动出命令）→ `join-copy`。
-3. **网页终端 / HTTP 执行**：`ws-row` running → `ws-web-terminal` 或 `ws-copy-http-exec`；详情则 `ws-nav-connect` / `ws-tab-connect`。不再提供本机 OpenSSH / ssh-config。
+3. **网页终端 / HTTP 执行**：`ws-row` running → `ws-web-terminal`；HTTP 执行在详情 `ws-nav-connect` / `ws-tab-connect` 的 `ws-copy-http-exec`。不再提供本机 OpenSSH / ssh-config。
 4. **销毁终审**：项目初审后 → `nav-dangerous` → `dangerous-approve-open` → `dangerous-confirm`。

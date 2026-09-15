@@ -5,6 +5,7 @@ import {
   isValidProjectName,
   isValidPurpose,
   purposeMissing,
+  purposeNeedsFill,
   isValidSlug,
   suggestSlugFromName,
 } from "./types";
@@ -60,6 +61,13 @@ describe("project slug", () => {
     expect(purposeMissing("")).toBe(true);
     expect(purposeMissing(undefined)).toBe(true);
     expect(purposeMissing("办公零食柜")).toBe(false);
+  });
+
+  it("does not treat a still-loading project as missing purpose", () => {
+    expect(purposeNeedsFill(undefined)).toBe(false);
+    expect(purposeNeedsFill(null)).toBe(false);
+    expect(purposeNeedsFill({ purpose: "" })).toBe(true);
+    expect(purposeNeedsFill({ purpose: "办公零食柜" })).toBe(false);
   });
 });
 

@@ -20,6 +20,10 @@ describe("Input component", () => {
     expect(input.className).toContain("focus-visible:border-[color:var(--focus-ring,#6B97FF)]");
     expect(input.className).toContain("focus-visible:ring-1");
     expect(input.className).toContain("focus-visible:ring-[color:var(--focus-ring,#6B97FF)]");
+    // Resting trough is visible without focus
+    expect(input.className).toContain("border-(--input-border)");
+    expect(input.className).toContain("bg-(--input-fill)");
+    expect(input.className).toContain("shadow-(--input-inset)");
     // Should NOT have legacy double-border / harsh ring classes
     expect(input.className).not.toContain("border-input");
     expect(input.className).not.toContain("focus-visible:ring-2 focus-visible:ring-ring");

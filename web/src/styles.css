@@ -11,6 +11,10 @@
   --ok: #3d8b57;
   --focus: #1a6aa3;
   --input-bg: #ffffff;
+  --input-border: var(--line-strong);
+  --input-border-hover: #9aa8b8;
+  --input-fill: rgb(18 32 46 / 0.04);
+  --input-inset: inset 0 1px 1px rgb(18 32 46 / 0.08);
   --text-inverse: #ffffff;
   --text-bright: #0b1218;
   --badge-ok-bg: #e5f6ea;
@@ -76,6 +80,10 @@
   --ok: #98c379;
   --focus: #7ec8ff;
   --input-bg: #0f1419;
+  --input-border: #5a7088;
+  --input-border-hover: #7389a1;
+  --input-fill: rgb(255 255 255 / 0.05);
+  --input-inset: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 -1px 0 rgb(0 0 0 / 0.35);
   --text-inverse: #081018;
   --text-bright: #ffffff;
   --badge-ok-bg: #1a3d2e;

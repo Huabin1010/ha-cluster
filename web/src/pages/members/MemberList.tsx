@@ -1,13 +1,25 @@
-import { FormEvent, useCallback, useEffect, useState, type ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy, ExternalLink, Eye, Hash, Mail, Plus, Shield, Terminal, Trash2, User, Users, Clock } from "lucide-react";
+import { Check, CircleHelp, Clock, Copy, ExternalLink, Eye, Hash, Mail, Plus, Shield, Terminal, Trash2, User, Users } from "lucide-react";
 import { useGetIdentity } from "@refinedev/core";
 import { api, friendlyError, type AuthUser } from "@/providers";
-import { ASSIGNABLE_ROLES, ROLE_HELP, roleChipLabel, roleLabel } from "./roles";
+import {
+  ASSIGNABLE_ROLES,
+  MEMBER_ROLES,
+  MEMBER_SSH_FILTERS,
+  ROLE_HELP,
+  SSH_HELP,
+  matchesMemberFilters,
+  memberSshFilterLabel,
+  roleChipLabel,
+  roleLabel,
+} from "./roles";
 import { canManageMembers, canSSH } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { SelectBox } from "@/components/ui/select";
+import { memberCandidateLabel, type MemberCandidate } from "./directory";
 import { Field } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { Hint } from "@/components/ui/tooltip";
@@ -98,6 +110,8 @@ export function MemberList({
   const [addOpen, setAddOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [username, setUsername] = useState("");
+  const [candidates, setCandidates] = useState<MemberCandidate[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [addRole, setAddRole] = useState<string>("developer");
   const [email, setEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<string>("developer");
@@ -105,7 +119,14 @@ export function MemberList({
   const [copied, setCopied] = useState<"token" | "link" | "">("");
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
-  const pager = useClientPager(rows, projectId);
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [sshFilter, setSshFilter] = useState("all");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const filteredRows = useMemo(
+    () => rows.filter((m) => matchesMemberFilters(m, { role: roleFilter, ssh: sshFilter })),
+    [rows, roleFilter, sshFilter],
+  );
+  const pager = useClientPager(filteredRows, `${projectId}:${roleFilter}:${sshFilter}`);
 
   const { data: me } = useGetIdentity<AuthUser>();
   const myMember = rows.find((r) => r.user_id === me?.id);
@@ -148,7 +169,40 @@ export function MemberList({
     void load();
     setInviteToken("");
     setCopied("");
+    setRoleFilter("all");
+    setSshFilter("all");
   }, [load]);
+
+  useEffect(() => {
+    if (!addOpen || !projectId) return;
+    setUsername("");
+    let cancelled = false;
+    setErr("");
+    setCandidatesLoading(true);
+    void api<{ data: MemberCandidate[] }>(`/projects/${projectId}/member-candidates`)
+      .then((json) => {
+        if (!cancelled) setCandidates(json.data ?? []);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setCandidates([]);
+          setErr(friendlyError(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCandidatesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [addOpen, projectId]);
+
+  const candidateOptions = useMemo(() => {
+    const memberIds = new Set(rows.map((r) => r.user_id));
+    return candidates
+      .filter((u) => !memberIds.has(u.id))
+      .map((u) => ({ value: u.username, label: memberCandidateLabel(u) }));
+  }, [candidates, rows]);
 
   async function add(e: FormEvent) {
     e.preventDefault();
@@ -462,7 +516,15 @@ export function MemberList({
                     批量创建用户
                   </Button>
                 )}
-                <Dialog open={addOpen} onOpenChange={setAddOpen}>
+                {canManage && (
+                  <>
+                <Dialog
+                  open={addOpen}
+                  onOpenChange={(open) => {
+                    setAddOpen(open);
+                    if (!open) setUsername("");
+                  }}
+                >
                   <DialogTrigger asChild>
                     <Button type="button" size="compact" data-testid="member-add-open" className="h-8 px-3 text-xs gap-1.5 shrink-0">
                       <Plus className="size-3.5 shrink-0" />
@@ -472,19 +534,31 @@ export function MemberList({
                   <DialogContent size="lg" className="sm:max-w-lg">
                     <DialogHeader>
                       <DialogTitle>添加成员</DialogTitle>
-                      <DialogDescription>将已有账号加入当前项目边界。owner 不可通过此表单直接转让。</DialogDescription>
+                      <DialogDescription className="break-words min-w-0">
+                        搜索已有账号并选择角色加入当前项目。owner 不可通过此表单转让。
+                      </DialogDescription>
                     </DialogHeader>
                     <form className="flex min-h-0 flex-1 flex-col" onSubmit={add} data-testid="member-add-form">
                       <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
-                        <Field label="用户名">
-                          <Input
-                            data-testid="member-username"
+                        <Field label="用户">
+                          <Combobox
+                            testId="member-username"
                             value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            placeholder="输入已有用户名"
-                            required
-                            autoComplete="off"
+                            onValueChange={setUsername}
+                            options={candidateOptions}
+                            placeholder={candidatesLoading ? "加载用户…" : "搜索并选择用户"}
+                            searchPlaceholder="搜索用户名或显示名…"
+                            emptyText={candidatesLoading ? "正在加载…" : "未找到可添加的用户"}
+                            disabled={candidatesLoading}
+                            aria-label="选择要添加的用户"
+                            className="w-full"
+                            contentClassName="max-w-none"
                           />
+                          {!candidatesLoading && candidateOptions.length === 0 && (
+                            <p className="text-xs text-muted-foreground break-words min-w-0">
+                              没有可添加的账号。可先在用户列表创建，或使用「生成邀请」。
+                            </p>
+                          )}
                         </Field>
                         <Field label="项目角色">
                           <SelectBox
@@ -499,7 +573,7 @@ export function MemberList({
                         <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
                           取消
                         </Button>
-                        <Button data-testid="member-add" type="submit" disabled={busy}>
+                        <Button data-testid="member-add" type="submit" disabled={busy || !username.trim()}>
                           添加成员
                         </Button>
                       </DialogFooter>
@@ -552,10 +626,55 @@ export function MemberList({
                     </form>
                   </DialogContent>
                 </Dialog>
+                  </>
+                )}
               </>
             }
           >
             {extraHeader}
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 shrink-0 text-xs font-medium text-muted-foreground">
+                <Shield className="size-3.5 shrink-0 opacity-70" />
+                项目角色
+                <Hint label="项目角色与权限说明">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="compact"
+                    data-testid="role-help"
+                    aria-label="项目角色与权限说明"
+                    className="size-6 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => setHelpOpen(true)}
+                  >
+                    <CircleHelp className="size-3.5 shrink-0" />
+                  </Button>
+                </Hint>
+              </span>
+              <SelectBox
+                testId="member-filter-role"
+                size="compact"
+                aria-label="筛选项目角色"
+                className="w-full min-w-0 sm:w-[180px]"
+                value={roleFilter}
+                onValueChange={setRoleFilter}
+                options={[
+                  { value: "all", label: "全部角色" },
+                  ...MEMBER_ROLES.map((r) => ({ value: r, label: roleChipLabel(r) })),
+                ]}
+              />
+              <SelectBox
+                testId="member-filter-ssh"
+                size="compact"
+                aria-label="筛选 SSH 权限"
+                className="w-full min-w-0 sm:w-[160px]"
+                value={sshFilter}
+                onValueChange={setSshFilter}
+                options={[
+                  { value: "all", label: "全部 SSH" },
+                  ...MEMBER_SSH_FILTERS.map((s) => ({ value: s, label: memberSshFilterLabel(s) })),
+                ]}
+              />
+            </div>
             {err && (
               <Alert variant="destructive" role="alert" data-testid="member-error">
                 <AlertDescription>{err}</AlertDescription>
@@ -575,51 +694,6 @@ export function MemberList({
         }
       >
         <div className="grid gap-4">
-          <div data-testid="role-help" aria-label="角色说明">
-          <details
-            className="group rounded-xl border border-border/80 bg-surface-1 shadow-surface-1 md:hidden"
-          >
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2.5 text-xs font-semibold text-foreground [&::-webkit-details-marker]:hidden">
-              <Shield className="size-3.5 text-primary shrink-0" />
-              项目角色与权限说明
-            </summary>
-            <div className="grid grid-cols-1 gap-2 px-3 pb-3 text-xs">
-              {Object.entries(ROLE_HELP).map(([role, tip]) => (
-                <div key={role} className="p-2.5 rounded-lg border border-border/60 bg-surface-2/40 flex flex-col gap-1 min-w-0">
-                  <span className="font-mono font-bold text-foreground text-[11px] uppercase tracking-wider">
-                    {role}
-                  </span>
-                  <span className="text-muted-foreground text-[11px] leading-relaxed break-words">
-                    {tip}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </details>
-          <Elevated
-            offset={1}
-            shadowLevel={1}
-            className="hidden md:block rounded-xl border border-border/80 bg-surface-1 p-4 shadow-surface-1"
-          >
-            <h4 className="m-0 text-xs font-semibold text-foreground flex items-center gap-1.5 mb-2.5">
-              <Shield className="size-3.5 text-primary shrink-0" />
-              项目角色与权限说明
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
-              {Object.entries(ROLE_HELP).map(([role, tip]) => (
-                <div key={role} className="p-2.5 rounded-lg border border-border/60 bg-surface-2/40 flex flex-col gap-1">
-                  <span className="font-mono font-bold text-foreground text-[11px] uppercase tracking-wider">
-                    {role}
-                  </span>
-                  <span className="text-muted-foreground text-[11px] leading-relaxed">
-                    {tip}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Elevated>
-          </div>
-
           {loading ? (
             <div className="py-12 text-center">
               <Loading label="加载成员名单…" />
@@ -633,6 +707,16 @@ export function MemberList({
               <Users className="size-8 text-muted-foreground/40 mb-1" />
               <p className="text-sm font-medium text-foreground m-0">暂无项目成员（或无权查看）</p>
               <p className="text-xs text-muted-foreground m-0 break-words">点击上方「添加成员」或「生成邀请」将协作伙伴加入该项目。</p>
+            </Elevated>
+          ) : filteredRows.length === 0 ? (
+            <Elevated
+              offset={1}
+              shadowLevel={1}
+              className="rounded-xl border border-border/80 bg-surface-1 p-8 shadow-surface-1 text-center flex flex-col items-center justify-center gap-2"
+            >
+              <Users className="size-8 text-muted-foreground/40 mb-1" />
+              <p className="text-sm font-medium text-foreground m-0">没有匹配的成员</p>
+              <p className="text-xs text-muted-foreground m-0 break-words">换一个角色或 SSH 筛选条件试试，或改回「全部」查看名单。</p>
             </Elevated>
           ) : (
             <ResponsiveList
@@ -653,10 +737,22 @@ export function MemberList({
                             用户 ID
                           </span>
                         </TableHead>
-                        <TableHead className="w-[190px] py-2.5">
-                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <TableHead className="w-[220px] py-2.5">
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
                             <Shield className="size-3.5 opacity-60 shrink-0" />
                             项目角色
+                            <Hint label="项目角色与权限说明">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="compact"
+                                aria-label="项目角色与权限说明"
+                                className="size-6 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => setHelpOpen(true)}
+                              >
+                                <CircleHelp className="size-3.5 shrink-0" />
+                              </Button>
+                            </Hint>
                           </span>
                         </TableHead>
                         <TableHead className="w-[140px] py-2.5">
@@ -768,6 +864,63 @@ export function MemberList({
           )}
         </div>
       </PageFrame>
+
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent size="lg" className="sm:max-w-xl" data-testid="role-help-dialog">
+          <DialogHeader>
+            <DialogTitle>项目角色与权限说明</DialogTitle>
+            <DialogDescription className="break-words min-w-0">
+              角色决定控制台能做什么；SSH 授权决定能不能连工作区。owner / admin 默认可连，不依赖下方开关。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="grid gap-4 overflow-x-hidden overflow-y-auto max-w-full">
+            <div className="grid gap-2">
+              <h3 className="m-0 text-xs font-semibold text-foreground">项目角色</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {MEMBER_ROLES.map((role) => (
+                  <div
+                    key={role}
+                    className="p-2.5 rounded-lg border border-border/60 bg-surface-2/40 flex flex-col gap-1 min-w-0"
+                  >
+                    <span className="inline-flex items-center gap-1.5 text-foreground">
+                      <span className="font-medium text-xs">{roleChipLabel(role)}</span>
+                      <Hint label={role}>
+                        <span className="font-mono text-[11px] text-muted-foreground uppercase tracking-wider cursor-help">
+                          {role}
+                        </span>
+                      </Hint>
+                    </span>
+                    <span className="text-muted-foreground text-[11px] leading-relaxed break-words min-w-0">
+                      {ROLE_HELP[role]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <h3 className="m-0 text-xs font-semibold text-foreground">SSH 权限</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {SSH_HELP.map((item) => (
+                  <div
+                    key={item.key}
+                    className="p-2.5 rounded-lg border border-border/60 bg-surface-2/40 flex flex-col gap-1 min-w-0"
+                  >
+                    <span className="text-xs font-medium text-foreground">{memberSshFilterLabel(item.key)}</span>
+                    <span className="text-muted-foreground text-[11px] leading-relaxed break-words min-w-0">
+                      {item.tip}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setHelpOpen(false)}>
+              知道了
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!removeId} onOpenChange={(v) => !v && setRemoveId(null)}>
         <AlertDialogContent>

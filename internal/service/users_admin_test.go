@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"ha-cluster/internal/auth"
@@ -24,7 +25,7 @@ func TestManageUserLifecycle(t *testing.T) {
 	if got.Status != models.UserSuspended || got.TokenVersion < 2 {
 		t.Fatalf("%+v", got)
 	}
-	if _, _, err := app.Login(ctx, "victim", "password1"); err != store.ErrUnauthorized {
+	if _, _, err := app.Login(ctx, "victim", "password1"); !errors.Is(err, store.ErrAccountDisabled) {
 		t.Fatalf("suspended user should not login, err=%v", err)
 	}
 
@@ -66,7 +67,7 @@ func TestManageUserLifecycle(t *testing.T) {
 			t.Fatal("deleted user should not appear in list")
 		}
 	}
-	if _, _, err := app.Login(ctx, "victim", plain); err != store.ErrUnauthorized {
+	if _, _, err := app.Login(ctx, "victim", plain); !errors.Is(err, store.ErrAccountDisabled) {
 		t.Fatal("deleted user should not login")
 	}
 }

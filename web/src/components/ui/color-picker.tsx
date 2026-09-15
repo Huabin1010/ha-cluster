@@ -18,6 +18,7 @@ import { Popover } from "@base-ui/react/popover";
 import { Menu } from "@base-ui/react/menu";
 import { NumberField } from "@base-ui/react/number-field";
 import { cn } from "@/lib/utils";
+import { fieldChromeRestClass } from "@/lib/field-chrome";
 import { spring } from "@/lib/springs";
 import { fontWeights } from "@/lib/font-weight";
 import { useShape, shapeMap } from "@/lib/shape-context";
@@ -1072,7 +1073,7 @@ const TextColorInput = forwardRef<HTMLInputElement, ColorInputProps>(
     return (
       <div
         className={cn(
-          "flex items-center px-2 bg-transparent hover:bg-hover active:bg-active transition-colors duration-80 focus-within:ring-1 focus-within:ring-[color:var(--focus-ring,#6B97FF)] select-none",
+          "flex items-center px-2 bg-(--input-fill) border border-(--input-border) shadow-(--input-inset) hover:bg-hover/30 hover:border-(--input-border-hover) active:bg-active transition-colors duration-80 focus-within:shadow-none focus-within:ring-1 focus-within:ring-[color:var(--focus-ring,#6B97FF)] select-none",
           sizeClasses.control,
           shape.input,
           className
@@ -2033,7 +2034,11 @@ const ColorPickerPopover = forwardRef<HTMLDivElement, ColorPickerPopoverProps>(
         <div ref={ref} className="inline-flex">
           <Popover.Trigger
             className={cn(
-              "flex items-center border border-border bg-transparent hover:bg-hover transition-colors duration-80 outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)] cursor-pointer",
+              "flex items-center cursor-pointer outline-none transition-colors duration-80",
+              fieldChromeRestClass,
+              "hover:bg-hover",
+              "focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]",
+              "focus-visible:border-[color:var(--focus-ring,#6B97FF)] focus-visible:shadow-none",
               sizeClasses.gap,
               sizeClasses.control,
               compact ? "px-1.5" : "px-2",

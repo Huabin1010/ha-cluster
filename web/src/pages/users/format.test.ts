@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ASSIGNABLE_PLATFORM_ROLES, matchesUserQuery, platformRoleLabel, userStatusLabel } from "./format";
+import { ASSIGNABLE_PLATFORM_ROLES, matchesUserFilters, matchesUserQuery, platformRoleLabel, userStatusLabel } from "./format";
 
 describe("user list labels", () => {
   it("maps platform roles to Chinese", () => {
@@ -12,7 +12,7 @@ describe("user list labels", () => {
 
   it("maps account status to Chinese", () => {
     expect(userStatusLabel("active")).toBe("正常");
-    expect(userStatusLabel("suspended")).toBe("已停用");
+    expect(userStatusLabel("suspended")).toBe("禁用");
     expect(userStatusLabel("deleted")).toBe("已删除");
   });
 
@@ -29,5 +29,27 @@ describe("user list labels", () => {
     expect(matchesUserQuery(u, "ha-lab")).toBe(true);
     expect(matchesUserQuery(u, "abc-123")).toBe(true);
     expect(matchesUserQuery(u, "nobody")).toBe(false);
+  });
+
+  it("filters by platform role, status and project", () => {
+    const admin = {
+      platform_role: "platform_admin",
+      status: "active",
+      projects: [{ id: "p1" }],
+    };
+    const banned = {
+      platform_role: "platform_user",
+      status: "suspended",
+      projects: [],
+    };
+    expect(matchesUserFilters(admin, { role: "all", status: "all", projectId: "all" })).toBe(true);
+    expect(matchesUserFilters(admin, { role: "platform_admin", status: "all", projectId: "all" })).toBe(true);
+    expect(matchesUserFilters(admin, { role: "platform_user", status: "all", projectId: "all" })).toBe(false);
+    expect(matchesUserFilters(banned, { role: "all", status: "suspended", projectId: "all" })).toBe(true);
+    expect(matchesUserFilters(admin, { role: "all", status: "suspended", projectId: "all" })).toBe(false);
+    expect(matchesUserFilters(admin, { role: "all", status: "all", projectId: "p1" })).toBe(true);
+    expect(matchesUserFilters(banned, { role: "all", status: "all", projectId: "p1" })).toBe(false);
+    expect(matchesUserFilters(banned, { role: "all", status: "all", projectId: "none" })).toBe(true);
+    expect(matchesUserFilters(admin, { role: "all", status: "all", projectId: "none" })).toBe(false);
   });
 });

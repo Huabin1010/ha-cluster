@@ -93,4 +93,25 @@ describe("Combobox component", () => {
 
     expect(screen.getByText("无匹配项目")).toBeDefined();
   });
+
+  it("filters by option value as well as label", () => {
+    render(
+      <Combobox
+        value=""
+        onValueChange={() => {}}
+        options={[
+          { value: "zhang", label: "张三（zhang）" },
+          { value: "li", label: "李四（li）" },
+        ]}
+        searchPlaceholder="搜索用户名或显示名…"
+        testId="test-combobox"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("test-combobox"));
+    const searchInput = screen.getByTestId("test-combobox-search");
+    fireEvent.change(searchInput, { target: { value: "zhang" } });
+    expect(screen.getByText("张三（zhang）")).toBeDefined();
+    expect(screen.queryByText("李四（li）")).toBeNull();
+  });
 });

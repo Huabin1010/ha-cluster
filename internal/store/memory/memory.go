@@ -199,8 +199,29 @@ func (s *Store) ListUsers(_ context.Context) ([]models.User, error) {
 func (s *Store) UpdateUser(_ context.Context, u *models.User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.users[u.ID]; !ok {
+	cur, ok := s.users[u.ID]
+	if !ok {
 		return store.ErrNotFound
+	}
+	oldEmail := strings.ToLower(cur.Email)
+	newEmail := strings.ToLower(u.Email)
+	if oldEmail != newEmail {
+		if other, exists := s.userByEmail[newEmail]; exists && other != u.ID {
+			return store.ErrConflict
+		}
+		delete(s.userByEmail, oldEmail)
+		if newEmail != "" {
+			s.userByEmail[newEmail] = u.ID
+		}
+	}
+	oldName := strings.ToLower(cur.Username)
+	newName := strings.ToLower(u.Username)
+	if oldName != newName {
+		if other, exists := s.userByName[newName]; exists && other != u.ID {
+			return store.ErrConflict
+		}
+		delete(s.userByName, oldName)
+		s.userByName[newName] = u.ID
 	}
 	cp := *u
 	s.users[u.ID] = &cp

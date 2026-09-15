@@ -20,6 +20,10 @@ const OPEN_REGISTER = true;
 
 function loginErrorMessage(e: unknown): string {
   const err = e as ApiError & { statusCode?: number };
+  const raw = String(err?.message ?? "");
+  if (/ACCOUNT_DISABLED/i.test(raw) || /账号已禁用/.test(raw)) {
+    return "账号已禁用，无法登录";
+  }
   const status = err?.status ?? err?.statusCode;
   if (status === 401 || err?.message === "unauthorized") {
     return "用户名或密码错误";

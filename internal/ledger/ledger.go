@@ -38,22 +38,96 @@ func (s *Service) PickCandidateNodes(ctx context.Context, arch string, cpu, mem,
 	return s.pickCandidates(ctx, arch, cpu, mem, disk, false)
 }
 
+type ProbeResult struct {
+	Available bool
+	Fits      int
+	Nodes     int
+	Reason    string
+}
+
+func countFits(nodes []models.Node, cpu, mem, disk int64) int {
+	if cpu <= 0 || mem <= 0 || disk <= 0 {
+		return 0
+	}
+	total := 0
+	for _, n := range nodes {
+		freeCPU := n.AllocatableCPU - n.UsedCPU
+		freeMem := n.AllocatableMem - n.UsedMem
+		freeDisk := n.AllocatableDisk - n.UsedDisk
+		nCPU := freeCPU / cpu
+		nMem := freeMem / mem
+		nDisk := freeDisk / disk
+		nFit := nCPU
+		if nMem < nFit {
+			nFit = nMem
+		}
+		if nDisk < nFit {
+			nFit = nDisk
+		}
+		if nFit > 0 {
+			total += int(nFit)
+		}
+	}
+	return total
+}
+
+func wrapReason(err error) string {
+	return store.Reason(err, store.ErrNoCapacity)
+}
+
+func noCapacityReason(requireK8s, sawArch, sawReady, sawK8s bool) error {
+	if !sawArch {
+		return store.Wrap(store.ErrNoCapacity, "没有该架构的 worker")
+	}
+	if !sawReady {
+		return store.Wrap(store.ErrNoCapacity, "该架构节点当前未就绪")
+	}
+	if requireK8s && !sawK8s {
+		return store.Wrap(store.ErrNoCapacity, "没有带 k3s/k8s 标签且就绪的该架构 worker")
+	}
+	if requireK8s {
+		return store.Wrap(store.ErrNoCapacity, "带 Kubernetes 标签的节点空闲容量不够放下此套餐")
+	}
+	return store.Wrap(store.ErrNoCapacity, "该架构节点空闲容量不够放下此套餐")
+}
+
+func (s *Service) Probe(ctx context.Context, arch string, cpu, mem, disk int64, requireK8s bool) (ProbeResult, error) {
+	candidates, err := s.pickCandidates(ctx, arch, cpu, mem, disk, requireK8s)
+	if err != nil {
+		if errors.Is(err, store.ErrNoCapacity) {
+			return ProbeResult{Reason: wrapReason(err)}, nil
+		}
+		return ProbeResult{}, err
+	}
+	fits := countFits(candidates, cpu, mem, disk)
+	return ProbeResult{Available: fits > 0, Fits: fits, Nodes: len(candidates)}, nil
+}
+
 func (s *Service) pickCandidates(ctx context.Context, arch string, cpu, mem, disk int64, requireK8s bool) ([]models.Node, error) {
 	nodes, err := s.Store.ListNodes(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var scored []scoredNode
+	sawArch, sawReady, sawK8s := false, false, false
 	for i := range nodes {
 		n := nodes[i]
-		if !n.Ready || n.Role == "control-plane" {
-			continue
-		}
-		if requireK8s && !models.NodeSupportsK8s(n.Tags) {
+		if n.Role == "control-plane" {
 			continue
 		}
 		if arch != models.ArchAny && n.Arch != arch {
 			continue
+		}
+		sawArch = true
+		if !n.Ready {
+			continue
+		}
+		sawReady = true
+		if requireK8s && !models.NodeSupportsK8s(n.Tags) {
+			continue
+		}
+		if requireK8s {
+			sawK8s = true
 		}
 		freeCPU := n.AllocatableCPU - n.UsedCPU
 		freeMem := n.AllocatableMem - n.UsedMem
@@ -71,10 +145,7 @@ func (s *Service) pickCandidates(ctx context.Context, arch string, cpu, mem, dis
 		scored = append(scored, scoredNode{node: n, score: score})
 	}
 	if len(scored) == 0 {
-		if requireK8s {
-			return nil, store.Wrap(store.ErrNoCapacity, "没有带 k3s/k8s 标签且 CPU/内存/磁盘都够的 Ready worker")
-		}
-		return nil, store.Wrap(store.ErrNoCapacity, "没有 arch 匹配且容量足够的 Ready worker")
+		return nil, noCapacityReason(requireK8s, sawArch, sawReady, sawK8s)
 	}
 	sort.Slice(scored, func(i, j int) bool {
 		return scored[i].score > scored[j].score

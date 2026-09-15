@@ -84,6 +84,7 @@ test.describe("PW-2 项目列表与创建", () => {
 
     await expect(page).toHaveURL(new RegExp(`/projects/${p.id}`));
     await expect(page.getByTestId("project-id")).toContainText(p.id);
+    await expect(page.getByTestId("project-edit-form")).toBeHidden();
   });
 
   test("PW2-11 @pw2 复制项目 id", async ({ pageAs }) => {

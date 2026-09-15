@@ -24,7 +24,58 @@ const (
 	maxExecCommandRunes = 32 << 10
 	maxExecStdinBytes   = 8 << 20
 	maxExecJSONBytes    = 12 << 20
+
+	maxAuditCommandRunes = 8000
+	maxAuditStdoutRunes  = 24000
+	maxAuditStderrRunes  = 8000
 )
+
+func clipAuditRunes(s string, max int) (string, bool) {
+	if max <= 0 {
+		return "", s != ""
+	}
+	if utf8.RuneCountInString(s) <= max {
+		return s, false
+	}
+	return string([]rune(s)[:max]) + "…", true
+}
+
+func clipAuditBytes(b []byte, max int) (string, bool) {
+	return clipAuditRunes(strings.ToValidUTF8(string(b), "\uFFFD"), max)
+}
+
+func execAuditMeta(command string, stdout, stderr []byte, exit int, extra map[string]any) map[string]any {
+	cmd, cmdCut := clipAuditRunes(command, maxAuditCommandRunes)
+	out, outCut := clipAuditBytes(stdout, maxAuditStdoutRunes)
+	errOut, errCut := clipAuditBytes(stderr, maxAuditStderrRunes)
+	meta := map[string]any{
+		"via":       "http-ssh",
+		"command":   cmd,
+		"exit_code": exit,
+	}
+	if cmdCut {
+		meta["command_truncated"] = true
+	}
+	if out != "" {
+		meta["stdout"] = out
+	}
+	if outCut {
+		meta["stdout_truncated"] = true
+	}
+	if errOut != "" {
+		meta["stderr"] = errOut
+	}
+	if errCut {
+		meta["stderr_truncated"] = true
+	}
+	for k, v := range extra {
+		if v == nil {
+			continue
+		}
+		meta[k] = v
+	}
+	return meta
+}
 
 func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -105,10 +156,6 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ip := requestmeta.ClientIP(r.Context())
-	cmdPreview := command
-	if utf8.RuneCountInString(cmdPreview) > 200 {
-		cmdPreview = string([]rune(cmdPreview)[:200]) + "…"
-	}
 
 	if webshell.IsFake(s.App.Runtime) {
 		stdout, stderr, exit := webshell.FakeRun(command, stdin)
@@ -116,10 +163,9 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 			ActorUserID: actor.ID, Action: "ssh.exec",
 			ResourceType: "workspace", ResourceID: ws.ID.String(),
 			IP: ip,
-			Meta: map[string]any{
-				"via": "http-ssh", "fake": true, "command": cmdPreview,
-				"exit_code": exit, "username": actor.Username, "workspace_name": ws.Name,
-			},
+			Meta: execAuditMeta(command, stdout, stderr, exit, map[string]any{
+				"fake": true, "username": actor.Username, "workspace_name": ws.Name,
+			}),
 		})
 		writeJSON(w, http.StatusOK, execResponse(stdout, stderr, exit, "http-ssh"))
 		s.App.RecordWorkspaceExec(r.Context(), ws.ID, true, "")
@@ -147,10 +193,10 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 			ActorUserID: actor.ID, Action: "ssh.exec.deny",
 			ResourceType: "workspace", ResourceID: ws.ID.String(),
 			IP: ip,
-			Meta: map[string]any{
-				"via": "http-ssh", "command": cmdPreview, "error": err.Error(),
+			Meta: execAuditMeta(command, nil, nil, -1, map[string]any{
 				"username": actor.Username, "target": tg.Host, "workspace_name": ws.Name,
-			},
+				"error": err.Error(),
+			}),
 		})
 		s.App.RecordWorkspaceExec(r.Context(), ws.ID, false, err.Error())
 		writeErr(w, http.StatusBadGateway, wrapExecUnavailable(err))
@@ -161,10 +207,9 @@ func (s *Server) execWorkspace(w http.ResponseWriter, r *http.Request) {
 		ActorUserID: actor.ID, Action: "ssh.exec",
 		ResourceType: "workspace", ResourceID: ws.ID.String(),
 		IP: ip,
-		Meta: map[string]any{
-			"via": "http-ssh", "command": cmdPreview, "exit_code": exit,
+		Meta: execAuditMeta(command, stdout, stderr, exit, map[string]any{
 			"username": actor.Username, "target": tg.Host, "workspace_name": ws.Name,
-		},
+		}),
 	})
 	writeJSON(w, http.StatusOK, execResponse(stdout, stderr, exit, "http-ssh"))
 }

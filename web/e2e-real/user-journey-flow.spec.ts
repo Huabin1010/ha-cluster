@@ -218,7 +218,7 @@ test.describe("Real Machine & Container: 端到端完整用户流程（User Jour
     const { stdout: fileOut } = await runCmd(verifyFileCmd);
     expect(fileOut).toContain("ha-cluster-e2e-flow-verified");
 
-    await expect(wsRow.locator("[data-testid=ws-copy-http-exec]")).toBeVisible();
+    await expect(wsRow.locator("[data-testid=ws-web-terminal]")).toBeVisible();
     await expect(wsRow.locator("[data-testid=ws-ssh-download]")).toHaveCount(0);
 
     // ==========================================

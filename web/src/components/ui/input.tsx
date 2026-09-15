@@ -2,6 +2,7 @@
 
 import { forwardRef, type InputHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
+import { fieldChromeClass } from "@/lib/field-chrome";
 import { useShape } from "@/lib/shape-context";
 import { useSize, type SizeVariant } from "@/lib/size-context";
 
@@ -30,16 +31,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           sizeClasses.text,
           sizeClasses.px,
           shape.input,
-          // Surface, border & typography
-          "border border-border bg-transparent text-foreground placeholder:text-muted-foreground",
-          "hover:bg-hover/30 hover:border-border/80",
-          // Focus ring hygiene: single-layer harmonious focus, zero border-ring desync
-          "focus-visible:outline-none focus-visible:border-[color:var(--focus-ring,#6B97FF)] focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]",
+          // Surface, border & typography — visible trough at rest (not only on focus)
+          fieldChromeClass,
+          "text-foreground placeholder:text-muted-foreground",
           // Error state
           error &&
             "border-destructive/50 hover:border-destructive/50 focus-visible:border-destructive focus-visible:ring-destructive/50",
           // Disabled state
-          "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-border",
+          "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-(--input-fill) disabled:hover:border-(--input-border)",
           // Micro-interaction timing
           "transition-all duration-80",
           className,

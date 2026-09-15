@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import { api, friendlyError } from "@/providers";
 import {
   classifyResizePreview,
@@ -42,9 +43,6 @@ type Props = {
   onSubmitted: (applied: boolean) => void;
   onError: (msg: string) => void;
 };
-
-const fieldControlClass =
-  "border-(--line-strong) bg-(--input-bg) shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]";
 
 function parseTarget(cpuCores: string, memGi: string, diskGi: string): PlanItem | null {
   const cpu = Number(cpuCores);
@@ -266,8 +264,15 @@ export function ResizeDialog({ ws, disabled, canApprove, onSubmitted, onError }:
       }}
     >
       <DialogTrigger asChild>
-        <Button type="button" variant="ghost" size="compact" data-testid="ws-resize" disabled={disabled} className="h-7 text-xs px-2">
-          {canApprove ? "升降配" : "申请扩容"}
+        <Button
+          type="button"
+          size="compact"
+          data-testid="ws-resize"
+          disabled={disabled}
+          className="inline-flex h-7 w-full items-center justify-center gap-1 whitespace-nowrap text-xs"
+        >
+          <SlidersHorizontal className="size-3.5 shrink-0" />
+          {canApprove ? "升配" : "扩容"}
         </Button>
       </DialogTrigger>
       <DialogContent size="lg" className="sm:max-w-lg">
@@ -289,14 +294,13 @@ export function ResizeDialog({ ws, disabled, canApprove, onSubmitted, onError }:
                   testId="ws-resize-plan"
                   value={selectedPlan}
                   onValueChange={fillFromPlan}
-                  className={`w-full ${fieldControlClass}`}
+                  className="w-full"
                   options={planOptions}
                 />
               </Field>
               <Field label="CPU（核）">
                 <Input
                   data-testid="ws-resize-cpu"
-                  className={fieldControlClass}
                   inputMode="decimal"
                   value={cpuCores}
                   onChange={(e) => onCustomCpu(e.target.value)}
@@ -305,7 +309,6 @@ export function ResizeDialog({ ws, disabled, canApprove, onSubmitted, onError }:
               <Field label="内存（GiB）">
                 <Input
                   data-testid="ws-resize-mem"
-                  className={fieldControlClass}
                   inputMode="decimal"
                   value={memGi}
                   onChange={(e) => onCustomMem(e.target.value)}
@@ -314,7 +317,6 @@ export function ResizeDialog({ ws, disabled, canApprove, onSubmitted, onError }:
               <Field label={`磁盘（GiB，不可小于 ${minDiskLabel}）`}>
                 <Input
                   data-testid="ws-resize-disk"
-                  className={fieldControlClass}
                   type="number"
                   inputMode="decimal"
                   min={minDiskLabel}

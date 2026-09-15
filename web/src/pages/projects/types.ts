@@ -83,3 +83,9 @@ export function isValidPurpose(raw: string, name = "", slug = ""): boolean {
 export function purposeMissing(purpose?: string): boolean {
   return !isValidPurpose(purpose ?? "");
 }
+
+/** True only after a project record exists and its purpose is missing or invalid. */
+export function purposeNeedsFill(project?: { purpose?: string } | null): boolean {
+  if (!project) return false;
+  return purposeMissing(project.purpose);
+}

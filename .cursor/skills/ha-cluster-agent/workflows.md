@@ -10,7 +10,7 @@
 
 ## 开通 2c2g（默认 Compose）
 
-**默认这条。** `GET /projects` → 若 `purpose` 为空先 `PATCH /projects/{id}` `{purpose}`（看到 `409 PURPOSE_REQUIRED` 就停）→ 若没有项目则 `POST /projects` `{name,slug,purpose}`（**name 须英文**如 `Office Snacks`，purpose 必填可中文）→ `POST /projects/{id}/workspaces` `{"name","plan":"2c2g","arch":"amd64","runtime":"container"}` → 若 `requested` 则 owner/admin `POST /workspaces/{id}/approve` → 轮询至 `running`。本机构建并推 CNB 后，机子里只 `docker pull` + `docker compose up`。
+**默认这条。** `GET /projects` → 若 `purpose` 为空先 `PATCH /projects/{id}` `{purpose}`（看到 `409 PURPOSE_REQUIRED` 就停）→ 若没有项目则 `POST /projects` `{name,slug,purpose}`（**name 须英文**如 `Office Snacks`，purpose 必填可中文）→ `GET /workspaces/availability?plan=2c2g&arch=amd64&runtime=container&project_id=`（`available=false` 不要 POST）→ `POST /projects/{id}/workspaces` `{"name","plan":"2c2g","arch":"amd64","runtime":"container"}` → 若 `requested` 则 owner/admin `POST /workspaces/{id}/approve` → 轮询至 `running`。本机构建并推 CNB 后，机子里只 `docker pull` + `docker compose up`。
 
 仅当用户明确要 Kubernetes：同样路径加 `"runtime":"k8s"`（节点须带 `k3s`/`k8s`/`both`，否则 409，error 会写明没有带标签的节点）。**审批与 Docker 相同**（developer 待审，owner/admin 直建）。等 running 后 `POST /workspaces/{id}/k8s/apply` `{yaml}`。缺 `resources.requests` 会 409 `conflict: …project-quota`，读 JSON 不要只报 Conflict。再 `GET …/k8s/status` 看副本/Pod；`warnings` 只表示当前代，旧 FailedCreate 在 `history`。k8s 工作区不要走 exec，也不要借 Docker 机当跳板。kubeconfig 若是 `https://k8s.invalid` 或 503 `K8S_UNAVAILABLE`，不要换字段重试。
 
@@ -22,7 +22,7 @@ viewer 不能申请。`409 INSUFFICIENT_CAPACITY` 先清闲置机器。
 
 ## 拉人 / 邀请
 
-`POST /projects/{id}/members` `{"username","role"}`（重复 409）。邀请按邮箱：`POST …/invitations`，`POST /invitations/accept` 必须邮箱匹配。转让：`POST …/transfer-ownership`。
+先 `GET /projects/{id}/member-candidates`（`?q=` 搜用户名/显示名）再 `POST /projects/{id}/members` `{"username","role"}`（重复 409）。邀请按邮箱：`POST …/invitations`，`POST /invitations/accept` 必须邮箱匹配。转让：`POST …/transfer-ownership`。
 
 ## 公共域
 

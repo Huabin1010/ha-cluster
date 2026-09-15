@@ -67,6 +67,26 @@ test.describe("PW-5 用户与团队", () => {
     await expect(page.getByTestId("users-reset-copy")).toBeVisible();
   });
 
+  test("PW5-26 @pw5 admin 按角色筛选", async ({ adminPage }) => {
+    await adminPage.goto("/users");
+    await chooseSelect(adminPage, "users-filter-role", "platform_admin");
+    const rows = adminPage.getByTestId("users-row");
+    await expect(rows.filter({ hasText: "admin" }).first()).toBeVisible();
+  });
+
+  test("PW5-27 @pw5 admin 禁用用户后无法登录", async ({ pageAs, freshUser }) => {
+    const created = await freshUser("banusr");
+    const { page } = await pageAs("admin");
+
+    await page.goto("/users");
+    await page.getByTestId("users-search").fill(created.username);
+    const row = page.getByTestId("users-row").filter({ hasText: created.username }).first();
+    await expect(row).toBeVisible();
+    await row.getByTestId("users-disable").click();
+    await confirmAlert(page);
+    await expect(row).toContainText("禁用");
+  });
+
   test("PW5-25 @pw5 admin 删除用户", async ({ pageAs, freshUser }) => {
     const created = await freshUser("delusr");
     const { page } = await pageAs("admin");

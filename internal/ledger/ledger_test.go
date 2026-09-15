@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -234,3 +235,48 @@ func TestReserveFallbackToSecondNode(t *testing.T) {
 	}
 }
 
+func TestProbeCountsFitsAndArch(t *testing.T) {
+	st := memory.New()
+	const Gi = int64(1024 * 1024 * 1024)
+	const Mi = int64(1024 * 1024)
+	seedNode(t, st, models.ArchAMD64, 2000, Gi, 20*Gi)
+	svc := Service{Store: st}
+	nano := models.Plans()["nano"]
+	ctx := context.Background()
+
+	got, err := svc.Probe(ctx, models.ArchAMD64, nano.CPUMilli, nano.MemBytes, nano.DiskBytes, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2000/500=4, 1Gi/256Mi=4, 20Gi/5Gi=4
+	if !got.Available || got.Fits != 4 || got.Nodes != 1 {
+		t.Fatalf("nano amd64: %+v", got)
+	}
+
+	miss, err := svc.Probe(ctx, models.ArchARM64, nano.CPUMilli, nano.MemBytes, nano.DiskBytes, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if miss.Available || miss.Fits != 0 || miss.Reason == "" {
+		t.Fatalf("arm64 should be empty: %+v", miss)
+	}
+
+	if _, err := svc.Reserve(ctx, ReserveRequest{ProjectID: uuid.New(), Plan: nano, Arch: models.ArchAMD64}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := svc.Probe(ctx, models.ArchAMD64, nano.CPUMilli, nano.MemBytes, nano.DiskBytes, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.Available || after.Fits != 3 {
+		t.Fatalf("after one nano: %+v", after)
+	}
+
+	k8s, err := svc.Probe(ctx, models.ArchAMD64, nano.CPUMilli, nano.MemBytes, nano.DiskBytes, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k8s.Available || !strings.Contains(k8s.Reason, "k3s") {
+		t.Fatalf("untagged node must not look k8s-ready: %+v", k8s)
+	}
+}

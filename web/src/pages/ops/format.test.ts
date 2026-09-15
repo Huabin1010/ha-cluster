@@ -5,6 +5,7 @@ import {
   auditActorLabel,
   auditChangeSummary,
   auditCopySnippet,
+  auditExecDetail,
   auditPreferredName,
   auditResourceExists,
   auditResourceHref,
@@ -19,6 +20,8 @@ import {
   fmtBytes,
   fmtCPU,
   fmtTime,
+  formatAuditExecOutput,
+  isSSHExecAction,
   recentLogsForResource,
   resourceLabel,
   resourceTypeLabel,
@@ -226,6 +229,26 @@ describe("audit change summary", () => {
     expect(auditChangeSummary("ssh.exec.deny", { command: "rm -rf /", error: "permission denied" })).toBe(
       "rm -rf / · 原因：permission denied",
     );
+  });
+
+  it("formats exec output for the result dialog", () => {
+    expect(isSSHExecAction("ssh.exec")).toBe(true);
+    expect(isSSHExecAction("user.login")).toBe(false);
+    const detail = auditExecDetail("ssh.exec", {
+      command: "uname -a",
+      stdout: "Linux box",
+      stderr: "warn",
+      exit_code: 0,
+    });
+    expect(detail.command).toBe("uname -a");
+    expect(formatAuditExecOutput(detail)).toContain("Linux box");
+    expect(formatAuditExecOutput(detail)).toContain("warn");
+    expect(formatAuditExecOutput(auditExecDetail("ssh.exec", { command: "ls" }))).toContain("当时未记录");
+    expect(
+      formatAuditExecOutput(
+        auditExecDetail("ssh.exec", { command: "ls", stdout: "a".repeat(10), stdout_truncated: true }),
+      ),
+    ).toContain("stdout 已截断");
   });
 });
 

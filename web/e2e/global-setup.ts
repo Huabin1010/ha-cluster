@@ -39,7 +39,7 @@ export default async function globalSetup() {
   try {
     await api.login("admin", adminPassword);
   } catch {
-    await api.register("admin", "admin@mnnumath.vip", adminPassword);
+    await api.register("admin", "admin@qzsyzn.com", adminPassword);
   }
 
   await Promise.all([

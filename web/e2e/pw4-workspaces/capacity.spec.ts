@@ -14,12 +14,9 @@ test.describe("PW-4 容量与超卖拦截", () => {
       await openCreateDialog(page, "ws-create");
       await chooseSelect(page, "ws-plan-select", "nano");
       await chooseSelect(page, "ws-arch-select", "amd64");
-      await page.getByTestId("ws-submit").click();
-
-      const err = page.getByTestId("ws-error");
-      await expect(err).toBeVisible();
-      await expect(err).toContainText("资源不足");
-      await expect(page.locator(".ws-insufficient")).toBeVisible();
+      const preview = page.getByTestId("ws-capacity-preview");
+      await expect(preview).toHaveAttribute("data-available", "false", { timeout: 15_000 });
+      await expect(page.getByTestId("ws-submit")).toBeDisabled();
     } finally {
       await destroyWorkspaces(tokens.token, ids);
     }
@@ -35,14 +32,11 @@ test.describe("PW-4 容量与超卖拦截", () => {
       await openCreateDialog(page, "ws-create");
       await chooseSelect(page, "ws-plan-select", "nano");
       await chooseSelect(page, "ws-arch-select", "arm64");
-      await page.getByTestId("ws-name-input").fill("fail-arm64");
-      await page.getByTestId("ws-submit").click();
-
-      const err = page.getByTestId("ws-error");
-      await expect(err).toBeVisible();
-      await expect(err).toContainText("资源不足");
+      const preview = page.getByTestId("ws-capacity-preview");
+      await expect(preview).toHaveAttribute("data-available", "false", { timeout: 15_000 });
 
       await chooseSelect(page, "ws-arch-select", "amd64");
+      await expect(preview).toHaveAttribute("data-available", "true", { timeout: 15_000 });
       await page.getByTestId("ws-name-input").fill("ok-amd64");
       await page.getByTestId("ws-submit").click();
 
@@ -67,11 +61,9 @@ test.describe("PW-4 容量与超卖拦截", () => {
       await openCreateDialog(page, "ws-create");
       await chooseSelect(page, "ws-plan-select", "nano");
       await chooseSelect(page, "ws-arch-select", "amd64");
-      await page.getByTestId("ws-submit").click();
-
-      const err = page.getByTestId("ws-error");
-      await expect(err).toBeVisible();
-      await expect(err).toContainText("资源不足");
+      const preview = page.getByTestId("ws-capacity-preview");
+      await expect(preview).toHaveAttribute("data-available", "false", { timeout: 15_000 });
+      await expect(page.getByTestId("ws-submit")).toBeDisabled();
     } finally {
       await destroyWorkspaces(tokens.token, ids);
     }

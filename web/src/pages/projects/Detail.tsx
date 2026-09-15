@@ -27,7 +27,7 @@ import {
 import { motion } from "framer-motion";
 import { api, friendlyError, type AuthUser } from "@/providers";
 import { copyText, formatBudget, formatBytes, formatCpuMilli, formatTime } from "./format";
-import { canManageProject, purposeMissing, type Project, type ProjectUsage } from "./types";
+import { canManageProject, purposeMissing, purposeNeedsFill, type Project, type ProjectUsage } from "./types";
 import { ProjectFormDialog } from "./FormDialog";
 import { ProjectDeleteDialog } from "./DeleteDialog";
 import { MemberList } from "@/pages/members/MemberList";
@@ -169,7 +169,7 @@ export function ProjectDetailPage() {
   const project = data?.data;
   const workspaces = (wsData?.data ?? []).filter((w) => w.status !== "destroyed");
   const runningWsCount = workspaces.filter((w) => w.status === "running").length;
-  const needsPurpose = purposeMissing(project?.purpose);
+  const needsPurpose = purposeNeedsFill(project);
   const canFillPurpose = canManageProject(project?.my_role, me?.platform_role, project?.owner_id, me?.id);
   const canApprove = canApproveRole(project?.my_role, me?.platform_role);
   const createWsLabel = canApprove ? "开通服务器" : "申请服务器";
@@ -189,12 +189,6 @@ export function ProjectDetailPage() {
   useEffect(() => {
     if (project?.id) writeCurrentProject(project.id);
   }, [project?.id]);
-
-  useEffect(() => {
-    if (!needsPurpose || !canFillPurpose) return;
-    setEditErr("");
-    setEditOpen(true);
-  }, [needsPurpose, canFillPurpose, project?.id]);
 
   useEffect(() => {
     if (!project) return;

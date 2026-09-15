@@ -1137,12 +1137,11 @@ const SidebarInput = forwardRef<HTMLInputElement, SidebarInputProps>(
         ref={ref}
         data-sidebar="input"
         className={cn(
-          // Mirrors the InputGroup field ladder: transparent at rest,
-          // muted fill + border ring on hover, card fill when focused.
-          "w-full bg-transparent px-3 text-foreground placeholder:text-muted-foreground outline-none",
-          "ring-1 ring-transparent transition-[background-color,box-shadow] duration-80",
-          "hover:bg-muted/50 hover:ring-border",
-          "focus:bg-card focus:ring-border",
+          // Visible trough at rest, matching Input.
+          "w-full bg-(--input-fill) px-3 text-foreground placeholder:text-muted-foreground outline-none",
+          "ring-1 ring-(--input-border) shadow-(--input-inset) transition-[background-color,box-shadow] duration-80",
+          "hover:bg-hover/30 hover:ring-(--input-border-hover)",
+          "focus:shadow-none focus:ring-[color:var(--focus-ring,#6B97FF)]",
           "focus-visible:ring-[color:var(--focus-ring,#6B97FF)]",
           size.variant === "compact" ? "h-7" : "h-8",
           size.text,

@@ -397,6 +397,9 @@ export function friendlyError(e: unknown): string {
     return capacityUserMessage(isInternalCopy(detail) ? "" : detail);
   }
   if (isApiError(e) && e.status === 401) {
+    if (/ACCOUNT_DISABLED/i.test(raw)) {
+      return "账号已禁用，无法登录";
+    }
     return "用户名或密码错误";
   }
   if (isApiError(e) && e.status === 403) {

@@ -17,6 +17,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import type { IconComponent } from "@/lib/icon-context";
 import { cn } from "@/lib/utils";
+import { fieldChromeRestClass } from "@/lib/field-chrome";
 import { spring, exitFallbackMs } from "@/lib/springs";
 import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hover";
 import { useShape, shapeMap } from "@/lib/shape-context";
@@ -233,13 +234,14 @@ const triggerVariants = cva(
     "group inline-flex items-center justify-between outline-none cursor-pointer",
     "transition-all duration-80",
     "disabled:opacity-50 disabled:pointer-events-none",
+    "focus-visible:border-[color:var(--focus-ring,#6B97FF)]",
     "focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]",
+    "focus-visible:shadow-none",
   ],
   {
     variants: {
       variant: {
-        bordered:
-          "border border-border bg-transparent text-foreground hover:bg-hover",
+        bordered: `${fieldChromeRestClass} text-foreground`,
         borderless:
           "border border-transparent bg-transparent text-foreground hover:bg-hover",
       },
@@ -347,10 +349,11 @@ SelectTrigger.displayName = "SelectTrigger";
 interface SelectContentProps {
   className?: string;
   children: ReactNode;
+  align?: "start" | "center" | "end";
 }
 
 const SelectContent = forwardRef<HTMLDivElement, SelectContentProps>(
-  ({ className, children }, ref) => {
+  ({ className, children, align = "start" }, ref) => {
     const { open, value, unmount } = useSelectContext();
     const shape = popupShape;
     const containerRef = useRef<HTMLDivElement>(null);
@@ -461,12 +464,13 @@ const SelectContent = forwardRef<HTMLDivElement, SelectContentProps>(
     // the closed trigger, native <select> options, and the ItemText → Value
     // label portal all depend on it).
     return (
-      <SelectPrimitive.Portal>
+      <SelectPrimitive.Portal container={typeof document !== "undefined" ? document.body : undefined}>
         <SelectPrimitive.Content
           position="popper"
           side="bottom"
-          align="start"
+          align={align}
           sideOffset={6}
+          collisionPadding={8}
           className={popupLayerClass}
           style={{ zIndex: popupLayerZ }}
         >
@@ -530,8 +534,9 @@ const SelectContent = forwardRef<HTMLDivElement, SelectContentProps>(
                   }}
                   className={cn(
                     // min-w tracks the trigger via Radix's popper-provided
-                    // vars.
-                    `flex flex-col min-w-[var(--radix-select-trigger-width)] max-h-[min(300px,var(--radix-select-content-available-height))] overflow-hidden ${shape.container} select-none outline-none`,
+                    // vars. w-max lets labels define width so a squeezed
+                    // trigger (e.g. dialog edge) does not clip the menu.
+                    `flex flex-col min-w-[var(--radix-select-trigger-width)] w-max max-w-[min(24rem,calc(100vw-2rem))] max-h-[min(300px,var(--radix-select-content-available-height))] overflow-hidden ${shape.container} select-none outline-none`,
                     className
                   )}
                 >
@@ -713,7 +718,7 @@ const SelectItem = forwardRef<HTMLDivElement, SelectItemProps>(
             rendered — the animated checkmark below keys off our context. */}
         {/* py-1/-my-1 keeps truncate's overflow:hidden from clipping
             ascenders/descenders outside the trimmed box. */}
-        <span className="flex-1 min-w-0 truncate [text-box:trim-both_cap_alphabetic] py-1 -my-1">
+        <span className="flex-1 min-w-0 whitespace-nowrap [text-box:trim-both_cap_alphabetic] py-1 -my-1">
           <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
         </span>
 
@@ -847,6 +852,7 @@ export function SelectBox({
   className,
   testId,
   size,
+  align,
   "aria-label": ariaLabel,
 }: {
   value?: string;
@@ -857,6 +863,7 @@ export function SelectBox({
   className?: string;
   testId?: string;
   size?: SizeVariant;
+  align?: "start" | "center" | "end";
   "aria-label"?: string;
 }) {
   const selected = options.find((opt) => opt.value === value);
@@ -874,7 +881,7 @@ export function SelectBox({
         aria-label={ariaLabel}
         icon={selected?.icon}
       />
-      <SelectContent>
+      <SelectContent align={align}>
         {options.map((opt, idx) => (
           <SelectItem key={opt.value} value={opt.value} index={idx} icon={opt.icon}>
             {opt.label}

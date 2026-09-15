@@ -35,6 +35,8 @@ POST /projects                         → name 必须英文；purpose 可中文
   {"name":"Office Snacks","slug":"office-snacks","purpose":"办公室零食柜与内部协作"}
 PATCH /projects/{id}                   → 仅当旧项目 purpose 为空：{"purpose":"一句话用途"}；看到 409 PURPOSE_REQUIRED 就停。变量名用 $proj，禁止 $pid
 GET /projects/{id}/members             → 看自己的 role / ssh_access
+GET /workspaces/availability           → ?plan=2c2g&arch=amd64&runtime=container&project_id=
+                                         available=false 时不要 POST；换套餐/架构或先腾容量
 POST /projects/{id}/workspaces
   {"name":"dev-1","plan":"2c2g","arch":"amd64","visibility":"shared","runtime":"container"}
 ```
@@ -51,7 +53,7 @@ POST /projects/{id}/workspaces
   `POST /workspaces/{id}/approve`（Docker 与 Kubernetes 相同）
 - viewer：403，停止。
 
-容量不够：`409 INSUFFICIENT_CAPACITY`。先让用户停/销毁闲置机器，或换小套餐。
+容量不够：开通前 `GET /workspaces/availability` 会 `available=false`；若仍 POST 则 `409 INSUFFICIENT_CAPACITY`。先让用户停/销毁闲置机器，或换小套餐。
 
 ## 2. 停 / 启
 
@@ -146,6 +148,7 @@ config 里 `Host ha-<8位>-et` 走 EasyTier 虚网（`10.129.129.253`），不�
 ## 4. 拉人 / 邀请 / 转让
 
 ```
+GET /projects/{pid}/member-candidates         → 可加入的用户（admin+；?q= 搜索）
 POST /projects/{pid}/members
   {"username":"alice","role":"developer"}     → 201；已存在 409
 

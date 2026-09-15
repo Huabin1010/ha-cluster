@@ -208,8 +208,11 @@ func (a *App) RefreshAccess(ctx context.Context, refresh, fingerprint string) (a
 		return "", "", nil, store.ErrUnauthorized
 	}
 	u, err = a.Store.GetUserByID(ctx, sess.UserID)
-	if err != nil || u.Status != models.UserActive {
+	if err != nil {
 		return "", "", nil, store.ErrUnauthorized
+	}
+	if u.Status != models.UserActive {
+		return "", "", nil, store.ErrAccountDisabled
 	}
 	_ = a.Store.DeleteRefresh(ctx, hash)
 	access, err = auth.SignAccess(a.JWT, u.ID, u.Username, u.PlatformRole, u.TokenVersion, a.AccessTTL)

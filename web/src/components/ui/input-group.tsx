@@ -142,20 +142,20 @@ const InputField = forwardRef<HTMLDivElement, InputFieldProps>(
     let ringClass: string;
 
     if (disabled) {
-      bgClass = "bg-transparent";
-      ringClass = "ring-border";
+      bgClass = "bg-(--input-fill)";
+      ringClass = "ring-(--input-border)";
     } else if (error) {
-      bgClass = isFocused ? "bg-card" : isActive ? "bg-destructive-light/60" : "bg-transparent";
-      ringClass = isFocused || isActive ? "ring-destructive/50" : "ring-transparent";
+      bgClass = "bg-(--input-fill)";
+      ringClass = isFocused || isActive ? "ring-destructive/50" : "ring-destructive/40";
     } else if (isFocused) {
-      bgClass = "bg-card";
-      ringClass = "ring-border";
+      bgClass = "bg-(--input-fill)";
+      ringClass = "ring-[color:var(--focus-ring,#6B97FF)]";
     } else if (isActive) {
       bgClass = "bg-muted/50";
-      ringClass = "ring-border";
+      ringClass = "ring-(--input-border-hover)";
     } else {
-      bgClass = "bg-transparent";
-      ringClass = "ring-transparent";
+      bgClass = "bg-(--input-fill)";
+      ringClass = "ring-(--input-border)";
     }
 
     return (
@@ -182,8 +182,7 @@ const InputField = forwardRef<HTMLDivElement, InputFieldProps>(
           className={cn(
             labelHidden ? "sr-only" : "inline-grid",
             sizeClasses.text,
-            // One notch tighter than the ladder's control padding — the field
-            // ring is invisible at rest, so the roomier inset reads as a gap.
+            // One notch tighter than the ladder's control padding.
             !labelHidden && (compact ? "pl-2" : "pl-2.5")
           )}
         >
@@ -223,6 +222,7 @@ const InputField = forwardRef<HTMLDivElement, InputFieldProps>(
             `flex items-center ${sizeClasses.gap} ${shape.input} ${
               compact ? "px-2" : "px-2.5"
             } ${sizeClasses.control} ring-1 transition-all duration-80`,
+            isFocused ? "shadow-none" : "shadow-(--input-inset)",
             bgClass,
             ringClass
           )}

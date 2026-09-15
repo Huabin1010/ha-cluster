@@ -20,6 +20,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { useIcon, type IconComponent } from "@/lib/icon-context";
 import { cn } from "@/lib/utils";
+import { fieldChromeClass } from "@/lib/field-chrome";
 import { spring, exitFallbackMs } from "@/lib/springs";
 import { useFluidHover, useRegisterFluidHoverItem } from "@/hooks/use-fluid-hover";
 import {
@@ -237,7 +238,10 @@ function SimpleCombobox({
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
+    return options.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
+    );
   }, [options, search]);
 
   useEffect(() => {
@@ -251,7 +255,7 @@ function SimpleCombobox({
   }, [open]);
 
   return (
-    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+    <PopoverPrimitive.Root modal open={open} onOpenChange={setOpen}>
       <PopoverPrimitive.Trigger asChild>
         <button
           type="button"
@@ -262,10 +266,11 @@ function SimpleCombobox({
           data-value={value}
           disabled={disabled}
           className={cn(
-            "flex h-9 w-full items-center justify-between gap-2 border border-border bg-transparent px-3 py-2 text-sm text-foreground outline-none transition-all duration-80 hover:bg-hover",
+            "flex h-9 w-full items-center justify-between gap-2 px-3 py-2 text-sm text-foreground outline-none transition-all duration-80",
+            fieldChromeClass,
             shape.input,
             "focus-visible:outline-none focus-visible:border-[color:var(--focus-ring,#6B97FF)] focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]",
-            open && "border-[color:var(--focus-ring,#6B97FF)] ring-1 ring-[color:var(--focus-ring,#6B97FF)]",
+            open && "border-[color:var(--focus-ring,#6B97FF)] ring-1 ring-[color:var(--focus-ring,#6B97FF)] shadow-none",
             "disabled:cursor-not-allowed disabled:opacity-50",
             className,
           )}
@@ -301,8 +306,10 @@ function SimpleCombobox({
         <PopoverPrimitive.Content
           align="start"
           sideOffset={4}
+          style={{ zIndex: popupLayerZ }}
           className={cn(
-            "z-[200] min-w-[12rem] rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none",
+            popupLayerClass,
+            "min-w-[12rem] rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none",
             "w-[var(--radix-popover-trigger-width)] max-w-[min(280px,calc(100vw-2rem))] p-0",
             contentClassName,
           )}
@@ -328,6 +335,7 @@ function SimpleCombobox({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={searchPlaceholder}
+              data-testid={testId ? `${testId}-search` : undefined}
               className="flex h-7 w-full rounded-none bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
             {search && (
@@ -354,7 +362,7 @@ function SimpleCombobox({
               </button>
             )}
           </div>
-          <div className="max-h-60 overflow-y-auto p-1 [scrollbar-width:thin]">
+          <div className="max-h-60 overflow-y-auto p-1 [scrollbar-width:thin]" role="listbox">
             {filteredOptions.length === 0 ? (
               <div className="py-4 text-center text-xs text-muted-foreground">
                 {emptyText}
@@ -366,6 +374,8 @@ function SimpleCombobox({
                   <button
                     key={o.value}
                     type="button"
+                    role="option"
+                    aria-selected={isSelected}
                     data-value={o.value}
                     onClick={() => {
                       onValueChange?.(o.value);
@@ -373,8 +383,8 @@ function SimpleCombobox({
                       setSearch("");
                     }}
                     className={cn(
-                      "relative flex w-full cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground select-none",
-                      isSelected && "bg-accent/60 font-medium text-accent-foreground",
+                      "relative flex w-full cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm text-foreground outline-none transition-colors hover:bg-selected select-none",
+                      isSelected && "bg-selected font-medium text-foreground",
                     )}
                   >
                     <span className="truncate pr-2 text-left" title={o.label}>
@@ -698,7 +708,7 @@ const fieldVariants = cva(
         // Framed at rest; the fills step up on hover and focus like an
         // input field.
         bordered:
-          "ring-border bg-transparent hover:bg-muted/50 focus-within:bg-card",
+          "ring-(--input-border) bg-(--input-fill) shadow-(--input-inset) hover:bg-hover/30 hover:ring-(--input-border-hover) focus-within:shadow-none focus-within:ring-[color:var(--focus-ring,#6B97FF)]",
         // Invisible at rest — the InputGroup field ladder: muted fill +
         // ring on hover, card fill when focused.
         borderless:

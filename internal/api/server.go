@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -137,6 +138,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Get("/projects/{id}", s.getProject)
 		r.Get("/projects/{id}/usage", s.projectUsage)
 		r.Get("/projects/{id}/members", s.listMembers)
+		r.Get("/projects/{id}/member-candidates", s.listMemberCandidates)
 		r.Post("/projects/{id}/members", s.addMember)
 		r.Delete("/projects/{id}/members/{uid}", s.removeMember)
 		r.Put("/projects/{id}/members/{uid}", s.patchMember)
@@ -176,6 +178,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Patch("/users/{id}", s.patchUser)
 		r.Delete("/users/{id}", s.deleteUser)
 
+		r.Get("/workspaces/availability", s.workspaceAvailability)
 		r.Get("/workspaces", s.listWorkspaces)
 		r.Get("/workspaces/{id}", s.getWorkspace)
 		r.Post("/workspaces/{id}/stop", s.stopWorkspace)
@@ -378,6 +381,10 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 		code = http.StatusForbidden
 	} else if errors.Is(err, store.ErrUnauthorized) {
 		code = http.StatusUnauthorized
+	} else if errors.Is(err, store.ErrAccountDisabled) {
+		code = http.StatusUnauthorized
+		msg = "ACCOUNT_DISABLED"
+		hint = "账号已被禁用，无法登录或继续操作。"
 	} else if errors.Is(err, store.ErrPurposeRequired) {
 		code = http.StatusConflict
 		msg = "PURPOSE_REQUIRED"
@@ -664,6 +671,72 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
 	listEnvelope(w, ms, len(ms))
 }
 
+type memberCandidate struct {
+	ID          uuid.UUID `json:"id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+}
+
+func matchMemberCandidate(u models.User, q string) bool {
+	if q == "" {
+		return true
+	}
+	ql := strings.ToLower(q)
+	return strings.Contains(strings.ToLower(u.Username), ql) ||
+		strings.Contains(strings.ToLower(u.DisplayName), ql)
+}
+
+func (s *Server) listMemberCandidates(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	if _, err := s.App.RequireProjectReady(r.Context(), *userFrom(r), id, models.RoleAdmin); err != nil {
+		writeErr(w, http.StatusForbidden, err)
+		return
+	}
+	users, err := s.App.Store.ListUsers(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	members, err := s.App.Store.ListMemberships(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	inProject := make(map[uuid.UUID]struct{}, len(members))
+	for _, m := range members {
+		inProject[m.UserID] = struct{}{}
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	out := make([]memberCandidate, 0)
+	for _, u := range users {
+		if u.Status != models.UserActive {
+			continue
+		}
+		if _, ok := inProject[u.ID]; ok {
+			continue
+		}
+		if !matchMemberCandidate(u, q) {
+			continue
+		}
+		out = append(out, memberCandidate{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Username == out[j].Username {
+			return out[i].DisplayName < out[j].DisplayName
+		}
+		return strings.ToLower(out[i].Username) < strings.ToLower(out[j].Username)
+	})
+	const memberCandidateLimit = 200
+	if len(out) > memberCandidateLimit {
+		out = out[:memberCandidateLimit]
+	}
+	listEnvelope(w, out, len(out))
+}
+
 func (s *Server) addMember(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -747,6 +820,27 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) workspaceAvailability(w http.ResponseWriter, r *http.Request) {
+	plan := strings.TrimSpace(r.URL.Query().Get("plan"))
+	arch := strings.TrimSpace(r.URL.Query().Get("arch"))
+	runtime := strings.TrimSpace(r.URL.Query().Get("runtime"))
+	var pid uuid.UUID
+	if q := strings.TrimSpace(r.URL.Query().Get("project_id")); q != "" {
+		id, err := uuid.Parse(q)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+			return
+		}
+		pid = id
+	}
+	out, err := s.App.WorkspaceAvailability(r.Context(), *userFrom(r), pid, plan, arch, runtime)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {

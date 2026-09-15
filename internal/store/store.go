@@ -16,13 +16,14 @@ var (
 	ErrConflict        = errors.New("conflict")
 	ErrNoCapacity      = errors.New("insufficient capacity")
 	ErrUnauthorized    = errors.New("unauthorized")
+	ErrAccountDisabled = errors.New("ACCOUNT_DISABLED")
 	ErrForbidden       = errors.New("forbidden")
 	ErrInvalidInput    = errors.New("invalid input")
 	ErrAlreadyReleased = errors.New("already released")
 	ErrDiskShrink      = errors.New("DISK_SHRINK_NOT_SUPPORTED")
 	ErrNotExpansion    = errors.New("ONLY_EXPANSION")
-	ErrSecondPort       = errors.New("SECOND_PORT_CONFIRM_REQUIRED")
-	ErrPurposeRequired  = errors.New("PURPOSE_REQUIRED")
+	ErrSecondPort      = errors.New("SECOND_PORT_CONFIRM_REQUIRED")
+	ErrPurposeRequired = errors.New("PURPOSE_REQUIRED")
 )
 
 // Wrap attaches a human/agent-readable reason to a sentinel so HTTP error
@@ -39,6 +40,25 @@ func Wrap(sentinel error, reason string) error {
 		return sentinel
 	}
 	return fmt.Errorf("%w: %s", sentinel, reason)
+}
+
+// Reason returns the human-readable suffix attached by Wrap, or empty if the
+// error is a bare sentinel.
+func Reason(err, sentinel error) string {
+	if err == nil {
+		return ""
+	}
+	full := strings.TrimSpace(err.Error())
+	if sentinel == nil {
+		return full
+	}
+	base := sentinel.Error()
+	if full == "" || full == base {
+		return ""
+	}
+	full = strings.TrimPrefix(full, base+": ")
+	full = strings.TrimPrefix(full, base+":")
+	return strings.TrimSpace(full)
 }
 
 type Store interface {

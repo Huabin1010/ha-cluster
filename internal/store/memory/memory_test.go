@@ -68,6 +68,26 @@ func TestDuplicateUser(t *testing.T) {
 	}
 }
 
+func TestUpdateUserEmailIndex(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	u := &models.User{ID: uuid.New(), Username: "admin", Email: "admin@mnnumath.vip"}
+	if err := s.CreateUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	u.Email = "admin@qzsyzn.com"
+	if err := s.UpdateUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetUserByEmail(ctx, "admin@qzsyzn.com")
+	if err != nil || got.ID != u.ID {
+		t.Fatalf("new email: %+v err=%v", got, err)
+	}
+	if _, err := s.GetUserByEmail(ctx, "admin@mnnumath.vip"); err != store.ErrNotFound {
+		t.Fatalf("old email still indexed: %v", err)
+	}
+}
+
 func TestUpsertNodePreservesUsedCapacity(t *testing.T) {
 	ctx := context.Background()
 	s := New()

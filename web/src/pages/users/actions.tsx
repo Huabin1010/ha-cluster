@@ -53,7 +53,7 @@ export type PlatformUser = {
 
 export type Project = { id: string; name: string; slug: string };
 
-export type ActionKind = "configure" | "reset" | "delete" | "add";
+export type ActionKind = "configure" | "reset" | "delete" | "add" | "suspend";
 
 export function UserRowActions({
   user,
@@ -65,6 +65,7 @@ export function UserRowActions({
   onAction: (kind: Exclude<ActionKind, "add">, user: PlatformUser) => void;
 }) {
   const selfHint = "不能操作当前登录账号";
+  const suspended = user.status === "suspended";
 
   return (
     <div className="inline-flex items-center justify-end gap-1 whitespace-nowrap shrink-0">
@@ -80,6 +81,21 @@ export function UserRowActions({
               onClick={() => onAction("configure", user)}
             >
               <Settings2 className="size-3.5 shrink-0" />
+            </Button>
+          </span>
+        </Hint>
+        <Hint label={isSelf ? selfHint : suspended ? "恢复账号" : "禁用账号"}>
+          <span className="inline-flex">
+            <Button
+              type="button"
+              variant={suspended ? "outline" : "destructive"}
+              size="compact"
+              data-testid="users-disable"
+              disabled={isSelf}
+              className="size-7 p-0 shrink-0"
+              onClick={() => onAction("suspend", user)}
+            >
+              {suspended ? <CheckCircle2 className="size-3.5 shrink-0" /> : <Ban className="size-3.5 shrink-0" />}
             </Button>
           </span>
         </Hint>
@@ -154,6 +170,13 @@ export function UserActionDialogs({
           if (!v) onActionChange(null);
         }}
       />
+      <SuspendUserDialog
+        user={action === "suspend" ? user : null}
+        onOpenChange={(v) => {
+          if (!v) onActionChange(null);
+        }}
+        onChanged={onChanged}
+      />
       <DeleteUserDialog
         user={action === "delete" ? user : null}
         onOpenChange={(v) => {
@@ -217,7 +240,7 @@ function ConfigureUserDialog({
     setErr("");
     try {
       await api(`/users/${user.id}/${suspend ? "suspend" : "unsuspend"}`, { method: "POST", body: "{}" });
-      toast.success(suspend ? `已停用 ${user.username}` : `已恢复 ${user.username}`);
+      toast.success(suspend ? `已禁用 ${user.username}，现有登录立即失效` : `已恢复 ${user.username}`);
       onChanged();
     } catch (e) {
       setErr(friendlyError(e));
@@ -237,7 +260,7 @@ function ConfigureUserDialog({
             配置账号
           </DialogTitle>
           <DialogDescription className="break-words min-w-0">
-            调整姓名、平台角色，或停用/恢复账号。把用户加入项目不会新建账号。
+            调整姓名、平台角色，或禁用/恢复账号。把用户加入项目不会新建账号。
           </DialogDescription>
         </DialogHeader>
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={saveConfig} data-testid="users-configure-form">
@@ -293,7 +316,7 @@ function ConfigureUserDialog({
                   onClick={() => void toggleStatus()}
                 >
                   {suspended ? <CheckCircle2 className="size-3.5 shrink-0" /> : <Ban className="size-3.5 shrink-0" />}
-                  {statusBusy ? "处理中…" : suspended ? "恢复账号" : "停用账号"}
+                  {statusBusy ? "处理中…" : suspended ? "恢复账号" : "禁用账号"}
                 </Button>
               </div>
             </Field>
@@ -560,6 +583,69 @@ function ResetPasswordDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SuspendUserDialog({
+  user,
+  onOpenChange,
+  onChanged,
+}: {
+  user: PlatformUser | null;
+  onOpenChange: (open: boolean) => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const suspended = user?.status === "suspended";
+
+  async function confirm() {
+    if (!user) return;
+    setBusy(true);
+    try {
+      await api(`/users/${user.id}/${suspended ? "unsuspend" : "suspend"}`, { method: "POST", body: "{}" });
+      toast.success(
+        suspended
+          ? `已恢复 ${user.username}`
+          : `已禁用 ${user.username}，现有登录立即失效`,
+      );
+      onOpenChange(false);
+      onChanged();
+    } catch (e) {
+      toast.error(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AlertDialog open={!!user} onOpenChange={onOpenChange}>
+      <AlertDialogContent data-testid="users-disable-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{suspended ? "恢复账号" : "禁用账号"}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <AlertDialogBody>
+          <AlertDialogDescription className="break-words min-w-0">
+            {suspended
+              ? `恢复「${user?.username}」后，该账号可以重新登录并操作。`
+              : `禁用「${user?.username}」后立即无法登录，已登录会话、SSH 与 Agent 操作都会失效。`}
+          </AlertDialogDescription>
+        </AlertDialogBody>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="confirm-cancel">取消</AlertDialogCancel>
+          <AlertDialogAction
+            variant={suspended ? "primary" : "destructive"}
+            data-testid="confirm-ok"
+            loading={busy}
+            onClick={(e) => {
+              e.preventDefault();
+              void confirm();
+            }}
+          >
+            {suspended ? "恢复" : "立即禁用"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

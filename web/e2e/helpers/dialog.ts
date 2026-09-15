@@ -10,6 +10,14 @@ export async function chooseSelect(page: Page, testId: string, value: string) {
   await page.locator(`[role="option"][data-value="${value}"]`).click();
 }
 
+export async function chooseCombobox(page: Page, testId: string, value: string) {
+  await page.getByTestId(testId).click();
+  const search = page.getByTestId(`${testId}-search`);
+  await expect(search).toBeVisible();
+  await search.fill(value);
+  await page.locator(`[role="option"][data-value="${value}"]`).click();
+}
+
 export async function confirmAlert(page: Page, accept = true) {
   const dlg = page.getByRole("alertdialog");
   await expect(dlg).toBeVisible();

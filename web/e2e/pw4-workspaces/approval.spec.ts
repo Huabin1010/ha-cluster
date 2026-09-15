@@ -30,12 +30,10 @@ test.describe("PW-4 服务器申请与审批", () => {
     await expect(ownerRow).toHaveAttribute("data-status", "running");
     await expectToast(ownerPage, "已批准");
 
-    await expect(ownerRow.getByTestId("ws-copy-http-exec")).toBeVisible();
     await expect(ownerRow.getByTestId("ws-web-terminal")).toBeVisible();
 
     await devPage.reload();
     await expect(devRow).toHaveAttribute("data-status", "running");
-    await expect(devRow.getByTestId("ws-copy-http-exec")).toBeVisible();
     await expect(devRow.getByTestId("ws-web-terminal")).toBeVisible();
   });
 });

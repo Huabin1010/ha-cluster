@@ -214,6 +214,6 @@ test.describe("PW-4 Workspace 生命周期", () => {
     await expect(row).toContainText("网络降级");
     await expect(row.getByTestId("ws-start")).toBeVisible();
     await expect(row.getByTestId("ws-stop")).toBeVisible();
-    await expect(row.getByTestId("ws-copy-http-exec")).toBeVisible();
+    await expect(row.getByTestId("ws-web-terminal")).toBeVisible();
   });
 });

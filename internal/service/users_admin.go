@@ -89,7 +89,7 @@ func (a *App) SuspendUser(ctx context.Context, actor models.User, target uuid.UU
 	if err := a.refuseLastAdmin(ctx, *u); err != nil {
 		return err
 	}
-	if err := refuseSelf(actor, *u, "停用"); err != nil {
+	if err := refuseSelf(actor, *u, "禁用"); err != nil {
 		return err
 	}
 	if u.Status == models.UserSuspended {
