@@ -74,8 +74,9 @@ export function AuditExecCommandButton({ command, onOpen }: { command: string; o
   return (
     <Tooltip
       side="top"
+      tone="surface"
       contentClassName={popupLayerClass}
-      className="max-h-48 max-w-md overflow-auto p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap break-all wrap-anywhere text-foreground"
+      className="max-h-48 max-w-md overflow-auto p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap break-all wrap-anywhere"
       content={command}
     >
       <button

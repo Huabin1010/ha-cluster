@@ -513,6 +513,12 @@ func ProvisioningLive(status string) bool {
 	return status == WSProvisioning
 }
 
+// DestroyReviewInFlight is true after destroy was requested and before
+// platform 终审 actually destroys (or rejects) the instance.
+func DestroyReviewInFlight(status string) bool {
+	return status == WSDestroyRequested || status == WSDestroyPendingPlatform
+}
+
 // WorkspaceClosed is true once start/stop must not rewrite status
 // (destroy review in flight, destroy executing, or already gone).
 // SSH/exec still use WorkspaceConnectable: pending review does not take

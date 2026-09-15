@@ -83,6 +83,9 @@ function TooltipProvider({
 
 type TooltipSide = "top" | "right" | "bottom" | "left";
 
+/** invert: short label chip (dark-mode white). surface: multi-line hover card. */
+type TooltipTone = "invert" | "surface";
+
 interface TooltipProps {
   content: ReactNode;
   children: React.ReactElement;
@@ -92,6 +95,9 @@ interface TooltipProps {
    *  ambient TooltipProvider's delayDuration when one is present. */
   delayDuration?: number;
   className?: string;
+  /** invert is the one-line chip. surface skips inverted colors and
+   *  text-box trim so rich hover cards stay readable in dark mode. */
+  tone?: TooltipTone;
   /** Extra classes for the portalled content element — Radix copies its
    *  z-index onto the popper wrapper, so pass a z utility here to lift the
    *  whole tooltip above other fixed layers (default z-50). */
@@ -134,6 +140,7 @@ function Tooltip({
   sideOffset = 8,
   delayDuration,
   className,
+  tone = "invert",
   contentClassName,
   forceOpen,
   onOpenChange: onOpenChangeProp,
@@ -213,15 +220,7 @@ function Tooltip({
               }
             >
               <motion.div
-                className={cn(
-                  // Trim recenters the label; the padding bump only applies
-                  // where text-box is supported, keeping the same overall
-                  // height (~26px) as untrimmed browsers.
-                  "bg-foreground text-background text-[12px] px-2 py-1",
-                  "[text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both]:py-2",
-                  shape.bg,
-                  className
-                )}
+                className={tooltipPanelClass(tone, shape.bg, className)}
                 style={{ fontVariationSettings: fontWeights.medium }}
                 initial={{ opacity: 0, ...slideOffset }}
                 animate={{
@@ -254,8 +253,30 @@ function Tooltip({
   );
 }
 
-export { Tooltip, TooltipPortalContainer, TooltipProvider };
-export type { TooltipProps, TooltipProviderProps, TooltipSide };
+function tooltipPanelClass(tone: TooltipTone, shapeBg: string, className?: string) {
+  if (tone === "surface") {
+    // Do not start from invert + trim and try to override: dark-mode
+    // bg-foreground is near-white, and text-box:trim-both clips multi-line
+    // cards into an empty bar over the trigger.
+    return cn(
+      "bg-surface-2 text-foreground text-[12px] px-3 py-2.5 border border-border/80 shadow-surface-4",
+      shapeBg,
+      className,
+    );
+  }
+  return cn(
+    // Trim recenters the label; the padding bump only applies
+    // where text-box is supported, keeping the same overall
+    // height (~26px) as untrimmed browsers.
+    "bg-foreground text-background text-[12px] px-2 py-1",
+    "[text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both]:py-2",
+    shapeBg,
+    className,
+  );
+}
+
+export { Tooltip, TooltipPortalContainer, TooltipProvider, tooltipPanelClass };
+export type { TooltipProps, TooltipProviderProps, TooltipSide, TooltipTone };
 
 
 

@@ -33,9 +33,6 @@ export type AuditHoverProject = {
   slug?: string;
 };
 
-const cardClass =
-  "max-w-[300px] bg-surface-2 text-foreground border border-border/80 shadow-surface-4 px-3 py-2.5 [text-box:initial] supports-[text-box:trim-both]:py-2.5";
-
 function AuditHoverTip({
   testId,
   children,
@@ -48,8 +45,9 @@ function AuditHoverTip({
   return (
     <Tooltip
       side="top"
+      tone="surface"
       contentClassName={popupLayerClass}
-      className={cardClass}
+      className="max-w-[300px]"
       content={<div data-testid={testId}>{content}</div>}
     >
       {children}

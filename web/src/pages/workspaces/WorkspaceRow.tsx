@@ -93,7 +93,10 @@ export function WorkspaceRow({
     displayStatus !== "destroying" &&
     (ws.status === "stopped" || ws.status === "fabric_degraded" || ws.status === "suspended");
   const canStop =
-    displayStatus !== "destroying" && (ws.status === "running" || ws.status === "fabric_degraded");
+    !destroyPending &&
+    pendingAction !== "destroy" &&
+    displayStatus !== "destroying" &&
+    (ws.status === "running" || ws.status === "fabric_degraded");
   const canRequestDestroy =
     !destroyPending &&
     ws.status !== "destroyed" &&

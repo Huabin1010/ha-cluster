@@ -693,7 +693,7 @@ func TestDangerousDestroyQueueAndReject(t *testing.T) {
 	if _, _, err := app.SSHTarget(ctx, *plat, ws.ID); err != nil {
 		t.Fatalf("pending destroy should still allow ssh: %v", err)
 	}
-	if err := app.StopWorkspace(ctx, *plat, ws.ID); !errors.Is(err, store.ErrInvalidInput) {
+	if err := app.StopWorkspace(ctx, *plat, ws.ID); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("stop during pending destroy should stay blocked: %v", err)
 	}
 	if err := app.RejectDestroyPlatform(ctx, *dev, ws.ID, ""); !errors.Is(err, store.ErrForbidden) {
@@ -709,6 +709,53 @@ func TestDangerousDestroyQueueAndReject(t *testing.T) {
 	items, err = app.ListDangerousDestroyPending(ctx, *plat)
 	if err != nil || len(items) != 0 {
 		t.Fatalf("queue should be empty: %v %#v", err, items)
+	}
+}
+
+func TestRequestDestroyRestartsStoppedGuestAndBlocksStop(t *testing.T) {
+	app, plat := setupApp(t)
+	ctx := context.Background()
+	owner, err := app.Register(ctx, "stopown", "stopown@example.com", "password1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := app.CreateProject(ctx, owner.ID, "Keep Alive", "keep-alive", "test purpose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := app.CreateWorkspace(ctx, CreateWorkspaceInput{
+		ProjectID: p.ID, Name: "blog-1", Plan: "nano", Arch: models.ArchAMD64, Actor: *owner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.StopWorkspace(ctx, *owner, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	inst, ok := app.Runtime.Get(ctx, ws.ID)
+	if !ok || inst.Running {
+		t.Fatalf("want stopped guest, ok=%v running=%v", ok, inst.Running)
+	}
+	if err := app.RequestDestroyWorkspace(ctx, *owner, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := app.Store.GetWorkspace(ctx, ws.ID)
+	if got.Status != models.WSDestroyPendingPlatform {
+		t.Fatalf("want destroy_pending_platform, got %s", got.Status)
+	}
+	inst, ok = app.Runtime.Get(ctx, ws.ID)
+	if !ok || !inst.Running {
+		t.Fatalf("destroy review must start guest, ok=%v running=%v", ok, inst.Running)
+	}
+	if err := app.StopWorkspace(ctx, *owner, ws.ID); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("stop during pending destroy: %v", err)
+	}
+	if err := app.StopWorkspace(ctx, *plat, ws.ID); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("platform stop during pending destroy: %v", err)
+	}
+	inst, ok = app.Runtime.Get(ctx, ws.ID)
+	if !ok || !inst.Running {
+		t.Fatalf("guest must stay up after blocked stop, ok=%v running=%v", ok, inst.Running)
 	}
 }
 

@@ -684,6 +684,9 @@ func (a *App) RequestDestroyWorkspace(ctx context.Context, actor models.User, id
 	if authz.CanApproveDangerousOps(actor) {
 		return a.executeDestroy(ctx, actor, w)
 	}
+	if err := a.ensureGuestRunningForDestroyReview(ctx, w); err != nil {
+		return err
+	}
 	if models.CanApproveWorkspace(mem.Role) {
 		w.Status = models.WSDestroyPendingPlatform
 		w.UpdatedAt = time.Now()
@@ -867,6 +870,22 @@ func (a *App) DestroyWorkspace(ctx context.Context, actor models.User, id uuid.U
 	return a.RequestDestroyWorkspace(ctx, actor, id)
 }
 
+func (a *App) ensureGuestRunningForDestroyReview(ctx context.Context, w *models.Workspace) error {
+	if models.IsK8sRuntime(w.Runtime) {
+		return nil
+	}
+	if w.Status != models.WSStopped && w.Status != models.WSSuspended {
+		return nil
+	}
+	if err := a.Runtime.Start(ctx, w.ID); err != nil {
+		return err
+	}
+	if pubs := a.collectWorkspacePubkeys(ctx, *w); len(pubs) > 0 {
+		_ = a.Runtime.SyncKeys(ctx, w.ID, pubs)
+	}
+	return nil
+}
+
 func (a *App) StopWorkspace(ctx context.Context, actor models.User, id uuid.UUID) error {
 	w, err := a.Store.GetWorkspace(ctx, id)
 	if err != nil {
@@ -874,6 +893,9 @@ func (a *App) StopWorkspace(ctx context.Context, actor models.User, id uuid.UUID
 	}
 	if _, err := a.RequireProjectReady(ctx, actor, w.ProjectID, models.RoleDeveloper); err != nil {
 		return err
+	}
+	if models.DestroyReviewInFlight(w.Status) {
+		return store.Wrap(store.ErrConflict, "销毁尚未终审通过，不能停机")
 	}
 	if models.WorkspaceClosed(w.Status) || w.Status == models.WSRequested {
 		return store.ErrInvalidInput

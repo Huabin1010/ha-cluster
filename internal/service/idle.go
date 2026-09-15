@@ -53,6 +53,9 @@ func (a *App) SuspendIdleWorkspaces(ctx context.Context) (suspended int, err err
 	}
 	now := time.Now()
 	for _, w := range wss {
+		if models.DestroyReviewInFlight(w.Status) {
+			continue
+		}
 		if w.Status != models.WSRunning && w.Status != models.WSDegraded {
 			continue
 		}

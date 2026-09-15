@@ -196,7 +196,7 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 - **开通 / 销毁 / 审批过程会自动轮询**（约 3s）：`provisioning`「开通中」、`destroying`、待审批不必点「刷新列表」等稳态
 - 销毁确认后弹窗确认按钮进入 loading；行状态同步为「销毁中」旋转徽章，直到列表刷新到稳态或行消失
 - 行内快捷操作固定 2×2：升配 / 停止（或启动）/ 销毁 / 终端；文案均为两字，实心按钮。详情点服务器名称；HTTP 执行只在详情「连接」
-- **待销毁 / 待平台终审**：机器还在。有 SSH 权的成员仍可打开终端；平台管理员可 `dangerous-reject-open` 驳回，驳回后实例保留。真正销毁发生在终审通过之后。
+- **待销毁 / 待平台终审**：机器还在，**终审通过前不能停机**（`ws-stop` 隐藏；已停止的申请销毁会先拉起实例）。有 SSH 权的成员仍可打开终端；平台管理员可 `dangerous-reject-open` 驳回，驳回后实例保留。真正销毁发生在终审通过之后。
 - 机器详情：网页终端、HTTP 执行 curl、Ingress（含推荐 CNB 镜像仓库）、审计历史
 - **运行环境**：开通默认 **Docker + SSH（Compose 部署）**；用户需要时才选 Kubernetes。详情页粘贴 YAML apply、看 Deployment/Pod/配额状态（拉取中显示加载，不要把空表当成无资源）、下载 kubeconfig（viewer 只读资源与状态）。**审批与 Docker 相同**：developer 提交后待审；owner / admin / `platform_admin` 直建，不必再审。k8s 机器不能 exec，也不要借 Docker 机跑 kubectl。
 

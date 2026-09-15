@@ -88,6 +88,12 @@ func TestProvisioningLiveAndWorkspaceClosed(t *testing.T) {
 	if WorkspaceClosed(WSRunning) || WorkspaceClosed(WSProvisioning) {
 		t.Fatal("live statuses must not be closed")
 	}
+	if !DestroyReviewInFlight(WSDestroyRequested) || !DestroyReviewInFlight(WSDestroyPendingPlatform) {
+		t.Fatal("destroy review in flight")
+	}
+	if DestroyReviewInFlight(WSRunning) || DestroyReviewInFlight(WSDestroying) {
+		t.Fatal("running/destroying are not destroy review")
+	}
 	if WorkspaceClosed(WSDestroyRequested) != true || WorkspaceConnectable(WSDestroyPendingPlatform) != true {
 		t.Fatal("pending destroy is closed for start/stop but still connectable")
 	}
