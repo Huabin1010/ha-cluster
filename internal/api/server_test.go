@@ -799,6 +799,33 @@ func TestProjectCreateUsageAndBudget(t *testing.T) {
 	if p.Purpose != "test purpose" {
 		t.Fatalf("purpose %q", p.Purpose)
 	}
+	if p.OwnerUsername != "projowner" {
+		t.Fatalf("owner_username %q", p.OwnerUsername)
+	}
+
+	listed := doJSON(t, h, http.MethodGet, "/projects", tok, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("list %d %s", listed.Code, listed.Body.String())
+	}
+	var env struct {
+		Data []models.Project `json:"data"`
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, it := range env.Data {
+		if it.ID == p.ID {
+			found = true
+			if it.OwnerUsername != "projowner" {
+				t.Fatalf("list owner_username %q", it.OwnerUsername)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("created project missing from list")
+	}
 
 	dup := doJSON(t, h, http.MethodPost, "/projects", tok, map[string]string{"name": "Demo2", "slug": "demo-u2", "purpose": "test purpose"})
 	if dup.Code != http.StatusConflict {

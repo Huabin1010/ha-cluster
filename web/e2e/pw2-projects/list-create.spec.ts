@@ -2,7 +2,7 @@ import { test, expect } from "../fixtures/auth";
 import { uniq } from "../helpers/ids";
 import { seedProject } from "../fixtures/seed";
 import { expectNoHorizontalOverflow } from "../helpers/assert";
-import { confirmAlert, openCreateDialog } from "../helpers/dialog";
+import { confirmAlert, openCreateDialog, chooseSelect } from "../helpers/dialog";
 
 test.describe("PW-2 项目列表与创建", () => {
   test("PW2-01 @pw2 @smoke 空态", async ({ freshUser }) => {
@@ -36,6 +36,21 @@ test.describe("PW-2 项目列表与创建", () => {
     const row = page.locator("tr", { hasText: name });
     await expect(row).toBeVisible();
     await expect(row).toContainText("E2E 项目用途");
+    await expect(row.getByTestId("project-owner-cell")).toContainText("qa_owner");
+  });
+
+  test("PW2-19 @pw2 按创建者过滤", async ({ pageAs }) => {
+    const { page, tokens } = await pageAs("owner");
+    const p = await seedProject(tokens.token, "ownerfilter");
+
+    await page.goto("/projects");
+    const row = page.locator("tr", { hasText: p.name });
+    await expect(row).toBeVisible();
+    await expect(row.getByTestId("project-owner-cell")).toContainText("qa_owner");
+
+    await chooseSelect(page, "project-filter-owner", tokens.user.id);
+    await expect(page.locator("tr", { hasText: p.name })).toBeVisible();
+    await expect(page.getByTestId("project-filter-owner")).toBeVisible();
   });
 
   test("PW2-03 @pw2 slug 非法", async ({ pageAs }) => {

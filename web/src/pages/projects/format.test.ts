@@ -8,6 +8,9 @@ import {
   purposeNeedsFill,
   isValidSlug,
   suggestSlugFromName,
+  projectOwnerFilterLabel,
+  projectOwnerHint,
+  projectOwnerLabel,
 } from "./types";
 
 describe("project slug", () => {
@@ -68,6 +71,14 @@ describe("project slug", () => {
     expect(purposeNeedsFill(null)).toBe(false);
     expect(purposeNeedsFill({ purpose: "" })).toBe(true);
     expect(purposeNeedsFill({ purpose: "办公零食柜" })).toBe(false);
+  });
+
+  it("labels project owner for list and filter", () => {
+    expect(projectOwnerLabel({ owner_username: "qa_owner" })).toBe("qa_owner");
+    expect(projectOwnerLabel({ owner_display_name: "张三", owner_username: "zhangsan" })).toBe("张三");
+    expect(projectOwnerHint({ owner_display_name: "张三", owner_username: "zhangsan" })).toBe("张三 · zhangsan");
+    expect(projectOwnerFilterLabel({ owner_display_name: "张三", owner_username: "zhangsan" })).toBe("张三 (zhangsan)");
+    expect(projectOwnerLabel({ owner_id: "abcdef12-xxxx" })).toBe("abcdef12");
   });
 });
 

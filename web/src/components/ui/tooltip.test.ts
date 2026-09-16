@@ -12,6 +12,12 @@ describe("tooltipPanelClass", () => {
     expect(cls).not.toContain("text-box:trim-both");
   });
 
+  it("default Hint/Tooltip tone matches the current theme", () => {
+    const cls = tooltipPanelClass("surface", "rounded-lg");
+    expect(cls).toContain("bg-surface-2");
+    expect(cls).toContain("text-foreground");
+  });
+
   it("invert tone keeps the short-label chip", () => {
     const cls = tooltipPanelClass("invert", "rounded-lg");
     expect(cls.split(/\s+/)).toContain("bg-foreground");

@@ -1,11 +1,12 @@
 import { MouseEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreate, useDelete, useGetIdentity, useList, useUpdate } from "@refinedev/core";
-import { Check, Clock, Copy, ExternalLink, FolderKanban, Hash, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, StickyNote, Tag, Trash2 } from "lucide-react";
+import { Check, Clock, Copy, ExternalLink, FolderKanban, Hash, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, StickyNote, Tag, Trash2, User } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { SelectBox } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageFrame } from "@/components/ui/page-frame";
 import { PageHeading } from "@/components/ui/page-heading";
@@ -16,7 +17,7 @@ import { Elevated } from "@/lib/elevated";
 import { Empty, PageBody } from "@/ui";
 import { friendlyError, type AuthUser } from "@/providers";
 import { copyText, formatTime } from "@/pages/projects/format";
-import { canManageProject, type Project } from "@/pages/projects/types";
+import { canManageProject, projectOwnerFilterLabel, projectOwnerHint, projectOwnerLabel, type Project } from "@/pages/projects/types";
 import { ProjectFormDialog } from "@/pages/projects/FormDialog";
 import { ProjectDeleteDialog } from "@/pages/projects/DeleteDialog";
 import { useClientPager } from "@/lib/use-client-pager";
@@ -48,22 +49,38 @@ export function ProjectsPage() {
   const [listErr, setListErr] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("all");
 
   const rows = data?.data ?? [];
 
+  const ownerOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      if (!r.owner_id) continue;
+      if (!map.has(r.owner_id)) map.set(r.owner_id, projectOwnerFilterLabel(r));
+    }
+    return [...map.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "zh"));
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
-    if (!search.trim()) return rows;
     const q = search.trim().toLowerCase();
-    return rows.filter(
-      (r) =>
+    return rows.filter((r) => {
+      if (ownerFilter !== "all" && r.owner_id !== ownerFilter) return false;
+      if (!q) return true;
+      const ownerText = `${r.owner_username ?? ""} ${r.owner_display_name ?? ""}`.toLowerCase();
+      return (
         r.name.toLowerCase().includes(q) ||
         r.slug.toLowerCase().includes(q) ||
         r.id.toLowerCase().includes(q) ||
-        (r.purpose ?? "").toLowerCase().includes(q),
-    );
-  }, [rows, search]);
+        (r.purpose ?? "").toLowerCase().includes(q) ||
+        ownerText.includes(q)
+      );
+    });
+  }, [rows, search, ownerFilter]);
 
-  const pager = useClientPager(filteredRows);
+  const pager = useClientPager(filteredRows, `projects:${search}:${ownerFilter}`);
 
   async function onCopyId(e: MouseEvent, id: string) {
     e.stopPropagation();
@@ -184,16 +201,33 @@ export function ProjectsPage() {
           >
             {rows.length > 0 && (
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                <div className="relative w-full sm:max-w-sm">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="搜索项目名称、用途、slug 或 ID…"
-                    className="h-8 pl-8 text-xs bg-surface-1/70 border-border/80 focus:bg-surface-1"
-                  />
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2 flex-1">
+                  <div className="relative w-full sm:max-w-sm min-w-0">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      size="compact"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="搜索项目名称、用途、创建者、slug 或 ID…"
+                      className="pl-8 bg-surface-1/70 border-border/80 focus:bg-surface-1"
+                    />
+                  </div>
+                  {ownerOptions.length > 0 && (
+                    <SelectBox
+                      testId="project-filter-owner"
+                      size="compact"
+                      aria-label="按创建者筛选"
+                      className="w-full min-w-0 sm:w-[200px] shrink-0"
+                      value={ownerFilter}
+                      onValueChange={setOwnerFilter}
+                      options={[
+                        { value: "all", label: "全部创建者" },
+                        ...ownerOptions,
+                      ]}
+                    />
+                  )}
                 </div>
-                {search && (
+                {(search || ownerFilter !== "all") && (
                   <span className="text-xs text-muted-foreground shrink-0">
                     找到 {filteredRows.length} 个匹配项
                   </span>
@@ -222,7 +256,7 @@ export function ProjectsPage() {
           {rows.length === 0 ? (
             <Empty text="还没有项目，创建一个" />
           ) : filteredRows.length === 0 ? (
-            <Empty text="未找到匹配的项目" description="试试更换搜索关键词" />
+            <Empty text="未找到匹配的项目" description="试试更换搜索关键词或创建者筛选" />
           ) : (
             <ResponsiveList
               table={
@@ -232,7 +266,7 @@ export function ProjectsPage() {
               className="rounded-2xl border border-border/80 bg-surface-1 shadow-surface-2 overflow-hidden flex flex-col"
             >
               <div className="w-full overflow-x-auto">
-                <Table stackOnMobile={false} className="min-w-[1040px]">
+                <Table stackOnMobile={false} className="min-w-[1200px]">
                   <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                     <TableRow className="border-b border-border/60 hover:bg-transparent">
                       <TableHead className="w-[180px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
@@ -257,6 +291,12 @@ export function ProjectsPage() {
                         <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                           <Hash className="size-3.5 opacity-60 shrink-0" />
                           ID
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-[160px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <User className="size-3.5 opacity-60 shrink-0" />
+                          创建者
                         </span>
                       </TableHead>
                       <TableHead className="w-[160px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
@@ -353,6 +393,14 @@ export function ProjectsPage() {
                                 </Button>
                               </Hint>
                             </div>
+                          </TableCell>
+                          <TableCell className="py-2.5 w-[160px]" data-testid="project-owner-cell">
+                            <Hint label={projectOwnerHint(p)}>
+                              <span className="inline-flex items-center gap-1.5 whitespace-nowrap min-w-0 max-w-full">
+                                <User className="size-3 opacity-60 shrink-0" />
+                                <span className="truncate text-sm text-foreground">{projectOwnerLabel(p)}</span>
+                              </span>
+                            </Hint>
                           </TableCell>
                           <TableCell className="py-2.5 w-[160px] text-xs text-muted-foreground whitespace-nowrap">
                             <span className="inline-flex items-center gap-1.5">
@@ -458,6 +506,14 @@ export function ProjectsPage() {
                       <span className="inline-flex items-center gap-1 min-w-0">
                         <Tag className="size-3 opacity-60 shrink-0" />
                         <span className="font-mono truncate">{p.slug}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 min-w-0">
+                        <User className="size-3 opacity-60 shrink-0" />
+                        <Hint label={projectOwnerHint(p)} className="min-w-0">
+                          <span className="truncate text-foreground" data-testid="project-owner-cell">
+                            {projectOwnerLabel(p)}
+                          </span>
+                        </Hint>
                       </span>
                       <span className="inline-flex items-center gap-1 shrink-0">
                         <Clock className="size-3 opacity-60" />

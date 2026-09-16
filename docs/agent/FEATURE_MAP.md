@@ -116,6 +116,7 @@
 ### 子功能
 
 - 列表：创建（**名称须英文**：字母、数字、空格或短横线，如 `Office Snacks`；**用途必填** 2–80 字，可中文）、编辑、删除、复制 ID；「用途」列一句话说清这个项目是干什么的
+- 列表展示**创建者**（项目负责人用户名 / 显示名），可用 `project-filter-owner` 按不同用户筛选；搜索也匹配创建者
 - **窄屏**：列表为卡片（testid 仍是 `project-row`）
 - **旧项目未填用途会冻结**：不能开通机器、加人、SSH、改预算；红条 `project-purpose-gate`，负责人点 `project-purpose-fill` 补上后才能继续。进入详情**不会**自动弹出「编辑项目」
 - 详情 Tab：项目概览 / 工作区服务器 / 成员与权限 / 设置与预算
@@ -137,6 +138,8 @@
 | 名称 / slug / 用途 | `project-name` / `project-slug` / `project-purpose` |
 | 列表用途格 | `project-purpose-cell` |
 | 待补用途徽章 | `project-purpose-missing` |
+| 创建者格 | `project-owner-cell` |
+| 按创建者筛选 | `project-filter-owner` |
 | 提交创建 | `project-create` |
 | 列表错误 | `project-list-error` |
 | 项目行 | `project-row` |
@@ -162,6 +165,7 @@
 | 窄屏 Tab 条 | `project-mobile-tabs` | `md:hidden` |
 | 项目 ID | `project-id` | |
 | 项目用途 | `project-purpose-text` | 详情头 |
+| 创建者 | `project-owner` | 详情头 |
 | 未填用途徽章 | `project-purpose-missing` | 详情头 / 列表 |
 | 未填用途拦截条 | `project-purpose-gate` | 详情 / 服务器列表 / 机器详情 |
 | 填写用途 | `project-purpose-fill` | owner；服务器页筛选到未填项目时也会出现 |

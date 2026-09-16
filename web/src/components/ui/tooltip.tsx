@@ -83,7 +83,7 @@ function TooltipProvider({
 
 type TooltipSide = "top" | "right" | "bottom" | "left";
 
-/** invert: short label chip (dark-mode white). surface: multi-line hover card. */
+/** surface: follows the current theme. invert: opposite-color chip (use sparingly). */
 type TooltipTone = "invert" | "surface";
 
 interface TooltipProps {
@@ -95,8 +95,7 @@ interface TooltipProps {
    *  ambient TooltipProvider's delayDuration when one is present. */
   delayDuration?: number;
   className?: string;
-  /** invert is the one-line chip. surface skips inverted colors and
-   *  text-box trim so rich hover cards stay readable in dark mode. */
+  /** surface (default) matches light/dark. invert is a high-contrast chip. */
   tone?: TooltipTone;
   /** Extra classes for the portalled content element — Radix copies its
    *  z-index onto the popper wrapper, so pass a z utility here to lift the
@@ -140,7 +139,7 @@ function Tooltip({
   sideOffset = 8,
   delayDuration,
   className,
-  tone = "invert",
+  tone = "surface",
   contentClassName,
   forceOpen,
   onOpenChange: onOpenChangeProp,
@@ -286,19 +285,21 @@ export function Hint({
   children,
   side = "top",
   className,
+  tone = "surface",
 }: {
   content?: React.ReactNode;
   label?: React.ReactNode;
   children: React.ReactNode;
   side?: "top" | "right" | "bottom" | "left";
   className?: string;
+  tone?: TooltipTone;
 }) {
   const display = content ?? label;
   if (!display) {
     return className ? <span className={className}>{children}</span> : <>{children}</>;
   }
   return (
-    <Tooltip content={display} side={side}>
+    <Tooltip content={display} side={side} tone={tone}>
       <span className={className}>{children}</span>
     </Tooltip>
   );

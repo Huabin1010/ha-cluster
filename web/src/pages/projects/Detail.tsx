@@ -22,12 +22,13 @@ import {
   Shield,
   StickyNote,
   Trash2,
+  User,
   Users,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { api, friendlyError, type AuthUser } from "@/providers";
 import { copyText, formatBudget, formatBytes, formatCpuMilli, formatTime } from "./format";
-import { canManageProject, purposeMissing, purposeNeedsFill, type Project, type ProjectUsage } from "./types";
+import { canManageProject, projectOwnerHint, projectOwnerLabel, purposeMissing, purposeNeedsFill, type Project, type ProjectUsage } from "./types";
 import { ProjectFormDialog } from "./FormDialog";
 import { ProjectDeleteDialog } from "./DeleteDialog";
 import { MemberList } from "@/pages/members/MemberList";
@@ -453,6 +454,17 @@ export function ProjectDetailPage() {
                     {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3 opacity-60" />}
                   </Button>
                 </Hint>
+                {project.owner_id && (
+                  <>
+                    <span className="opacity-30">·</span>
+                    <Hint label={projectOwnerHint(project)}>
+                      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 whitespace-nowrap shrink-0" data-testid="project-owner">
+                        <User className="size-3 opacity-60 shrink-0" />
+                        <span className="text-foreground">{projectOwnerLabel(project)}</span>
+                      </span>
+                    </Hint>
+                  </>
+                )}
                 {project.created_at && (
                   <>
                     <span className="opacity-30">·</span>

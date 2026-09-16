@@ -460,8 +460,33 @@ func (s *Server) attachMyRole(ctx context.Context, u *models.User, p *models.Pro
 	}
 }
 
+func (s *Server) attachOwner(ctx context.Context, p *models.Project, cache map[uuid.UUID]*models.User) {
+	if p == nil || p.OwnerID == uuid.Nil {
+		return
+	}
+	if cache == nil {
+		cache = map[uuid.UUID]*models.User{}
+	}
+	owner, ok := cache[p.OwnerID]
+	if !ok {
+		var err error
+		owner, err = s.App.Store.GetUserByID(ctx, p.OwnerID)
+		if err != nil {
+			cache[p.OwnerID] = nil
+			return
+		}
+		cache[p.OwnerID] = owner
+	}
+	if owner == nil {
+		return
+	}
+	p.OwnerUsername = owner.Username
+	p.OwnerDisplayName = owner.DisplayName
+}
+
 func (s *Server) withMyRole(ctx context.Context, u models.User, p *models.Project) *models.Project {
 	s.attachMyRole(ctx, &u, p)
+	s.attachOwner(ctx, p, nil)
 	return p
 }
 
@@ -581,8 +606,10 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []models.Project{}
 	}
+	owners := map[uuid.UUID]*models.User{}
 	for i := range items {
 		s.attachMyRole(r.Context(), u, &items[i])
+		s.attachOwner(r.Context(), &items[i], owners)
 	}
 	listEnvelope(w, items, len(items))
 }

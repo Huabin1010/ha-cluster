@@ -78,6 +78,7 @@ function UserProjectsCell({ projects }: { projects: UserProject[] }) {
       {overflow > 0 ? (
         <Tooltip
           side="bottom"
+          tone="surface"
           content={
             <div className="flex max-h-56 max-w-[260px] flex-col gap-1 overflow-y-auto py-0.5">
               {projects.map((p) => (

@@ -102,18 +102,20 @@ const (
 )
 
 type Project struct {
-	ID              uuid.UUID `json:"id"`
-	Name            string    `json:"name"`
-	Slug            string    `json:"slug"`
-	Purpose         string    `json:"purpose"`
-	OwnerID         uuid.UUID `json:"owner_id"`
-	Status          string    `json:"status"`
-	BudgetCPUMilli  int64     `json:"budget_cpu_milli,omitempty"`
-	BudgetMemBytes  int64     `json:"budget_mem_bytes,omitempty"`
-	BudgetDiskBytes int64     `json:"budget_disk_bytes,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	MyRole          string    `json:"my_role,omitempty"`
-	MySSHAccess     string    `json:"my_ssh_access,omitempty"`
+	ID               uuid.UUID `json:"id"`
+	Name             string    `json:"name"`
+	Slug             string    `json:"slug"`
+	Purpose          string    `json:"purpose"`
+	OwnerID          uuid.UUID `json:"owner_id"`
+	OwnerUsername    string    `json:"owner_username,omitempty"`
+	OwnerDisplayName string    `json:"owner_display_name,omitempty"`
+	Status           string    `json:"status"`
+	BudgetCPUMilli   int64     `json:"budget_cpu_milli,omitempty"`
+	BudgetMemBytes   int64     `json:"budget_mem_bytes,omitempty"`
+	BudgetDiskBytes  int64     `json:"budget_disk_bytes,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	MyRole           string    `json:"my_role,omitempty"`
+	MySSHAccess      string    `json:"my_ssh_access,omitempty"`
 }
 
 // NormalizeProjectName trims and collapses whitespace. Names must be English

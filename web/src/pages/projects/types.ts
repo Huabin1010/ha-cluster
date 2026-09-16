@@ -4,6 +4,8 @@ export type Project = {
   slug: string;
   purpose?: string;
   owner_id?: string;
+  owner_username?: string;
+  owner_display_name?: string;
   status?: string;
   my_role?: string;
   my_ssh_access?: string;
@@ -12,6 +14,33 @@ export type Project = {
   budget_disk_bytes?: number;
   created_at?: string;
 };
+
+export type ProjectOwnerRef = Pick<Project, "owner_id" | "owner_username" | "owner_display_name">;
+
+/** 列表单元格：优先显示名，否则用户名。 */
+export function projectOwnerLabel(p: ProjectOwnerRef): string {
+  const display = p.owner_display_name?.trim();
+  if (display) return display;
+  const username = p.owner_username?.trim();
+  if (username) return username;
+  return p.owner_id ? p.owner_id.slice(0, 8) : "未知";
+}
+
+/** 悬停追溯：显示名与用户名都保留。 */
+export function projectOwnerHint(p: ProjectOwnerRef): string {
+  const display = p.owner_display_name?.trim();
+  const username = p.owner_username?.trim();
+  if (display && username && display !== username) return `${display} · ${username}`;
+  return display || username || p.owner_id || "未知创建者";
+}
+
+/** 过滤下拉：显示名后附用户名，避免重名。 */
+export function projectOwnerFilterLabel(p: ProjectOwnerRef): string {
+  const display = p.owner_display_name?.trim();
+  const username = p.owner_username?.trim();
+  if (display && username && display !== username) return `${display} (${username})`;
+  return display || username || p.owner_id || "未知";
+}
 
 export type ProjectUsage = {
   project_id: string;
