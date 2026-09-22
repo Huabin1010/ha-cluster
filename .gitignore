@@ -48,9 +48,8 @@ blob-report/
 bin/
 /out/
 
-# 大文件离线包与缓存（仅保留版本描述文件）
+# 大文件离线包与缓存（版本索引见 Depot VERSIONS.md）
 /dist/**
-!/dist/VERSIONS.md
 /packaging/cache/
 .local/
 
