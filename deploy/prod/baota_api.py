@@ -237,6 +237,29 @@ class BaotaClient:
         https = self.post("/site?action=HttpToHttps", {"siteName": domain})
         return {"ssl": out, "deploy": deployed, "http_to_https": https}
 
+    def add_custom_domain(self, domain: str, target: str, root: str, ssl: bool) -> dict[str, Any]:
+        """用户自有域（CNAME 接入）：建站 + 反代到 edge + 可选 HTTPS。
+
+        与 ha-api 的 BaotaEdge 行为一致（站点名=域名，反代名 ha-edge），
+        用于手工补救或排查；正常情况下由 ha-api 自动完成。
+        """
+        site = self.ensure_site(domain, f"{root.rstrip('/')}/{domain}")
+        proxy = self.set_proxy(domain, target, proxy_name="ha-edge")
+        out: dict[str, Any] = {"site": site, "proxy": proxy}
+        if ssl:
+            out["ssl"] = self.apply_ssl(domain)
+        return out
+
+    def remove_custom_domain(self, domain: str) -> dict[str, Any]:
+        site = self.find_site(domain)
+        if not site:
+            return {"ok": True, "removed": False, "reason": "站点不存在"}
+        out = self.post(
+            "/site?action=DeleteSite",
+            {"id": str(site.get("id", "")), "webname": domain, "path": "1"},
+        )
+        return {"ok": True, "removed": True, "result": out}
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="宝塔 API：建站/反代/SSL")
@@ -257,6 +280,13 @@ def main() -> int:
         default="cl.qzsyzn.com,*.cl.qzsyzn.com",
         help="逗号分隔 FQDN，默认主域+泛域",
     )
+    p_add = sub.add_parser("add-domain", help="自有域：建站+反代到 edge+HTTPS（ha-api 通常自动完成）")
+    p_add.add_argument("--domain", required=True)
+    p_add.add_argument("--target", default=os.environ.get("HA_BT_EDGE_TARGET", "http://127.0.0.1:18080"))
+    p_add.add_argument("--root", default=os.environ.get("HA_BT_SITE_ROOT", "/www/wwwroot"))
+    p_add.add_argument("--skip-ssl", action="store_true")
+    p_rm = sub.add_parser("remove-domain", help="自有域：删除宝塔站点（含证书）")
+    p_rm.add_argument("--domain", required=True)
     p_all = sub.add_parser("setup-cl", help="一键：DNS+建站+反代+SSL（cl.qzsyzn.com）")
     p_all.add_argument("--domain", default="cl.qzsyzn.com")
     p_all.add_argument("--path", default="/www/wwwroot/cl.qzsyzn.com")
@@ -283,6 +313,13 @@ def main() -> int:
     if args.cmd == "ensure-dns":
         domains = [d.strip() for d in args.domains.split(",") if d.strip()]
         print(json.dumps(client.ensure_dns(domains), ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "add-domain":
+        out = client.add_custom_domain(args.domain, args.target, args.root, ssl=not args.skip_ssl)
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "remove-domain":
+        print(json.dumps(client.remove_custom_domain(args.domain), ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "setup-cl":
         if not args.skip_dns:

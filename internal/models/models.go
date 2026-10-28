@@ -711,6 +711,16 @@ const (
 
 	IngressTierShared = "shared"
 	IngressTierCustom = "custom"
+
+	IngressVerifyNone  = "none"
+	IngressVerifyCNAME = "cname"
+
+	// Per-route edge TLS status for custom domains.
+	IngressTLSNone    = ""
+	IngressTLSPending = "pending"
+	IngressTLSIssued  = "issued"
+	IngressTLSFailed  = "failed"
+	IngressTLSSkipped = "skipped" // edge provider has no auto HTTPS (dev / noop)
 )
 
 // IngressDomainZone — 平台配置的域名后缀（泛域名根）。
@@ -751,6 +761,18 @@ type IngressRoute struct {
 	FabricHTTP      string     `json:"fabric_http,omitempty"`
 	FabricDNS       string     `json:"fabric_dns,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+
+	// Custom-domain ownership via CNAME (VerifyKind=cname).
+	VerifyKind   string     `json:"verify_kind,omitempty"`
+	DNSCheckedAt *time.Time `json:"dns_checked_at,omitempty"`
+	DNSError     string     `json:"dns_error,omitempty"`
+	DNSCode      string     `json:"dns_code,omitempty"`
+	TLSStatus    string     `json:"tls_status,omitempty"`
+	TLSError     string     `json:"tls_error,omitempty"`
+	// Response-only: what the user must add at their DNS provider.
+	CNAMETarget string `json:"cname_target,omitempty"`
+	RecordHost  string `json:"record_host,omitempty"`
+	RecordZone  string `json:"record_zone,omitempty"`
 }
 
 // AgentTokenPrefix is the public bearer / pack-URL prefix. Same secret is used

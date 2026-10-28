@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"strconv"
@@ -58,7 +59,10 @@ type CreateIngressInput struct {
 	Preset            string
 	ExtraNginx        string
 	ConfirmSecondPort bool
-	Actor             models.User
+	// VerifyKind=cname: user-owned domain proven by a CNAME to the platform.
+	// No approval and no DNS credentials; the route waits in pending_dns.
+	VerifyKind string
+	Actor      models.User
 }
 
 type createRouteParams struct {
@@ -75,6 +79,7 @@ type createRouteParams struct {
 	ZoneID            *uuid.UUID
 	Prefix            string
 	AutoReview        bool
+	VerifyKind        string
 }
 
 func (a *App) exposeWorkspacePort(ctx context.Context, w *models.Workspace, routeID uuid.UUID, port int) (int, error) {
@@ -93,6 +98,10 @@ func (a *App) exposeWorkspacePort(ctx context.Context, w *models.Workspace, rout
 func (a *App) annotateRoute(ctx context.Context, r *models.IngressRoute) {
 	up := a.upstreamFor(ctx, r)
 	r.NginxPreview = ingress.Render(ingress.RenderInput{Route: *r, Upstream: up})
+	if r.VerifyKind == models.IngressVerifyCNAME {
+		a.annotateCNAME(r)
+		return
+	}
 	r.DNSHint = "将域名 " + r.Domain + " 的 A 记录解析到 " + PublicIngressHost() + "（平台公网入口），TTL 可先设 60 秒。"
 }
 
@@ -174,6 +183,17 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 	var domain, prefix string
 	var zoneID *uuid.UUID
 	tier := models.IngressTierCustom
+	verifyKind := strings.ToLower(strings.TrimSpace(in.VerifyKind))
+	switch verifyKind {
+	case "", models.IngressVerifyNone:
+		verifyKind = models.IngressVerifyNone
+	case models.IngressVerifyCNAME:
+		if in.ZoneID != nil && *in.ZoneID != uuid.Nil {
+			return nil, store.Wrap(store.ErrInvalidInput, "平台域名不需要 CNAME 验证")
+		}
+	default:
+		return nil, store.Wrap(store.ErrInvalidInput, "verify_kind 只能是 none 或 cname")
+	}
 
 	if in.ZoneID != nil && *in.ZoneID != uuid.Nil {
 		z, err := a.Store.GetIngressDomainZone(ctx, *in.ZoneID)
@@ -202,11 +222,19 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 		if hit {
 			return nil, store.ErrInvalidInput
 		}
+		if verifyKind == models.IngressVerifyCNAME {
+			if err := validateCustomCNAMEDomain(domain); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	status := models.IngressPendingApproval
 	autoReview := false
-	if canBypassIngressApproval(*mem, in.Actor) {
+	if verifyKind == models.IngressVerifyCNAME {
+		// The CNAME itself is the proof of ownership: no approval for any role.
+		status = models.IngressPendingDNS
+	} else if canBypassIngressApproval(*mem, in.Actor) {
 		status = models.IngressActive
 		autoReview = true
 	}
@@ -215,7 +243,7 @@ func (a *App) CreateIngress(ctx context.Context, in CreateIngressInput) (*models
 		WS: ws, Domain: domain, Path: in.Path, Port: in.Port, Preset: in.Preset,
 		ExtraNginx: in.ExtraNginx, ConfirmSecondPort: in.ConfirmSecondPort,
 		Actor: in.Actor, Status: status, DomainTier: tier, ZoneID: zoneID, Prefix: prefix,
-		AutoReview: autoReview,
+		AutoReview: autoReview, VerifyKind: verifyKind,
 	})
 }
 
@@ -266,12 +294,19 @@ func (a *App) createIngressRoute(ctx context.Context, in createRouteParams) (*mo
 		Domain: in.Domain, Path: ingress.NormalizePath(in.Path), Port: in.Port,
 		Preset: preset, ExtraNginx: extra, Status: in.Status,
 		DomainTier: tier, ZoneID: in.ZoneID, Prefix: in.Prefix,
+		VerifyKind:      in.VerifyKind,
 		ApplicantUserID: in.Actor.ID,
 		ReviewedBy:      reviewedBy,
 		ReviewedAt:      reviewedAt,
 		CreatedAt:       time.Now(),
 	}
+	if r.VerifyKind == "" {
+		r.VerifyKind = models.IngressVerifyNone
+	}
 	if err := a.Store.CreateIngress(ctx, r); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return nil, store.Wrap(store.ErrConflict, "域名 "+in.Domain+" 已被其他路由使用")
+		}
 		return nil, err
 	}
 	if in.Status == models.IngressActive {
@@ -288,6 +323,7 @@ func (a *App) createIngressRoute(ctx context.Context, in createRouteParams) (*mo
 		Meta: map[string]any{
 			"domain": in.Domain, "port": in.Port, "workspace": in.WS.ID.String(),
 			"status": in.Status, "domain_tier": tier, "prefix": in.Prefix,
+			"verify_kind": r.VerifyKind,
 		},
 	})
 	return r, nil
@@ -300,6 +336,9 @@ func (a *App) ApproveIngress(ctx context.Context, actor models.User, id uuid.UUI
 	}
 	if _, err := a.RequireProjectReady(ctx, actor, r.ProjectID, models.RoleAdmin); err != nil {
 		return nil, err
+	}
+	if r.VerifyKind == models.IngressVerifyCNAME {
+		return nil, store.Wrap(store.ErrInvalidInput, "自有域名由 CNAME 自动验证，无需审批")
 	}
 	if r.Status != models.IngressPendingApproval && r.Status != models.IngressRejected {
 		return nil, store.ErrInvalidInput
@@ -376,6 +415,7 @@ func (a *App) DeleteIngress(ctx context.Context, actor models.User, id uuid.UUID
 	if err := a.Store.DeleteIngress(ctx, id); err != nil {
 		return err
 	}
+	a.detachEdge(*r)
 	a.rewriteIngress(ctx)
 	_ = a.Store.AddAudit(ctx, models.AuditLog{
 		ActorUserID: actor.ID, Action: "ingress.delete",
@@ -394,7 +434,9 @@ func (a *App) dropWorkspaceIngress(ctx context.Context, workspaceID uuid.UUID) {
 		if r.Status == models.IngressActive {
 			_ = a.Runtime.UnexposePort(ctx, r.WorkspaceID, r.ID)
 		}
-		_ = a.Store.DeleteIngress(ctx, r.ID)
+		if err := a.Store.DeleteIngress(ctx, r.ID); err == nil {
+			a.detachEdge(r)
+		}
 	}
 	if len(items) > 0 {
 		a.rewriteIngress(ctx)
@@ -427,6 +469,10 @@ func (a *App) IngressPublicInfo(ctx context.Context) map[string]any {
 		"fabric_http_port":   FabricHTTPPort(),
 		"fabric_dns":         fab,
 		"preferred_registry": PreferredRegistry(),
+		// Custom domains: each route gets its own CNAME value under cname_base.
+		"cname_enabled":      CNAMEBase() != "",
+		"cname_base":         CNAMEBase(),
+		"edge_provider":      a.edgeProvider().Name(),
 		"note": "公网 A 记录仍指入口机；已加入 EasyTier 时把 DNS 指向 fabric_dns（仅 cl.qzsyzn.com 后缀），" +
 			"域名不变、流量走虚网、不经 42 公网网卡。默认每个主机只暴露一个服务端口。",
 	}

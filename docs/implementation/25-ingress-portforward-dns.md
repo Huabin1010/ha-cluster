@@ -73,9 +73,25 @@ Worker fabric_ip : host_port  →  Workspace 内服务
 - 前缀全局唯一；冲突返回 409。
 - 证书：入口机 **通配符证书** `*.apps.<platform-domain>` 已覆盖。
 
-### 3.2 特殊域名（须申请审批）
+### 3.2 用户自有域名：CNAME 自证，免审（已实现）
 
-以下视为 **特殊域**，走 **申请 → owner/admin 审批**（与现有 `pending_approval` 一致）：
+用户在「域名接入」选 **使用自己的域名（CNAME，免审）**，填写子域（如 `app.customer.com`）。平台立即返回一条记录：
+
+| 主机记录 | 类型 | 记录值 |
+|---|---|---|
+| `app` | CNAME | `r-<路由 UUID 前 10 位 hex>.<base>` |
+
+- `base` 取 `HA_INGRESS_CNAME_TARGETS` 第一项（生产 `edge.cl.qzsyzn.com`，需 `edge` 与 `*.edge` 两条 A 记录指向入口机）。
+- **每条路由独有记录值**，并用 `VerifyCNAMEStrict` 只认真实 CNAME 链（不认 A 记录拉平），防止有人抢注别人早已指向平台的域名。
+- 状态：`pending_dns` →（检测通过）`active`，随后 `exposeWorkspacePort` + 重写 edge Nginx，并异步调用 `internal/edge`（`HA_EDGE_PROVIDER=baota`：每个域名一个宝塔站点，反代 `ha-edge` 到 `HA_BT_EDGE_TARGET`，HTTP-01 签 Let's Encrypt）。`tls_status`：`pending` / `issued` / `failed` / `skipped`。
+- 后台检测：`pending_dns` 前 24 小时每 30 秒、之后每 10 分钟；超过 72 小时未解析则删除。`active` 每 6 小时复查，CNAME 被删只记 `dns_error`，**不自动删路由**。证书失败时「立即检测」或下次复查会重试。
+- 拒绝：根域（无法 CNAME）、平台 base 及其子域、保留前缀、已配置的公共后缀、`zone_id` 与 `verify_kind=cname` 同用。
+- API：`POST /workspaces/{id}/ingress` `{"domain","port","verify_kind":"cname"}`；`POST /ingress/{id}/verify` 立即检测；`GET /ingress/meta` 返回 `cname_enabled` / `cname_base` / `edge_provider`。
+- 运维：`.cursor/skills/onboard-domain/SKILL.md`；手工补救 `python deploy/prod/baota_api.py add-domain|remove-domain --domain …`。
+
+### 3.2b 特殊域名（须申请审批）
+
+不带 `verify_kind=cname` 的自有域、平台非公共后缀等视为 **特殊域**，走 **申请 → owner/admin 审批**（与现有 `pending_approval` 一致）：
 
 | 类型 | 示例 | 为何特殊 |
 |------|------|----------|
@@ -142,9 +158,9 @@ client → entry:public_port → relay → worker:host_port → container:target
 
 ---
 
-## 5. 腾讯云 / 阿里云 DNS 快速配置
+## 5. 腾讯云 / 阿里云 DNS 快速配置（可选，未实现）
 
-用户绑定 **特殊域名**（自有域）时，引导在 DNSPod / 阿里云解析一键指向平台入口。
+自有域默认走 §3.2 的 CNAME 自证，用户只需在自己的 DNS 加一条记录，**不需要**交密钥。下列云 DNS 一键配置降为可选增强。
 
 ### 5.1 支持的厂商（P1）
 
@@ -255,7 +271,8 @@ HA_INGRESS_SHARED_ZONE=apps.mnnumath.vip
 | **公共域免审领取** | ✗ 用户仍填完整 FQDN | **新增** `POST …/ingress/shared` |
 | **端口转发 TCP** | ✗ | **待实现** |
 | **腾讯云/阿里云 DNS API** | ✗ | **待实现** `internal/dns` |
-| DNS 生效探针 `pending_dns` | 模型有常量，未全用 | 特殊域 + 自有域启用 |
+| DNS 生效探针 `pending_dns` | ✓ `internal/ingress/cname.go` + 后台检测 | 自有域 CNAME 免审 |
+| 自有域 HTTPS | ✓ `internal/edge`（宝塔） | `HA_EDGE_PROVIDER=baota` |
 
 ---
 

@@ -176,7 +176,22 @@ POST /workspaces/{id}/ingress/shared
   {"zone_id":"...","mode":"custom","prefix":"myapp","port":8090,"confirm_second_port":true}
 ```
 
-同一主机第二端口必须确认。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。特殊自有域走 `POST /workspaces/{id}/ingress`，要审批。非 `running` 不能 claim。
+同一主机第二端口必须确认。保留前缀 `admin` / `api` / `auth` / `console` 会被拒。用户自己的域名走 5b（CNAME，免审）。非 `running` 不能 claim。
+
+## 5b. 自有域名（CNAME，免审）
+
+用户有自己的域名（如 `app.customer.com`）时用这条，不用审批，也不要向用户要 DNS 密钥。`GET /ingress/meta` 的 `cname_enabled=true` 才可用。
+
+```
+POST /workspaces/{id}/ingress
+  {"domain":"app.customer.com","port":8080,"verify_kind":"cname"}
+  → status=pending_dns，响应里有 record_host / cname_target / dns_hint
+```
+
+1. 把记录原样告诉用户：主机记录 `record_host`，类型 `CNAME`，记录值 `cname_target`（每条路由不同，不要复用别的路由的值）。
+2. 用户说加好了：`POST /ingress/{id}/verify`。不用自己轮询，平台每 30 秒自动检测。
+3. 按返回字段报告：`status=active` 且 `tls_status=issued` → 告诉用户 `https://<domain>` 可用；`tls_status=pending` → 证书签发中；`dns_code=wrong_target` → 记录值填错；`proxied` → 让用户关掉 Cloudflare 橙色云朵；`not_found` → 还没生效，稍后再查。
+4. 根域（`customer.com`）、平台自己的域名会被拒，请用户改用子域。72 小时没解析的路由会被自动清理。
 
 ## 6. 推镜像 / 部署（默认 Compose + CNB）
 

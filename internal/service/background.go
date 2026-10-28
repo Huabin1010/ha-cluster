@@ -79,6 +79,23 @@ func StartBackgroundTasks(ctx context.Context, app *App) {
 		}
 	}()
 
+	// Custom domains: CNAME check loop (pending every 30s, see
+	// VerifyPendingCustomDomains for back-off / re-check / expiry).
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if v, e := app.VerifyPendingCustomDomains(context.Background(), time.Now()); v > 0 || e > 0 {
+					log.Printf("custom domains: verified=%d expired=%d", v, e)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		select {
 		case <-ctx.Done():

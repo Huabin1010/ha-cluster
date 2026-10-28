@@ -28,6 +28,10 @@ viewer 不能申请。`409 INSUFFICIENT_CAPACITY` 先清闲置机器。
 
 `GET /ingress/meta` 取 `zone_id`（领域名时才打）。`POST /workspaces/{id}/ingress/shared` `mode=random|custom`。第二端口要 `confirm_second_port: true`。保留前缀 `admin` / `api` / `auth` / `console`。非 `running` 不能 claim。`*.apps` 子域出厂即 HTTPS。
 
+## 自有域名（CNAME，免审）
+
+`GET /ingress/meta` 的 `cname_enabled=true` 时：`POST /workspaces/{id}/ingress` `{"domain","port","verify_kind":"cname"}` → `pending_dns`。把 `record_host` / `CNAME` / `cname_target` 原样告诉用户（每条路由值不同）。用户加好后 `POST /ingress/{id}/verify`；`active`+`tls_status=issued` 即 HTTPS 可用，`dns_code` 为 `wrong_target` / `proxied` / `not_found` 时按含义提示用户。根域与平台域会被拒；72 小时未解析自动清理。不要向用户要 DNS 密钥。
+
 ## 推镜像 / 部署（默认 Compose + CNB）
 
 先在**本机** `docker build` 并 `docker push` 到 CNB，再用 container 机器 `exec` 里 `docker pull` + `docker compose up` + `docker logs`（禁止 `compose build`）。数据目录挂 `/root/...` 且镜像 `USER` 非 root 时先 chown。只有用户点名 k8s 才 `runtime=k8s` + apply。不确定仓库名才 `GET /registries/preferred`。镜像路径 `docker.cnb.cool/<组织>/<仓库>:<标签>`。不要默认 Docker Hub。平台注入了 CNB 凭据则可在机器里直接 pull；push 在本机做。

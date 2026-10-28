@@ -209,6 +209,7 @@ func registerAPIRoutes(r chi.Router, s *Server) {
 		r.Delete("/ingress/{id}", s.deleteIngress)
 		r.Post("/ingress/{id}/approve", s.approveIngress)
 		r.Post("/ingress/{id}/reject", s.rejectIngress)
+		r.Post("/ingress/{id}/verify", s.verifyIngress)
 		r.Get("/ingress/meta", s.ingressMeta)
 		r.Get("/registries/preferred", s.preferredRegistry)
 

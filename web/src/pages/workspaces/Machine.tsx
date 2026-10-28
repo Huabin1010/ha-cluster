@@ -45,6 +45,17 @@ import {
 } from "./types";
 import { K8sPanel } from "./K8sPanel";
 import { WorkspaceTerminalDialog } from "./WorkspaceTerminalDialog";
+import { CustomDomainCard } from "./CustomDomainCard";
+import {
+  customDomainPhase,
+  customDomainPhaseLabel,
+  customDomainPhaseVariant,
+  customDomainShouldPoll,
+  dnsCodeHint,
+  isCustomDomainRoute,
+  splitRecordHost,
+  validateCustomDomain,
+} from "@/lib/custom-domain";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -144,10 +155,23 @@ type IngressRoute = {
   dns_hint?: string;
   status: string;
   reject_reason?: string;
+  verify_kind?: string;
+  dns_checked_at?: string;
+  dns_error?: string;
+  dns_code?: string;
+  tls_status?: string;
+  tls_error?: string;
+  cname_target?: string;
+  record_host?: string;
+  record_zone?: string;
 };
 
 type IngressMeta = {
   public_host: string;
+  /** Users can bind their own domain by CNAME (no approval). */
+  cname_enabled?: boolean;
+  cname_base?: string;
+  edge_provider?: string;
   note?: string;
   presets: Array<{ id: string; label: string; description: string }>;
   preferred_registry?: {
@@ -198,6 +222,7 @@ function viaLabel(meta?: Record<string, unknown>): string {
 function ingressStatusLabel(status: string): string {
   if (status === "active") return "已生效";
   if (status === "pending_approval") return "待审批";
+  if (status === "pending_dns") return "等待解析";
   if (status === "rejected") return "已驳回";
   return status;
 }
@@ -205,8 +230,17 @@ function ingressStatusLabel(status: string): string {
 function ingressStatusVariant(status: string): "ok" | "warn" | "danger" | "outline" {
   if (status === "active") return "ok";
   if (status === "rejected") return "danger";
-  if (status === "pending_approval") return "warn";
+  if (status === "pending_approval" || status === "pending_dns") return "warn";
   return "outline";
+}
+
+/** Route badge text; custom (CNAME) domains show their finer-grained phase. */
+function routeLabel(rt: IngressRoute): string {
+  return isCustomDomainRoute(rt) ? customDomainPhaseLabel(customDomainPhase(rt)) : ingressStatusLabel(rt.status);
+}
+
+function routeVariant(rt: IngressRoute): "ok" | "warn" | "danger" | "outline" {
+  return isCustomDomainRoute(rt) ? customDomainPhaseVariant(customDomainPhase(rt)) : ingressStatusVariant(rt.status);
 }
 
 function isConnectAction(action: string): boolean {
@@ -414,6 +448,15 @@ export function MachinePage() {
     void loadIngress();
   }, [section, loadIngress]);
 
+  // Custom domains waiting for DNS or a certificate: refresh every 10s so the
+  // status flips to「已生效」without the user reloading.
+  const anyPolling = routes.some((rt) => isCustomDomainRoute(rt) && customDomainShouldPoll(customDomainPhase(rt)));
+  useEffect(() => {
+    if (section !== "ingress" || !anyPolling) return;
+    const t = window.setInterval(() => void loadIngress(), 10_000);
+    return () => window.clearInterval(t);
+  }, [section, anyPolling, loadIngress]);
+
   async function copy(text: string, ok: string) {
     const copied = await copyText(text);
     if (copied) toast.show(ok, "success");
@@ -445,11 +488,22 @@ export function MachinePage() {
   );
   const isCustomDomain = domainSource === INGRESS_CUSTOM_SOURCE;
   const isFreeZone = !!selectedZone && !selectedZone.require_approval;
+  /** Own domain proven by CNAME: no approval, platform checks DNS and issues HTTPS. */
+  const isCNAME = isCustomDomain && !!meta?.cname_enabled;
+  const customDomainErr = isCNAME && domain.trim() ? validateCustomDomain(domain, meta?.cname_base) : "";
+  const customRecord = isCNAME && domain.trim() && !customDomainErr ? splitRecordHost(domain) : null;
 
   async function submitIngress(confirmSecond: boolean) {
     if (purposeMissing(projectCtx?.purpose)) {
       setFormErr("请先填写项目用途，才能继续操作");
       return;
+    }
+    if (isCNAME) {
+      const msg = validateCustomDomain(domain, meta?.cname_base);
+      if (msg) {
+        setFormErr(msg);
+        return;
+      }
     }
     setFormErr("");
     setBusy(true);
@@ -481,6 +535,7 @@ export function MachinePage() {
         };
         if (isCustomDomain) {
           body.domain = domain.trim();
+          if (isCNAME) body.verify_kind = "cname";
         } else if (selectedZone) {
           body.zone_id = selectedZone.id;
           body.prefix = prefix.trim();
@@ -489,7 +544,11 @@ export function MachinePage() {
         resetIngressForm();
         setIngressOpen(false);
         toast.show(
-          isCustomDomain ? "已提交域名申请，请按提示修改 DNS" : "已提交域名申请，待项目管理员审批",
+          isCNAME
+            ? "已添加，请到域名服务商添加下方的 CNAME 记录，平台会自动检测"
+            : isCustomDomain
+              ? "已提交域名申请，请按提示修改 DNS"
+              : "已提交域名申请，待项目管理员审批",
           "success",
         );
         await loadIngress();
@@ -509,6 +568,22 @@ export function MachinePage() {
   async function onIngress(e: FormEvent) {
     e.preventDefault();
     await submitIngress(false);
+  }
+
+  async function verifyRoute(rid: string) {
+    setBusy(true);
+    try {
+      const rt = await api<IngressRoute>(`/ingress/${rid}/verify`, { method: "POST" });
+      const phase = customDomainPhase(rt);
+      if (phase === "live_https") toast.show(`${rt.domain} 已生效，HTTPS 可用`, "success");
+      else if (phase === "live_http" || phase === "issuing_cert") toast.show(`${rt.domain} 已指向平台`, "success");
+      else toast.show(dnsCodeHint(rt.dns_code) || rt.dns_error || "暂未检测到记录，稍后会自动重试", "info");
+      await loadIngress();
+    } catch (e) {
+      toast.show(friendlyError(e), "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function removeRoute(rid: string) {
@@ -867,10 +942,10 @@ export function MachinePage() {
                         </span>
                         <Hint label={rt.status} className="font-mono">
                           <Badge
-                            variant={ingressStatusVariant(rt.status)}
+                            variant={routeVariant(rt)}
                             className="inline-flex items-center whitespace-nowrap shrink-0"
                           >
-                            {ingressStatusLabel(rt.status)}
+                            {routeLabel(rt)}
                           </Badge>
                         </Hint>
                       </div>
@@ -1166,7 +1241,21 @@ export function MachinePage() {
                     在域名服务商添加{" "}
                     <span className="font-mono text-foreground">A → {meta.public_host}</span>
                     ，解析生效后即可通过域名访问。
+                    {meta.cname_enabled && " 自有域名推荐用 CNAME 接入：免审批、自动开启 HTTPS。"}
                   </p>
+                </div>
+              )}
+              {routes.filter(isCustomDomainRoute).length > 0 && (
+                <div className="grid gap-3" data-testid="ws-domain-cname-list">
+                  {routes.filter(isCustomDomainRoute).map((rt) => (
+                    <CustomDomainCard
+                      key={rt.id}
+                      route={rt}
+                      busy={busy}
+                      onCopy={(text, ok) => void copy(text, ok)}
+                      onVerify={(rid) => void verifyRoute(rid)}
+                    />
+                  ))}
                 </div>
               )}
               {routes.length === 0 ? (
@@ -1232,10 +1321,10 @@ export function MachinePage() {
                             </TableCell>
                             <TableCell className="whitespace-nowrap">
                               <Badge
-                                variant={ingressStatusVariant(rt.status)}
+                                variant={routeVariant(rt)}
                                 className="inline-flex items-center whitespace-nowrap shrink-0"
                               >
-                                <Hint label={rt.status}>{ingressStatusLabel(rt.status)}</Hint>
+                                <Hint label={rt.status}>{routeLabel(rt)}</Hint>
                               </Badge>
                             </TableCell>
                             <TableCell stickyEnd className="whitespace-nowrap text-right">
@@ -1288,8 +1377,8 @@ export function MachinePage() {
                           <ListCardHeader
                             title={<span className="truncate font-medium">{rt.domain}</span>}
                             trailing={
-                              <Badge variant={ingressStatusVariant(rt.status)} className="inline-flex items-center whitespace-nowrap shrink-0">
-                                <Hint label={rt.status}>{ingressStatusLabel(rt.status)}</Hint>
+                              <Badge variant={routeVariant(rt)} className="inline-flex items-center whitespace-nowrap shrink-0">
+                                <Hint label={rt.status}>{routeLabel(rt)}</Hint>
                               </Badge>
                             }
                           />
@@ -1454,9 +1543,11 @@ export function MachinePage() {
           <DialogHeader>
             <DialogTitle>接入域名</DialogTitle>
             <DialogDescription className="break-words min-w-0">
-              {meta
-                ? `选择平台后缀领取子域名，或填写自有域名并将 A 记录指向 ${meta.public_host}。`
-                : "选择平台后缀领取子域名，或填写自有域名并将 A 记录指向平台公网入口。"}
+              {meta?.cname_enabled
+                ? "选择平台后缀领取子域名，或使用自己的域名：添加一条 CNAME 记录即可自动生效并开启 HTTPS，无需审批。"
+                : meta
+                  ? `选择平台后缀领取子域名，或填写自有域名并将 A 记录指向 ${meta.public_host}。`
+                  : "选择平台后缀领取子域名，或填写自有域名并将 A 记录指向平台公网入口。"}
             </DialogDescription>
           </DialogHeader>
           <form className="flex min-h-0 flex-1 flex-col" onSubmit={(e) => void onIngress(e)}>
@@ -1478,9 +1569,27 @@ export function MachinePage() {
                       value: z.id,
                       label: `${z.display_name || z.suffix}${z.require_approval ? "（需审批）" : "（免审）"}`,
                     })),
-                    { value: INGRESS_CUSTOM_SOURCE, label: "自有域名" },
+                    {
+                      value: INGRESS_CUSTOM_SOURCE,
+                      label: meta?.cname_enabled ? "使用自己的域名（CNAME，免审）" : "自有域名",
+                    },
                   ]}
                 />
+                {meta?.cname_enabled && !isCustomDomain && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    data-testid="ws-domain-custom-tab"
+                    className="mt-1 h-auto w-fit px-0 text-xs inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                    onClick={() => {
+                      setDomainSource(INGRESS_CUSTOM_SOURCE);
+                      setFormErr("");
+                    }}
+                  >
+                    <Globe className="size-3.5 shrink-0" />
+                    有自己的域名？添加一条 CNAME 即可使用
+                  </Button>
+                )}
               </Field>
 
               {isFreeZone && selectedZone && (
@@ -1552,11 +1661,29 @@ export function MachinePage() {
                     onChange={(e) => setDomain(e.target.value)}
                     required
                     autoComplete="off"
+                    aria-invalid={!!customDomainErr || undefined}
                   />
-                  {meta?.public_host && (
-                    <p className="m-0 mt-1.5 text-xs text-muted-foreground break-words min-w-0">
-                      请将域名 A 记录解析到 {meta.public_host}（平台公网入口），TTL 可先设 60 秒。提交后需项目管理员审批。
-                    </p>
+                  {isCNAME ? (
+                    customDomainErr ? (
+                      <p
+                        className="m-0 mt-1.5 text-xs text-destructive break-words min-w-0"
+                        data-testid="ws-domain-custom-error"
+                      >
+                        {customDomainErr}
+                      </p>
+                    ) : (
+                      <p className="m-0 mt-1.5 text-xs text-muted-foreground break-words min-w-0">
+                        {customRecord
+                          ? `提交后会给出 CNAME 记录值。到 ${customRecord.zone} 的 DNS 里添加：主机记录 ${customRecord.host}，类型 CNAME。平台自动检测，通过后立即生效并签发 HTTPS 证书，无需审批。`
+                          : "请填写子域，如 app.example.com（根域名不能设置 CNAME）。提交后按页面提示添加一条 CNAME 记录即可，无需审批。"}
+                      </p>
+                    )
+                  ) : (
+                    meta?.public_host && (
+                      <p className="m-0 mt-1.5 text-xs text-muted-foreground break-words min-w-0">
+                        请将域名 A 记录解析到 {meta.public_host}（平台公网入口），TTL 可先设 60 秒。提交后需项目管理员审批。
+                      </p>
+                    )
                   )}
                 </Field>
               )}
@@ -1617,7 +1744,7 @@ export function MachinePage() {
                 取消
               </Button>
               <Button data-testid="ing-submit" disabled={busy || !canConnect} type="submit">
-                {busy ? "提交中…" : isFreeZone ? "领取域名" : "提交申请"}
+                {busy ? "提交中…" : isFreeZone ? "领取域名" : isCNAME ? "添加域名" : "提交申请"}
               </Button>
             </DialogFooter>
           </form>

@@ -16,6 +16,8 @@ import (
 	"ha-cluster/internal/approval"
 	"ha-cluster/internal/auth"
 	"ha-cluster/internal/authz"
+	"ha-cluster/internal/edge"
+	"ha-cluster/internal/ingress"
 	hak8s "ha-cluster/internal/k8s"
 	"ha-cluster/internal/ledger"
 	"ha-cluster/internal/models"
@@ -50,6 +52,10 @@ type App struct {
 	K8s       hak8s.Cluster
 	JWT       []byte
 	AccessTTL time.Duration
+	// Resolver checks custom-domain CNAMEs; Edge attaches verified domains
+	// to the public entry and issues HTTPS. Tests inject fakes.
+	Resolver ingress.Resolver
+	Edge     edge.CustomDomainEdge
 
 	provisionCancel sync.Map // workspace ID → context.CancelFunc
 }
@@ -68,6 +74,8 @@ func New(st store.Store, rt workspace.Runtime, jwtSecret []byte) *App {
 		K8s:       hak8s.NewFromEnv(),
 		JWT:       jwtSecret,
 		AccessTTL: 15 * time.Minute,
+		Resolver:  ingress.PublicResolver(),
+		Edge:      edge.FromEnv(),
 	}
 }
 

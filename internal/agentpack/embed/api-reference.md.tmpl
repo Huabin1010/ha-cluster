@@ -91,7 +91,8 @@
 | GET | `/registries/preferred` | 推荐镜像仓库（CNB / `docker.cnb.cool`）；不确定仓库名时才打 |
 | GET | `/workspaces/{id}/ingress` | |
 | POST | `/workspaces/{id}/ingress/shared` | `{zone_id,mode:random\|custom,prefix?,port,confirm_second_port?}` |
-| POST | `/workspaces/{id}/ingress` | 自有域，多需审批 |
+| POST | `/workspaces/{id}/ingress` | 自有域；带 `verify_kind:"cname"` 免审，返回 `pending_dns` + `record_host` / `cname_target` |
+| POST | `/ingress/{id}/verify` | 立即检测 CNAME；返回 `status` / `dns_code` / `tls_status` |
 | POST | `/ingress/{id}/approve` `/reject` | |
 | DELETE | `/ingress/{id}` | |
 

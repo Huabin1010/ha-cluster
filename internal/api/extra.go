@@ -430,6 +430,7 @@ func (s *Server) createIngress(w http.ResponseWriter, r *http.Request) {
 		Preset            string  `json:"preset"`
 		ExtraNginx        string  `json:"extra_nginx"`
 		ConfirmSecondPort bool    `json:"confirm_second_port"`
+		VerifyKind        string  `json:"verify_kind"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
@@ -448,7 +449,8 @@ func (s *Server) createIngress(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: id, Domain: body.Domain, ZoneID: zoneID, Prefix: body.Prefix,
 		Path: body.Path, Port: body.Port,
 		Preset: body.Preset, ExtraNginx: body.ExtraNginx,
-		ConfirmSecondPort: body.ConfirmSecondPort, Actor: *userFrom(r),
+		ConfirmSecondPort: body.ConfirmSecondPort, VerifyKind: body.VerifyKind,
+		Actor: *userFrom(r),
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
@@ -459,6 +461,22 @@ func (s *Server) createIngress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, rt)
+}
+
+// verifyIngress re-checks the CNAME of a custom-domain route right now
+// (the console「立即检测」button) and returns the refreshed route.
+func (s *Server) verifyIngress(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	rt, err := s.App.VerifyIngressDNS(r.Context(), *userFrom(r), id)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rt)
 }
 
 func (s *Server) deleteIngress(w http.ResponseWriter, r *http.Request) {

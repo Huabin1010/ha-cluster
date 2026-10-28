@@ -71,6 +71,9 @@ var projectPurposeSQL string
 //go:embed sql/018_workspace_exec.sql
 var workspaceExecSQL string
 
+//go:embed sql/019_ingress_cname.sql
+var ingressCNAMESQL string
+
 type Store struct {
 	db *sql.DB
 }
@@ -154,6 +157,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, workspaceExecSQL); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, ingressCNAMESQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -1081,7 +1088,7 @@ func (s *Store) DeleteRefresh(ctx context.Context, hash string) error {
 	return err
 }
 
-const ingressCols = `id,workspace_id,project_id,domain,path,port,host_port,preset,extra_nginx,status,applicant_user_id,reviewed_by,reviewed_at,reject_reason,created_at,domain_tier,zone_id,prefix`
+const ingressCols = `id,workspace_id,project_id,domain,path,port,host_port,preset,extra_nginx,status,applicant_user_id,reviewed_by,reviewed_at,reject_reason,created_at,domain_tier,zone_id,prefix,verify_kind,dns_checked_at,dns_error,dns_code,tls_status,tls_error`
 
 func scanIngress(row interface{ Scan(dest ...any) error }) (*models.IngressRoute, error) {
 	r := &models.IngressRoute{}
@@ -1089,9 +1096,18 @@ func scanIngress(row interface{ Scan(dest ...any) error }) (*models.IngressRoute
 	var reviewedBy sql.NullString
 	var reviewedAt sql.NullTime
 	var zoneID sql.NullString
-	err := row.Scan(&r.ID, &r.WorkspaceID, &r.ProjectID, &r.Domain, &r.Path, &r.Port, &r.HostPort, &r.Preset, &r.ExtraNginx, &r.Status, &applicantID, &reviewedBy, &reviewedAt, &r.RejectReason, &r.CreatedAt, &r.DomainTier, &zoneID, &r.Prefix)
+	var dnsCheckedAt sql.NullTime
+	err := row.Scan(&r.ID, &r.WorkspaceID, &r.ProjectID, &r.Domain, &r.Path, &r.Port, &r.HostPort, &r.Preset, &r.ExtraNginx, &r.Status, &applicantID, &reviewedBy, &reviewedAt, &r.RejectReason, &r.CreatedAt, &r.DomainTier, &zoneID, &r.Prefix,
+		&r.VerifyKind, &dnsCheckedAt, &r.DNSError, &r.DNSCode, &r.TLSStatus, &r.TLSError)
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if dnsCheckedAt.Valid {
+		t := dnsCheckedAt.Time
+		r.DNSCheckedAt = &t
+	}
+	if r.VerifyKind == "" {
+		r.VerifyKind = models.IngressVerifyNone
 	}
 	if applicantID.Valid && applicantID.String != "" {
 		r.ApplicantUserID, _ = uuid.Parse(applicantID.String)
@@ -1125,8 +1141,12 @@ func (s *Store) CreateIngress(ctx context.Context, r *models.IngressRoute) error
 	if r.DomainTier == "" {
 		r.DomainTier = models.IngressTierCustom
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO ingress_routes (`+ingressCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-		r.ID, r.WorkspaceID, r.ProjectID, r.Domain, r.Path, r.Port, r.HostPort, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.CreatedAt, r.DomainTier, r.ZoneID, r.Prefix)
+	if r.VerifyKind == "" {
+		r.VerifyKind = models.IngressVerifyNone
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO ingress_routes (`+ingressCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+		r.ID, r.WorkspaceID, r.ProjectID, r.Domain, r.Path, r.Port, r.HostPort, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.CreatedAt, r.DomainTier, r.ZoneID, r.Prefix,
+		r.VerifyKind, r.DNSCheckedAt, r.DNSError, r.DNSCode, r.TLSStatus, r.TLSError)
 	if err != nil {
 		return store.ErrConflict
 	}
@@ -1173,8 +1193,9 @@ func (s *Store) UpdateIngress(ctx context.Context, r *models.IngressRoute) error
 	if r.DomainTier == "" {
 		r.DomainTier = models.IngressTierCustom
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE ingress_routes SET domain=$2,path=$3,port=$4,preset=$5,extra_nginx=$6,status=$7,applicant_user_id=$8,reviewed_by=$9,reviewed_at=$10,reject_reason=$11,host_port=$12,domain_tier=$13,zone_id=$14,prefix=$15 WHERE id=$1`,
-		r.ID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.HostPort, r.DomainTier, r.ZoneID, r.Prefix)
+	_, err := s.db.ExecContext(ctx, `UPDATE ingress_routes SET domain=$2,path=$3,port=$4,preset=$5,extra_nginx=$6,status=$7,applicant_user_id=$8,reviewed_by=$9,reviewed_at=$10,reject_reason=$11,host_port=$12,domain_tier=$13,zone_id=$14,prefix=$15,verify_kind=$16,dns_checked_at=$17,dns_error=$18,dns_code=$19,tls_status=$20,tls_error=$21 WHERE id=$1`,
+		r.ID, r.Domain, r.Path, r.Port, r.Preset, r.ExtraNginx, r.Status, appID, r.ReviewedBy, r.ReviewedAt, r.RejectReason, r.HostPort, r.DomainTier, r.ZoneID, r.Prefix,
+		r.VerifyKind, r.DNSCheckedAt, r.DNSError, r.DNSCode, r.TLSStatus, r.TLSError)
 	return err
 }
 

@@ -258,6 +258,10 @@ Agent 建项目：`POST /projects` 的 `name` **必须英文**（中文会 400 `
 | 添加域名 | `ing-add` → `ing-zone` / `ing-mode` / `ing-prefix` / `ing-domain` / `ing-port` / `ing-preset` / `ing-extra` / `ing-submit` |
 | 二次确认 Ingress | `ing-second-ok` / `ing-second-cancel` |
 | 域名表 / 行 | `ing-table` / `ing-row` |
+| 自有域名（CNAME，免审）入口 | 弹窗内 `ws-domain-custom-tab`（或 `ing-zone` 选「使用自己的域名」）→ `ing-domain` → 前端校验错误 `ws-domain-custom-error` → `ing-submit` |
+| 自有域名卡片列表 / 卡片 | `ws-domain-cname-list` / `ws-domain-cname-card` |
+| 复制 CNAME 记录值 / 主机记录 | `ws-domain-cname-copy` / `ws-domain-cname-copy-host` |
+| 自有域名状态 / 立即检测 | `ws-domain-status`（等待解析 / 解析异常 / 证书签发中 / 已生效（HTTPS）/ 证书失败 / 解析已失效）/ `ws-domain-verify` |
 | 操作历史表 / 行 | `ws-audit-table` / `ws-audit-row` |
 
 角色门：
