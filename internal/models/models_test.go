@@ -5,6 +5,33 @@ import (
 	"testing"
 )
 
+func TestPublicSiteURL(t *testing.T) {
+	if got := PublicSiteURL(IngressRoute{Domain: "Gold.Apps.Example.com", Status: IngressActive}); got != "https://gold.apps.example.com" {
+		t.Fatalf("platform: %q", got)
+	}
+	if got := PublicSiteURL(IngressRoute{Domain: "gold.apps.example.com", Status: IngressPendingApproval}); got != "" {
+		t.Fatalf("pending: %q", got)
+	}
+	cname := IngressRoute{Domain: "app.customer.com", Status: IngressActive, VerifyKind: IngressVerifyCNAME}
+	cname.TLSStatus = IngressTLSIssued
+	if got := PublicSiteURL(cname); got != "https://app.customer.com" {
+		t.Fatalf("https: %q", got)
+	}
+	cname.TLSStatus = IngressTLSSkipped
+	if got := PublicSiteURL(cname); got != "http://app.customer.com" {
+		t.Fatalf("http: %q", got)
+	}
+	cname.TLSStatus = IngressTLSPending
+	if got := PublicSiteURL(cname); got != "" {
+		t.Fatalf("issuing: %q", got)
+	}
+	cname.TLSStatus = IngressTLSIssued
+	cname.DNSError = "gone"
+	if got := PublicSiteURL(cname); got != "" {
+		t.Fatalf("dns lost: %q", got)
+	}
+}
+
 func TestNormalizeProjectName(t *testing.T) {
 	ok, good := NormalizeProjectName("  Office  Snacks  ")
 	if !good || ok != "Office Snacks" {

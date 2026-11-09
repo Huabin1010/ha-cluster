@@ -116,6 +116,14 @@ type Project struct {
 	CreatedAt        time.Time `json:"created_at"`
 	MyRole           string    `json:"my_role,omitempty"`
 	MySSHAccess      string    `json:"my_ssh_access,omitempty"`
+	// Sites are live public URLs. Filled on the project list so a row can open the site.
+	Sites []ProjectSite `json:"sites,omitempty"`
+}
+
+// ProjectSite is one reachable website on a project.
+type ProjectSite struct {
+	Domain string `json:"domain"`
+	URL    string `json:"url"`
 }
 
 // NormalizeProjectName trims and collapses whitespace. Names must be English
@@ -773,6 +781,35 @@ type IngressRoute struct {
 	CNAMETarget string `json:"cname_target,omitempty"`
 	RecordHost  string `json:"record_host,omitempty"`
 	RecordZone  string `json:"record_zone,omitempty"`
+}
+
+// PublicSiteURL is the address a person can open. Empty when the route is not live yet.
+// Platform subdomains use HTTPS. A user-owned domain follows its certificate phase.
+func PublicSiteURL(r IngressRoute) string {
+	host := strings.ToLower(strings.TrimSpace(r.Domain))
+	host = strings.TrimPrefix(host, "https://")
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimSuffix(host, ".")
+	if i := strings.Index(host, "/"); i >= 0 {
+		host = host[:i]
+	}
+	if host == "" || r.Status != IngressActive {
+		return ""
+	}
+	if r.VerifyKind == IngressVerifyCNAME {
+		if strings.TrimSpace(r.DNSError) != "" {
+			return ""
+		}
+		switch r.TLSStatus {
+		case IngressTLSIssued:
+			return "https://" + host
+		case IngressTLSPending, IngressTLSFailed:
+			return ""
+		default:
+			return "http://" + host
+		}
+	}
+	return "https://" + host
 }
 
 // AgentTokenPrefix is the public bearer / pack-URL prefix. Same secret is used

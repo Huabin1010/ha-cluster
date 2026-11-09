@@ -13,6 +13,12 @@ export type Project = {
   budget_mem_bytes?: number;
   budget_disk_bytes?: number;
   created_at?: string;
+  sites?: ProjectSite[];
+};
+
+export type ProjectSite = {
+  domain: string;
+  url: string;
 };
 
 export type ProjectOwnerRef = Pick<Project, "owner_id" | "owner_username" | "owner_display_name">;

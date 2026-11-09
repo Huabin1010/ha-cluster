@@ -612,7 +612,37 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		s.attachMyRole(r.Context(), u, &items[i])
 		s.attachOwner(r.Context(), &items[i], owners)
 	}
+	s.attachProjectSites(r.Context(), items)
 	listEnvelope(w, items, len(items))
+}
+
+func (s *Server) attachProjectSites(ctx context.Context, items []models.Project) {
+	if len(items) == 0 {
+		return
+	}
+	routes, err := s.App.Store.ListIngress(ctx, nil)
+	if err != nil {
+		return
+	}
+	byProject := map[uuid.UUID][]models.ProjectSite{}
+	for _, rt := range routes {
+		url := models.PublicSiteURL(rt)
+		if url == "" {
+			continue
+		}
+		byProject[rt.ProjectID] = append(byProject[rt.ProjectID], models.ProjectSite{
+			Domain: rt.Domain,
+			URL:    url,
+		})
+	}
+	for i := range items {
+		sites := byProject[items[i].ID]
+		if len(sites) == 0 {
+			continue
+		}
+		sort.Slice(sites, func(a, b int) bool { return sites[a].Domain < sites[b].Domain })
+		items[i].Sites = sites
+	}
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {

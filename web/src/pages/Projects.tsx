@@ -1,7 +1,7 @@
 import { MouseEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreate, useDelete, useGetIdentity, useList, useUpdate } from "@refinedev/core";
-import { Check, Clock, Copy, ExternalLink, FolderKanban, Hash, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, StickyNote, Tag, Trash2, User } from "lucide-react";
+import { Check, Clock, Copy, ExternalLink, FolderKanban, Globe, Hash, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, StickyNote, Tag, Trash2, User } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,12 +17,37 @@ import { Elevated } from "@/lib/elevated";
 import { Empty, PageBody } from "@/ui";
 import { friendlyError, type AuthUser } from "@/providers";
 import { copyText, formatTime } from "@/pages/projects/format";
-import { canManageProject, projectOwnerFilterLabel, projectOwnerHint, projectOwnerLabel, type Project } from "@/pages/projects/types";
+import { canManageProject, projectOwnerFilterLabel, projectOwnerHint, projectOwnerLabel, type Project, type ProjectSite } from "@/pages/projects/types";
 import { ProjectFormDialog } from "@/pages/projects/FormDialog";
 import { ProjectDeleteDialog } from "@/pages/projects/DeleteDialog";
 import { useClientPager } from "@/lib/use-client-pager";
 import { readCurrentProject, writeCurrentProject } from "@/lib/current-project";
 import { cn } from "@/lib/utils";
+
+function ProjectSites({ sites }: { sites?: ProjectSite[] }) {
+  if (!sites?.length) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="grid min-w-0 gap-1">
+      {sites.map((site) => (
+        <a
+          key={site.url}
+          href={site.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="project-open-site"
+          title="打开网站"
+          className="inline-flex min-w-0 items-center gap-1 text-sm font-medium text-primary hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink className="size-3 shrink-0" />
+          <span className="truncate">{site.domain}</span>
+        </a>
+      ))}
+    </div>
+  );
+}
 
 function slugConflictMessage(e: unknown): string | null {
   const raw = e instanceof Error ? e.message : String(e);
@@ -75,7 +100,8 @@ export function ProjectsPage() {
         r.slug.toLowerCase().includes(q) ||
         r.id.toLowerCase().includes(q) ||
         (r.purpose ?? "").toLowerCase().includes(q) ||
-        ownerText.includes(q)
+        ownerText.includes(q) ||
+        (r.sites ?? []).some((s) => s.domain.toLowerCase().includes(q) || s.url.toLowerCase().includes(q))
       );
     });
   }, [rows, search, ownerFilter]);
@@ -266,13 +292,19 @@ export function ProjectsPage() {
               className="rounded-2xl border border-border/80 bg-surface-1 shadow-surface-2 overflow-hidden flex flex-col"
             >
               <div className="w-full overflow-x-auto">
-                <Table stackOnMobile={false} className="min-w-[1200px]">
+                <Table stackOnMobile={false} className="min-w-[1420px]">
                   <TableHeader className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur-xs border-b border-border/70 select-none">
                     <TableRow className="border-b border-border/60 hover:bg-transparent">
                       <TableHead className="w-[180px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
                         <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                           <FolderKanban className="size-3.5 opacity-60 shrink-0" />
                           名称
+                        </span>
+                      </TableHead>
+                      <TableHead className="w-[240px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <Globe className="size-3.5 opacity-60 shrink-0" />
+                          网站
                         </span>
                       </TableHead>
                       <TableHead className="min-w-[200px] font-semibold text-xs tracking-wider text-muted-foreground uppercase py-2.5">
@@ -341,6 +373,9 @@ export function ProjectsPage() {
                                 {p.name}
                               </span>
                             </div>
+                          </TableCell>
+                          <TableCell className="py-2.5 w-[240px] max-w-[240px]" onClick={(e) => e.stopPropagation()}>
+                            <ProjectSites sites={p.sites} />
                           </TableCell>
                           <TableCell className="py-2.5 min-w-0 max-w-[280px]" data-testid="project-purpose-cell">
                             {p.purpose?.trim() ? (
@@ -518,6 +553,10 @@ export function ProjectsPage() {
                       <span className="inline-flex items-center gap-1 shrink-0">
                         <Clock className="size-3 opacity-60" />
                         {formatTime(p.created_at)}
+                      </span>
+                      <span className="inline-flex min-w-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Globe className="size-3 opacity-60 shrink-0" />
+                        <ProjectSites sites={p.sites} />
                       </span>
                     </ListCardMeta>
                     <ListCardActions>

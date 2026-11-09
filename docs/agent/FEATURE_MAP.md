@@ -117,6 +117,7 @@
 
 - 列表：创建（**名称须英文**：字母、数字、空格或短横线，如 `Office Snacks`；**用途必填** 2–80 字，可中文）、编辑、删除、复制 ID；「用途」列一句话说清这个项目是干什么的
 - 列表展示**创建者**（项目负责人用户名 / 显示名），可用 `project-filter-owner` 按不同用户筛选；搜索也匹配创建者
+- 列表「网站」列：已生效域名可直接新开访问（`project-open-site`）；未接入或未生效显示 —
 - **窄屏**：列表为卡片（testid 仍是 `project-row`）
 - **旧项目未填用途会冻结**：不能开通机器、加人、SSH、改预算；红条 `project-purpose-gate`，负责人点 `project-purpose-fill` 补上后才能继续。进入详情**不会**自动弹出「编辑项目」
 - 详情 Tab：项目概览 / 工作区服务器 / 成员与权限 / 设置与预算
@@ -145,6 +146,7 @@
 | 项目行 | `project-row` |
 | 复制 ID | `project-copy-id` |
 | 进入详情 | `project-detail` |
+| 打开网站 | `project-open-site`（已生效域名，新标签打开，不进入项目） |
 
 进详情请点 `project-detail`，不要点行中央（会命中复制 ID，被 `stopPropagation` 拦住）。
 | 编辑 / 删除 | `project-edit` / `project-delete` |
