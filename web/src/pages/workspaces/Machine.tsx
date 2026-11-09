@@ -53,6 +53,7 @@ import {
   customDomainShouldPoll,
   dnsCodeHint,
   isCustomDomainRoute,
+  publicSiteURL,
   splitRecordHost,
   validateCustomDomain,
 } from "@/lib/custom-domain";
@@ -241,6 +242,43 @@ function routeLabel(rt: IngressRoute): string {
 
 function routeVariant(rt: IngressRoute): "ok" | "warn" | "danger" | "outline" {
   return isCustomDomainRoute(rt) ? customDomainPhaseVariant(customDomainPhase(rt)) : ingressStatusVariant(rt.status);
+}
+
+function SiteDomainLink({ domain, url }: { domain: string; url: string }) {
+  if (!url) {
+    return <span className="truncate text-sm font-medium text-foreground">{domain}</span>;
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="ws-domain-open"
+      title="打开网站"
+      className="truncate text-sm font-medium text-primary hover:underline"
+    >
+      {domain}
+    </a>
+  );
+}
+
+function CopySiteButton({ url, onCopy }: { url: string; onCopy: (url: string) => void }) {
+  if (!url) return null;
+  return (
+    <Hint label="复制网站">
+      <Button
+        type="button"
+        variant="ghost"
+        size="compact"
+        data-testid="ws-domain-copy"
+        aria-label="复制网站"
+        className="inline-flex size-7 items-center justify-center p-0 shrink-0"
+        onClick={() => onCopy(url)}
+      >
+        <Copy className="size-3.5 shrink-0" />
+      </Button>
+    </Hint>
+  );
 }
 
 function isConnectAction(action: string): boolean {
@@ -931,14 +969,17 @@ export function MachinePage() {
                   </div>
                 ) : (
                   <div className="grid gap-1.5">
-                    {routes.slice(0, 3).map((rt) => (
+                    {routes.slice(0, 3).map((rt) => {
+                      const siteURL = publicSiteURL(rt.domain, rt);
+                      return (
                       <div
                         key={rt.id}
                         className="flex min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 hover:bg-hover/60"
                       >
                         <span className="inline-flex min-w-0 items-center gap-1.5">
                           <Globe className="size-3.5 shrink-0 text-muted-foreground opacity-70" />
-                          <span className="truncate text-sm font-medium text-foreground">{rt.domain}</span>
+                          <SiteDomainLink domain={rt.domain} url={siteURL} />
+                          <CopySiteButton url={siteURL} onCopy={(url) => void copy(url, "已复制网站")} />
                         </span>
                         <Hint label={rt.status} className="font-mono">
                           <Badge
@@ -949,7 +990,8 @@ export function MachinePage() {
                           </Badge>
                         </Hint>
                       </div>
-                    ))}
+                      );
+                    })}
                     {pendingRoutes.length > 0 && (
                       <p className="m-0 px-2.5 text-xs text-muted-foreground">
                         {pendingRoutes.length} 条规则待审批。
@@ -1296,13 +1338,15 @@ export function MachinePage() {
                       {routes.map((rt) => {
                         const presetLabel =
                           meta?.presets?.find((p) => p.id === rt.preset)?.label ?? rt.preset;
+                        const siteURL = publicSiteURL(rt.domain, rt);
                         return (
                           <TableRow key={rt.id} data-testid="ing-row">
                             <TableCell className="min-w-0 max-w-[280px]">
                               <div className="grid min-w-0 gap-1">
-                                <Hint label={rt.domain} className="font-medium truncate block">
-                                  {rt.domain}
-                                </Hint>
+                                <span className="inline-flex min-w-0 items-center gap-1">
+                                  <SiteDomainLink domain={rt.domain} url={siteURL} />
+                                  <CopySiteButton url={siteURL} onCopy={(url) => void copy(url, "已复制网站")} />
+                                </span>
                                 {rt.dns_hint && (
                                   <p className="m-0 text-xs text-muted-foreground truncate">{rt.dns_hint}</p>
                                 )}
@@ -1372,10 +1416,16 @@ export function MachinePage() {
                     }
                     cards={routes.map((rt) => {
                       const presetLabel = meta?.presets?.find((p) => p.id === rt.preset)?.label ?? rt.preset;
+                      const siteURL = publicSiteURL(rt.domain, rt);
                       return (
                         <ListCard key={rt.id} data-testid="ing-row">
                           <ListCardHeader
-                            title={<span className="truncate font-medium">{rt.domain}</span>}
+                            title={
+                              <span className="inline-flex min-w-0 items-center gap-1">
+                                <SiteDomainLink domain={rt.domain} url={siteURL} />
+                                <CopySiteButton url={siteURL} onCopy={(url) => void copy(url, "已复制网站")} />
+                              </span>
+                            }
                             trailing={
                               <Badge variant={routeVariant(rt)} className="inline-flex items-center whitespace-nowrap shrink-0">
                                 <Hint label={rt.status}>{routeLabel(rt)}</Hint>

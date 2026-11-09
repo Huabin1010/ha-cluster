@@ -44,7 +44,7 @@ x-ha-api: &ha-api
     HA_KUBECONFIG: ${HA_KUBECONFIG:-/etc/ha-cluster/kubeconfig}
     HA_K8S_SERVER: ${HA_K8S_SERVER:-https://10.129.129.230:6443}
   extra_hosts:
-    - "host.docker.internal:host-gateway"
+    - "host.docker.internal:172.17.0.1"
   volumes:
     - ha-ingress-conf:/var/lib/ha-ingress
     - ha-tls-data:/var/lib/ha-cluster/tls

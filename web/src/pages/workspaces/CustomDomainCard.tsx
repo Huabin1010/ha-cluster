@@ -8,6 +8,7 @@ import {
   customDomainPhaseLabel,
   customDomainPhaseVariant,
   customDomainURL,
+  publicSiteURL,
   dnsCodeHint,
   type CustomDomainRoute,
 } from "@/lib/custom-domain";
@@ -75,6 +76,7 @@ export function CustomDomainCard({
 }) {
   const phase = customDomainPhase(route);
   const live = phase === "live_https" || phase === "live_http";
+  const siteURL = publicSiteURL(route.domain, route);
   const host = route.record_host || "@";
   const target = route.cname_target || "";
   const codeHint = route.status === "pending_dns" || route.dns_error ? dnsCodeHint(route.dns_code) : "";
@@ -88,7 +90,20 @@ export function CustomDomainCard({
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <Globe className="size-4 shrink-0 text-muted-foreground opacity-70" />
-          <span className="truncate text-sm font-medium text-foreground">{route.domain}</span>
+          {siteURL ? (
+            <a
+              href={siteURL}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="ws-domain-open"
+              title="打开网站"
+              className="truncate text-sm font-medium text-primary hover:underline"
+            >
+              {route.domain}
+            </a>
+          ) : (
+            <span className="truncate text-sm font-medium text-foreground">{route.domain}</span>
+          )}
           <span className="shrink-0 font-mono text-xs text-muted-foreground">→ :{route.port}</span>
         </span>
         <div className="inline-flex items-center gap-1.5 shrink-0">
@@ -102,6 +117,21 @@ export function CustomDomainCard({
               {customDomainPhaseLabel(phase)}
             </Badge>
           </Hint>
+          {live && (
+            <Hint label="复制网站">
+              <Button
+                type="button"
+                variant="outline"
+                size="compact"
+                data-testid="ws-domain-copy"
+                aria-label="复制网站"
+                className="inline-flex size-7 items-center justify-center p-0 shrink-0"
+                onClick={() => onCopy(siteURL, "已复制网站")}
+              >
+                <Copy className="size-3.5 shrink-0" />
+              </Button>
+            </Hint>
+          )}
           {live && (
             <Button
               type="button"

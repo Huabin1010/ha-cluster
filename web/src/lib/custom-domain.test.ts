@@ -6,6 +6,7 @@ import {
   customDomainShouldPoll,
   customDomainURL,
   dnsCodeHint,
+  publicSiteURL,
   isApexDomain,
   isCustomDomainRoute,
   normalizeDomain,
@@ -102,5 +103,17 @@ describe("misc", () => {
   it("builds the open URL", () => {
     expect(customDomainURL("App.X.com", "live_https")).toBe("https://app.x.com");
     expect(customDomainURL("app.x.com", "live_http")).toBe("http://app.x.com");
+  });
+  it("only exposes a public URL once the site can be opened", () => {
+    expect(publicSiteURL("Gold.Apps.Example.com", { status: "active" })).toBe("https://gold.apps.example.com");
+    expect(publicSiteURL("gold.apps.example.com", { status: "pending_approval" })).toBe("");
+    expect(publicSiteURL("app.customer.com", { status: "active", verify_kind: "cname", tls_status: "issued" })).toBe(
+      "https://app.customer.com",
+    );
+    expect(publicSiteURL("app.customer.com", { status: "active", verify_kind: "cname", tls_status: "skipped" })).toBe(
+      "http://app.customer.com",
+    );
+    expect(publicSiteURL("app.customer.com", { status: "pending_dns", verify_kind: "cname" })).toBe("");
+    expect(publicSiteURL("  ", { status: "active" })).toBe("");
   });
 });

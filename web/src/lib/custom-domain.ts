@@ -138,3 +138,20 @@ export function dnsCodeHint(code?: string): string {
 export function customDomainURL(domain: string, p: CustomDomainPhase): string {
   return `${p === "live_https" ? "https" : "http"}://${normalizeDomain(domain)}`;
 }
+
+/**
+ * URL of a route the user can open or copy. Empty when the site is not reachable yet
+ * (pending approval, waiting on DNS, rejected). Platform subdomains use HTTPS;
+ * a user-owned domain follows its certificate phase.
+ */
+export function publicSiteURL(domain: string, r: CustomDomainRoute): string {
+  const host = normalizeDomain(domain);
+  if (!host) return "";
+  if (isCustomDomainRoute(r)) {
+    const phase = customDomainPhase(r);
+    if (phase !== "live_https" && phase !== "live_http") return "";
+    return customDomainURL(host, phase);
+  }
+  if (r.status !== "active") return "";
+  return `https://${host}`;
+}
